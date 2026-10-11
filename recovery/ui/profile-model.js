@@ -1,0 +1,106 @@
+/* Allowlisted persistent profile data. Live credentials, history and transcripts stay out. */
+(function(root,factory){
+ const macros=typeof module==='object'&&module.exports?require('./macros.js'):root.BeipMacros;
+ const mapper=typeof module==='object'&&module.exports?require('./mapper.js'):root.BeipMapper;
+ const api=factory(macros,mapper);
+ if(typeof module==='object'&&module.exports)module.exports=api;
+ if(root)root.BeipProfiles=api;
+})(typeof globalThis==='object'?globalThis:this,function(macros,mapper){
+ 'use strict';
+ const DEFAULTS=Object.freeze({fontSize:15,fontFamily:'monospace',theme:'dark',scrollback:5000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false});
+ const ID=/^[A-Za-z0-9_-]{1,64}$/;
+ function text(value,max){return typeof value==='string'?value.slice(0,max):'';}
+ function number(value,defaultValue,min,max){const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):defaultValue;}
+ function bool(value){return value===true;}
+ function array(value,max){return Array.isArray(value)?value.slice(0,max):[];}
+ function scopeOf(value,worlds,characters){
+  const input=value&&typeof value==='object'?value:{},level=input.level||'global';
+  if(level==='global')return {level:'global'};
+  if(level==='server'&&worlds.has(input.serverId))return {level:'server',serverId:input.serverId};
+  if(level==='character'){
+   const character=characters.get(input.characterId);
+   if(character&&character.worldId===input.serverId)return {level:'character',serverId:input.serverId,characterId:input.characterId};
+  }
+  return null;
+ }
+ function unique(items){
+  const seen=new Set();
+  return items.filter(item=>{if(seen.has(item.id))return false;seen.add(item.id);return true;});
+ }
+ function normalizeSettings(raw){
+  raw=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
+  const worlds=unique(array(raw.worlds,128).map(item=>{
+   if(!item||typeof item!=='object'||!ID.test(item.id))return null;
+   const name=text(item.name,80).trim(),host=text(item.host,253).trim(),port=String(item.port??'').trim();
+   if(!name||!host||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return null;
+   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384)};
+  }).filter(Boolean));
+  const worldIds=new Set(worlds.map(x=>x.id));
+  const characters=unique(array(raw.characters,512).map(item=>{
+   if(!item||typeof item!=='object'||!ID.test(item.id)||!worldIds.has(item.worldId))return null;
+   const name=text(item.name,80).trim();if(!name)return null;
+   const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
+   return {id:item.id,worldId:item.worldId,name,loginName,autoLogin:bool(item.autoLogin)&&!!loginName,
+    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384)};
+  }).filter(Boolean));
+  const characterIds=new Map(characters.map(x=>[x.id,x]));
+  const source=raw.preferences&&typeof raw.preferences==='object'?raw.preferences:{};
+  const preferences={
+   fontSize:number(source.fontSize,DEFAULTS.fontSize,10,30),
+   fontFamily:source.fontFamily==='system'?'system':'monospace',
+   theme:source.theme==='light'?'light':'dark',
+   scrollback:number(source.scrollback,DEFAULTS.scrollback,100,20000),
+   inlineImages:source.inlineImages===undefined?DEFAULTS.inlineImages:bool(source.inlineImages),
+   localEcho:bool(source.localEcho),
+   defaultLogging:bool(source.defaultLogging),mediaEnabled:bool(source.mediaEnabled)
+  };
+  function rules(input,kind){
+   return unique(array(input,128).map(item=>{
+    if(!item||typeof item!=='object'||!ID.test(item.id))return null;
+    const scope=scopeOf(item.scope,worldIds,characterIds),match=text(item.match,128);
+    if(!scope||!match)return null;
+    const result={id:item.id,enabled:item.enabled!==false,scope,match,matchType:['simple','exact','wildcard','regex'].includes(item.matchType)?item.matchType:'simple',matchCase:bool(item.matchCase),stopProcessing:bool(item.stopProcessing)};
+    if(kind==='alias')result.replacement=text(item.replacement,65536);
+    else{
+     result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);
+     result.sendText=text(item.sendText,4096);result.gag=bool(item.gag);result.logGag=bool(item.logGag);
+     result.spawnTitle=text(item.spawnTitle,80);result.notify=bool(item.notify);
+     if(typeof item.filterText==='string')result.filterText=text(item.filterText,4096);
+     result.cooldownMs=number(item.cooldownMs,0,0,86400000);result.once=bool(item.once);
+     if(item.highlight&&typeof item.highlight==='object'){
+      const h=item.highlight,highlight={wholeLine:bool(h.wholeLine)};
+      for(const key of ['color','background'])if(typeof h[key]==='string'&&/^(#[0-9a-f]{3,8}|[a-z]{1,24})$/i.test(h[key]))highlight[key]=h[key];
+      for(const key of ['bold','italic','underline','strike'])highlight[key]=bool(h[key]);
+      result.highlight=highlight;
+     }
+    }
+    return result;
+   }).filter(Boolean));
+  }
+  const macroItems=unique(array(raw.macros,macros.MAX_MACROS).map(item=>{
+   if(!item||typeof item!=='object'||!ID.test(item.id))return null;
+   const scope=scopeOf(item.scope,worldIds,characterIds),key=macros.normalizeCombo(item.key),body=text(item.text,macros.MAX_TEXT);
+   if(!scope||!key||!body)return null;
+   return {id:item.id,enabled:item.enabled!==false,scope,key,mode:item.mode==='type'||item.type===true?'type':'send',text:body,overrideBuiltins:bool(item.overrideBuiltins),description:text(item.description,80)};
+  }).filter(Boolean));
+  const scriptSource=text(raw.scriptSource??raw.scripts?.source,65536);
+  const scriptEnabled=bool(raw.scriptEnabled??raw.scripts?.enabled)&&!!scriptSource;
+  const maps={};if(raw.maps&&typeof raw.maps==='object')for(const [id,value] of Object.entries(raw.maps).slice(0,16)){if(worldIds.has(id))try{maps[id]=mapper.normalize(value);}catch{}}
+  return {version:2,worlds,characters,preferences,maps,aliases:rules(raw.aliases,'alias'),triggers:rules(raw.triggers,'trigger'),macros:macroItems,scriptSource,scriptEnabled};
+ }
+ function serializeSettings(state){return normalizeSettings(state);}
+ function startupPlan(settings){
+  const data=normalizeSettings(settings),plan=[],handled=new Set();
+  for(const character of data.characters){
+   if(!character.openAtStartup&&!character.autoConnect)continue;
+   plan.push({worldId:character.worldId,characterId:character.id,connect:character.autoConnect});
+   handled.add(character.worldId);
+  }
+  for(const world of data.worlds){
+   if(handled.has(world.id))continue;
+   if(world.autoConnect||world.openAtStartup)plan.push({worldId:world.id,characterId:'',connect:world.autoConnect});
+  }
+  return plan;
+ }
+ return {DEFAULTS,normalizeSettings,serializeSettings,startupPlan};
+});

@@ -7,3 +7,6 @@
 /recovery/build/
 /recovery/dist/
 /recovery/test-results/
+
+__pycache__/
+*.pyc

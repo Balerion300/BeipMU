@@ -6,8 +6,11 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shellapi.h>
+#include <commdlg.h>
+#include <wincred.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include "tls.h"
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -15,6 +18,10 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <memory>
+#include <unordered_map>
+#include <chrono>
+#include <cctype>
 #include "protocol.h"
 
 using Microsoft::WRL::ComPtr;
@@ -35,22 +42,94 @@ std::string base64(std::string_view s) {
     for(unsigned char c:s){value=(value<<8)|c;bits+=8;while(bits>=0){out+=alphabet[(value>>bits)&63];bits-=6;}}
     if(bits>-6)out+=alphabet[((value<<8)>>(bits+8))&63];while(out.size()%4)out+='=';return out;
 }
+bool unbase64(std::string_view s,std::string& out,size_t limit=65536) {
+    if(s.size()%4 || s.size()>((limit+2)/3)*4)return false;
+    out.clear();out.reserve(s.size()/4*3);
+    unsigned value=0;int bits=0;unsigned padding=0;
+    for(size_t i=0;i<s.size();++i){
+        unsigned char c=s[i];if(c=='='){++padding;if(i<s.size()-2||padding>2)return false;continue;}
+        if(padding)return false;
+        int digit=(c>='A'&&c<='Z')?c-'A':(c>='a'&&c<='z')?c-'a'+26:(c>='0'&&c<='9')?c-'0'+52:c=='+'?62:c=='/'?63:-1;
+        if(digit<0)return false;value=(value<<6)|unsigned(digit);bits+=6;
+        if(bits>=8){bits-=8;out+=char((value>>bits)&255);}
+    }
+    return out.size()<=limit && ((padding==0&&bits==0)||(padding==1&&bits==2)||(padding==2&&bits==4)) && (value&((1u<<bits)-1))==0;
+}
+bool validUtf8(std::string_view s){return s.empty()||MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),int(s.size()),nullptr,0)>0;}
+bool validLoginField(std::string_view s,size_t limit){
+    if(s.empty()||s.size()>limit||!validUtf8(s))return false;
+    for(unsigned char c:s)if(c<32||c==127)return false;
+    return true;
+}
+bool validId(std::string_view id) {
+    if(id.empty()||id.size()>64)return false;
+    for(unsigned char c:id)if(!((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'))return false;
+    return true;
+}
+bool validHost(std::string_view host){
+    if(host.empty()||host.size()>253)return false;
+    for(unsigned char c:host)if(c<=32||c==127||c=='|'||c=='/'||c=='\\')return false;
+    return true;
+}
 class Client {
-    HWND window=nullptr;SOCKET socket=INVALID_SOCKET;std::mutex lock;
-    std::thread worker;std::atomic<bool> stop{false};
-    void post(std::string s){auto event=new Event{std::move(s)};if(!PostMessageW(window,NetworkMessage,0,(LPARAM)event))delete event;}
-    bool transmit(std::string_view s){std::lock_guard guard(lock);if(socket==INVALID_SOCKET)return false;while(!s.empty()){int n=send(socket,s.data(),int(s.size()),0);if(n<=0)return false;s.remove_prefix(n);}return true;}
+    HWND window=nullptr;std::string id,boundCharacter;bool legacy=false,secure=false,tlsReady=false;
+    SOCKET socket=INVALID_SOCKET;std::mutex lock;BeipTLS::Stream tls;
+    std::thread worker;std::atomic<bool> stop{false},gmcpReady{false},resizePending{false};
+    std::atomic<unsigned short> columns{100},rows{40};
+    std::mutex logLock;std::ofstream logFile;std::filesystem::path logPath;
+    void post(std::string s){auto event=new Event{legacy?std::move(s):"session:"+id+":"+s};if(!PostMessageW(window,NetworkMessage,0,(LPARAM)event))delete event;}
+    bool transmit(std::string_view s){
+        std::lock_guard guard(lock);if(socket==INVALID_SOCKET||(secure&&!tlsReady))return false;
+        while(!s.empty()){int n=secure?tls.send(s):send(socket,s.data(),int(s.size()),0);if(n<=0)return false;s.remove_prefix(n);}return true;
+    }
 public:
-    void attach(HWND w){window=w;}
-    void disconnect(){stop=true;{std::lock_guard guard(lock);if(socket!=INVALID_SOCKET)shutdown(socket,SD_BOTH);}if(worker.joinable())worker.join();{std::lock_guard guard(lock);if(socket!=INVALID_SOCKET){closesocket(socket);socket=INVALID_SOCKET;}}}
+    Client(HWND w,std::string session,bool old=false):window(w),id(std::move(session)),legacy(old){}
+    Client(const Client&)=delete;Client& operator=(const Client&)=delete;
+    void disconnect(){stop=true;gmcpReady=false;{std::lock_guard guard(lock);tlsReady=false;if(socket!=INVALID_SOCKET)shutdown(socket,SD_BOTH);}if(worker.joinable())worker.join();{std::lock_guard guard(lock);if(socket!=INVALID_SOCKET){closesocket(socket);socket=INVALID_SOCKET;}tls.reset();}}
     ~Client(){disconnect();}
+    void logStart(const std::filesystem::path& root){
+        std::lock_guard guard(logLock);
+        if(logFile.is_open()){post("logstatus:on:"+base64(utf8(logPath.wstring())));return;}
+        std::error_code ec;auto dir=root/L"Logs";std::filesystem::create_directories(dir,ec);
+        if(ec){post("logstatus:error:"+base64("Could not create the Logs folder."));return;}
+        SYSTEMTIME now;GetLocalTime(&now);wchar_t stamp[32];swprintf_s(stamp,L"%04u%02u%02u-%02u%02u%02u",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);
+        for(unsigned attempt=0;attempt<100;++attempt){
+            auto candidate=dir/(std::wstring(stamp)+L"-"+wide(id)+L"-"+std::to_wstring(GetTickCount64())+L"-"+std::to_wstring(attempt)+L".log");
+            HANDLE fresh=CreateFileW(candidate.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+            if(fresh==INVALID_HANDLE_VALUE)continue;CloseHandle(fresh);
+            logFile.open(candidate,std::ios::binary|std::ios::app);if(logFile){logPath=candidate;post("logstatus:on:"+base64(utf8(logPath.wstring())));return;}
+            std::filesystem::remove(candidate,ec);
+        }
+        post("logstatus:error:"+base64("Could not open a log file."));
+    }
+    void logStop(){std::lock_guard guard(logLock);if(logFile.is_open())logFile.close();logPath.clear();post("logstatus:off");}
+    void logLine(std::string_view encoded){
+        std::string line;if(!unbase64(encoded,line)||!validUtf8(line)||line.find('\r')!=line.npos||line.find('\n')!=line.npos){post("logstatus:error:"+base64("Invalid log line."));return;}
+        std::lock_guard guard(logLock);if(!logFile.is_open()){post("logstatus:error:"+base64("Logging is not active."));return;}
+        logFile.write(line.data(),std::streamsize(line.size()));logFile.put('\n');logFile.flush();
+        if(!logFile)post("logstatus:error:"+base64("Could not write the log file."));
+    }
     void command(std::string s){if(s.size()>8192||s.find('\n')!=s.npos||s.find('\r')!=s.npos){post("status:Command rejected: one line at a time, up to 8192 bytes.");return;}s+="\r\n";if(!transmit(escapeTelnet(s)))post("status:Not connected.");}
-    void connect(std::string host,std::string port){
-        disconnect();stop=false;
-        worker=std::thread([this,host=std::move(host),port=std::move(port)]{
+    void login(std::string_view username,std::string_view password){
+        std::string line;line.reserve(11+username.size()+password.size());
+        line="connect ";line.append(username);line+=' ';line.append(password);line+="\r\n";
+        std::string wire=escapeTelnet(line);bool sent=transmit(wire);
+        SecureZeroMemory(line.data(),line.size());SecureZeroMemory(wire.data(),wire.size());
+        if(!sent)post("status:Could not send login command; connection is unavailable.");
+    }
+    void gmcpSend(std::string_view encoded){
+        std::string payload;if(!unbase64(encoded,payload)||payload.size()>65535){post("status:Invalid GMCP payload.");return;}
+        if(!gmcpReady){post("status:GMCP is not enabled for this connection.");return;}
+        if(!transmit(TelnetStream::subneg(201,payload)))post("status:Could not send GMCP payload.");
+    }
+    void resize(unsigned short width,unsigned short height){columns=width;rows=height;resizePending=true;}
+    bool mayLogin(std::string_view character,bool allowPlain){std::lock_guard guard(lock);return !boundCharacter.empty()&&boundCharacter==character&&(secure||allowPlain);}
+    void connect(std::string host,std::string port,bool useTls=false,std::string character={}){
+        disconnect();{std::lock_guard guard(lock);secure=useTls;tlsReady=false;boundCharacter=std::move(character);}stop=false;
+        worker=std::thread([this,host=std::move(host),port=std::move(port),useTls]{
             post("reset:");post("status:Connecting to "+host+":"+port+"...");
             addrinfo hints{},*addresses=nullptr;hints.ai_socktype=SOCK_STREAM;hints.ai_family=AF_UNSPEC;
-            if(getaddrinfo(host.c_str(),port.c_str(),&hints,&addresses)){post("status:Could not resolve the server address.");return;}
+            if(getaddrinfo(host.c_str(),port.c_str(),&hints,&addresses)){post("status:Could not resolve the server address.");post("connected:off");post("ended:");return;}
             SOCKET connected=INVALID_SOCKET;
             for(auto a=addresses;a&&!stop;a=a->ai_next){
                 SOCKET candidate=WSASocketW(a->ai_family,a->ai_socktype,a->ai_protocol,nullptr,0,WSA_FLAG_OVERLAPPED);
@@ -64,42 +143,258 @@ public:
                 closesocket(candidate);
             }
             freeaddrinfo(addresses);
-            if(connected==INVALID_SOCKET){post("status:Connection failed.");return;}
+            if(connected==INVALID_SOCKET){post("status:Connection failed.");post("connected:off");post("ended:");return;}
             {std::lock_guard guard(lock);socket=connected;}
-            post("status:Connected to "+host+":"+port+" (plain TCP).");
+            if(useTls){
+                post("status:Securing connection to "+host+":"+port+"...");
+                std::string error;
+                if(!tls.handshake(connected,wide(host),error)||stop){
+                    {std::lock_guard guard(lock);tlsReady=false;if(socket==connected){closesocket(socket);socket=INVALID_SOCKET;}tls.reset();}
+                    if(!stop)post("status:TLS connection failed: "+error);
+                    post("connected:off");post("ended:");return;
+                }
+                {std::lock_guard guard(lock);tlsReady=true;}
+            }
+            post("status:Connected to "+host+":"+port+(useTls?" (TLS).":" (plain TCP)."));
+            post("connected:on");
             TelnetStream telnet;
             telnet.output=[this](std::string_view s){post("data:"+base64(s));};
             telnet.reply=[this](std::string_view s){transmit(s);};
             telnet.mxp=[this](bool enabled){post(enabled?"mxp:on":"mxp:off");};
+            telnet.gmcp=[this](std::string_view s){post("gmcp:"+base64(s));};
+            telnet.gmcpAvailable=[this](bool enabled){gmcpReady=enabled;post(enabled?"gmcpavailable:on":"gmcpavailable:off");};
+            telnet.resize(columns.load(),rows.load());
             char buffer[16384];
-            while(!stop){int n=recv(connected,buffer,sizeof(buffer),0);if(n==0)break;if(n<0){int error=WSAGetLastError();if(error==WSAETIMEDOUT||error==WSAEWOULDBLOCK)continue;break;}telnet.feed(std::string_view(buffer,n));}
-            {std::lock_guard guard(lock);if(socket==connected){closesocket(socket);socket=INVALID_SOCKET;}}
-            post("ended:");post("status:Disconnected.");
+            while(!stop){
+                if(resizePending.exchange(false))telnet.resize(columns.load(),rows.load());
+                int n=useTls?tls.recv(buffer,sizeof(buffer)):recv(connected,buffer,sizeof(buffer),0);
+                if(n==0)break;if(n<0){int error=WSAGetLastError();if(error==WSAETIMEDOUT||error==WSAEWOULDBLOCK)continue;break;}
+                telnet.feed(std::string_view(buffer,n));
+            }
+            {std::lock_guard guard(lock);tlsReady=false;if(socket==connected){closesocket(socket);socket=INVALID_SOCKET;}tls.reset();}
+            gmcpReady=false;
+            post("connected:off");post("ended:");post("status:Disconnected.");
         });
     }
 };
 struct Application {
-    HWND window=nullptr;Client client;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
-    std::filesystem::path testPath;int testPort=0;bool ready=false;std::vector<std::string> queued;
-    void trace(const std::string& text){if(testPort){std::filesystem::create_directories(testPath);std::ofstream(testPath/"trace.txt",std::ios::app)<<text<<"\n";}}
-    void message(const std::string& text){trace("HOST "+text.substr(0,100));if(view&&ready)view->PostWebMessageAsString(wide(text).c_str());else if(queued.size()<256)queued.push_back(text);}
+    HWND window=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
+    ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
+    std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,ready=false;std::vector<std::string> queued;
+    std::unordered_map<std::string,std::string> testSecrets;
+    std::filesystem::path dataRoot(){
+        if(testMode)return testPath;
+        PWSTR local=nullptr;SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&local);
+        auto root=std::filesystem::path(local?local:L".")/L"BeipMU-Recovery";CoTaskMemFree(local);return root;
+    }
+    void trace(std::string_view direction,std::string_view value){
+        if(!testMode)return;std::filesystem::create_directories(testPath);
+        if(value.starts_with("secret:")||value.starts_with("login|")||value.starts_with("export|"))return;
+        // Only message names belong in the diagnostic trace; commands and server text may contain secrets.
+        auto end=value.find_first_of(":|");auto kind=value.substr(0,end);
+        std::ofstream(testPath/"trace.txt",std::ios::app)<<direction<<" "<<kind<<"\n";
+    }
+    void message(const std::string& text){trace("HOST",text);if(view&&ready)view->PostWebMessageAsString(wide(text).c_str());else if(queued.size()<256)queued.push_back(text);}
+    void scoped(const std::string& id,std::string payload){message("session:"+id+":"+payload);}
+    std::wstring secretTarget(std::string_view id){return L"BeipMU-Recovery/character/"+wide(id);}
+    void secretReply(const std::string& id,std::string_view result){message("secretstatus:"+id+":"+std::string(result));}
+    void secretError(const std::string& id,std::string_view error){secretReply(id,"error:"+base64(error));}
+    bool readSecret(const std::string& id,std::string& password){
+        if(testMode){auto it=testSecrets.find(id);if(it==testSecrets.end())return false;password=it->second;return true;}
+        auto target=secretTarget(id);PCREDENTIALW record=nullptr;
+        if(!CredReadW(target.c_str(),CRED_TYPE_GENERIC,0,&record))return false;
+        bool okay=record&&record->CredentialBlob&&record->CredentialBlobSize>0&&record->CredentialBlobSize<=2048;
+        if(okay)password.assign(reinterpret_cast<const char*>(record->CredentialBlob),record->CredentialBlobSize);
+        if(record){if(record->CredentialBlob)SecureZeroMemory(record->CredentialBlob,record->CredentialBlobSize);CredFree(record);}
+        return okay;
+    }
+    void saveSecret(const std::string& id,std::string_view encoded){
+        if(!validId(id))return;
+        std::string password;
+        if(!unbase64(encoded,password)||!validLoginField(password,2048)){
+            SecureZeroMemory(password.data(),password.size());
+            secretError(id,"Invalid password; use one UTF-8 line up to 2048 bytes.");return;
+        }
+        bool saved=false;
+        if(testMode){auto& slot=testSecrets[id];SecureZeroMemory(slot.data(),slot.size());slot=password;saved=true;}
+        else {
+            auto target=secretTarget(id);CREDENTIALW record{};record.Type=CRED_TYPE_GENERIC;record.TargetName=target.data();
+            record.CredentialBlobSize=DWORD(password.size());record.CredentialBlob=reinterpret_cast<LPBYTE>(password.data());
+            record.Persist=CRED_PERSIST_LOCAL_MACHINE;
+            saved=CredWriteW(&record,0)!=FALSE;
+        }
+        SecureZeroMemory(password.data(),password.size());
+        if(saved)secretReply(id,"on");else secretError(id,"Could not save password in Windows Credential Manager.");
+    }
+    void deleteSecret(const std::string& id){
+        if(!validId(id))return;
+        bool removed=false;
+        if(testMode){auto it=testSecrets.find(id);if(it!=testSecrets.end()){SecureZeroMemory(it->second.data(),it->second.size());testSecrets.erase(it);}removed=true;}
+        else {auto target=secretTarget(id);removed=CredDeleteW(target.c_str(),CRED_TYPE_GENERIC,0)!=FALSE||GetLastError()==ERROR_NOT_FOUND;}
+        if(removed)secretReply(id,"off");else secretError(id,"Could not remove saved password.");
+    }
+    void secretStatus(const std::string& id){
+        if(!validId(id))return;
+        if(testMode){secretReply(id,testSecrets.contains(id)?"on":"off");return;}
+        auto target=secretTarget(id);PCREDENTIALW record=nullptr;
+        if(CredReadW(target.c_str(),CRED_TYPE_GENERIC,0,&record)){
+            if(record){if(record->CredentialBlob)SecureZeroMemory(record->CredentialBlob,record->CredentialBlobSize);CredFree(record);}
+            secretReply(id,"on");
+        }else if(GetLastError()==ERROR_NOT_FOUND)secretReply(id,"off");
+        else secretError(id,"Could not inspect Windows Credential Manager.");
+    }
+    void loginWithSecret(const std::string& session,const std::string& character,std::string_view encodedName,bool allowPlain){
+        if(!validId(session)||!validId(character))return;
+        auto it=sessions.find(session);if(it==sessions.end()){scoped(session,"status:Session is closed.");return;}
+        if(!it->second->mayLogin(character,allowPlain)){
+            scoped(session,"status:Saved login requires the selected character and explicit consent on plain TCP.");return;
+        }
+        std::string username,password;
+        if(!unbase64(encodedName,username)||!validLoginField(username,128)){
+            scoped(session,"status:Invalid login name.");return;
+        }
+        if(!readSecret(character,password)){scoped(session,"status:No saved password for this character.");return;}
+        bool safe=validLoginField(password,2048);
+        if(safe)it->second->login(username,password);else scoped(session,"status:Saved password is invalid.");
+        SecureZeroMemory(password.data(),password.size());
+    }
+    void loadSettings(){
+        auto path=dataRoot()/L"settings.json";std::error_code ec;
+        if(!std::filesystem::exists(path,ec)){message("settings:"+base64("{}"));return;}
+        auto size=std::filesystem::file_size(path,ec);
+        if(ec||size>1024*1024){message("settings:error:Settings file is too large or inaccessible.");return;}
+        std::ifstream file(path,std::ios::binary);
+        if(!file){message("settings:error:Could not read settings.");return;}
+        std::string content((std::istreambuf_iterator<char>(file)),{});
+        if(!file.bad())message("settings:"+base64(content));else message("settings:error:Could not read settings.");
+    }
+    void saveSettings(std::string_view json){
+        if(json.empty()||json.size()>1024*1024||json.front()!='{'||json.back()!='}'){
+            message("settings:error:Invalid settings size or format.");return;
+        }
+        auto root=dataRoot();std::error_code ec;std::filesystem::create_directories(root,ec);
+        if(ec){message("settings:error:Could not create the settings folder.");return;}
+        auto path=root/L"settings.json";auto temp=root/(L"settings-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".tmp");
+        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(json.data(),std::streamsize(json.size()));file.flush();if(!file){file.close();std::filesystem::remove(temp,ec);message("settings:error:Could not write settings.");return;}}
+        if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+            std::filesystem::remove(temp,ec);message("settings:error:Could not replace settings.");return;
+        }
+        message("settings:saved");
+    }
+    void exportTranscript(const std::string& id,std::string_view encoded){
+        if(!validId(id)||sessions.find(id)==sessions.end())return;
+        std::string transcript;
+        if(!unbase64(encoded,transcript,4*1024*1024)||!validUtf8(transcript)){
+            scoped(id,"exportstatus:error:"+base64("Transcript must be valid UTF-8 and at most 4 MiB."));return;
+        }
+        wchar_t filename[MAX_PATH]{};auto suggested=wide(id)+L"-transcript.txt";
+        wcsncpy_s(filename,suggested.c_str(),_TRUNCATE);
+        static const wchar_t filter[]=L"Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0\0";
+        OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window;
+        dialog.lpstrFile=filename;dialog.nMaxFile=MAX_PATH;dialog.lpstrFilter=filter;
+        dialog.lpstrDefExt=L"txt";dialog.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR|OFN_EXPLORER;
+        if(!GetSaveFileNameW(&dialog)){
+            if(CommDlgExtendedError())scoped(id,"exportstatus:error:"+base64("Could not open the Save dialog."));
+            else scoped(id,"exportstatus:cancelled");
+            return;
+        }
+        std::filesystem::path path(filename);auto temp=path.parent_path()/(path.filename().wstring()+L".beipmu-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".tmp");
+        std::error_code ec;
+        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(transcript.data(),std::streamsize(transcript.size()));file.flush();
+            if(!file){file.close();std::filesystem::remove(temp,ec);scoped(id,"exportstatus:error:"+base64("Could not write the transcript."));return;}}
+        if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+            std::filesystem::remove(temp,ec);scoped(id,"exportstatus:error:"+base64("Could not finish saving the transcript."));return;
+        }
+        scoped(id,"exportstatus:saved:"+base64(utf8(path.wstring())));
+    }
     void resize(){if(controller){RECT r;GetClientRect(window,&r);controller->put_Bounds(r);}}
     void fail(const wchar_t* text){MessageBoxW(window,text,L"BeipMU Recovery Preview",MB_OK|MB_ICONERROR);DestroyWindow(window);}
     void receive(const std::string& text){
-        trace("UI "+text.substr(0,100));
+        trace("UI",text);
+        if(text.size()>1024*1024+64&&!(text.starts_with("export|")&&text.size()<=6*1024*1024)){
+            message("settings:error:Message is too large.");return;
+        }
         if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
-            if(testPort){message("test:");client.connect("127.0.0.1",std::to_string(testPort));SetTimer(window,1,20000,nullptr);}
+            if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
+            else if(testCorePorts.size()==2){
+                std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
+                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\"}";
+                message("testcore:"+base64(config));SetTimer(window,1,25000,nullptr);
+            }
         }else if(text.starts_with("connect|")){
             auto split=text.find('|',8);if(split==text.npos)return;
-            auto host=text.substr(8,split-8),port=text.substr(split+1);
-            if(host.empty()||host.size()>253||port.empty()||port.size()>5||port.find_first_not_of("0123456789")!=port.npos||std::stoul(port)==0||std::stoul(port)>65535){message("status:Enter a valid host and port.");return;}
-            client.connect(host,port);
-        }else if(text=="disconnect")client.disconnect();
-        else if(text.starts_with("send|"))client.command(text.substr(5));
+            auto second=text.find('|',split+1);bool legacy=second==text.npos;
+            auto third=legacy?text.npos:text.find('|',second+1);
+            auto fourth=third==text.npos?text.npos:text.find('|',third+1);
+            auto id=legacy?std::string{}:text.substr(8,split-8);
+            auto host=legacy?text.substr(8,split-8):text.substr(split+1,second-split-1);
+            auto port=legacy?text.substr(split+1):text.substr(second+1,third==text.npos?text.npos:third-second-1);
+            auto mode=third==text.npos?std::string{}:text.substr(third+1,fourth==text.npos?text.npos:fourth-third-1);
+            auto character=fourth==text.npos?std::string{}:text.substr(fourth+1);
+            bool useTls=mode=="tls";
+            if(!legacy&&!validId(id)){message("status:Invalid session ID.");return;}
+            auto error=[&](std::string value){if(legacy)message(value);else scoped(id,value);};
+            if((!mode.empty()&&mode!="plain"&&mode!="tls")||(fourth!=text.npos&&(mode.empty()||!validId(character)))){error("status:Invalid connection mode or character.");return;}
+            if(!validHost(host)||port.empty()||port.size()>5||port.find_first_not_of("0123456789")!=port.npos||std::stoul(port)==0||std::stoul(port)>65535){error("status:Enter a valid host and port.");return;}
+            if(legacy)legacyClient->connect(host,port);
+            else {auto& slot=sessions[id];if(!slot)slot=std::make_unique<Client>(window,id);slot->connect(host,port,useTls,std::move(character));}
+        }else if(text=="disconnect")legacyClient->disconnect();
+        else if(text.starts_with("disconnect|")){
+            auto id=text.substr(11);if(!validId(id))return;
+            auto it=sessions.find(id);if(it!=sessions.end())it->second->disconnect();
+            scoped(id,"connected:off");scoped(id,"ended:");
+        }else if(text.starts_with("close|")){
+            auto id=text.substr(6);if(!validId(id))return;
+            sessions.erase(id);scoped(id,"closed:");
+        }else if(text.starts_with("send|")){
+            auto split=text.find('|',5);
+            if(split!=text.npos&&validId(std::string_view(text).substr(5,split-5))){
+                auto id=text.substr(5,split-5);auto it=sessions.find(id);
+                if(it!=sessions.end())it->second->command(text.substr(split+1));else scoped(id,"status:Session is closed.");
+            }else legacyClient->command(text.substr(5));
+        }else if(text=="settings:load")loadSettings();
+        else if(text.starts_with("settings:save|"))saveSettings(std::string_view(text).substr(14));
+        else if(text.starts_with("logstart|")){
+            auto id=text.substr(9);auto it=sessions.find(id);if(validId(id)&&it!=sessions.end())it->second->logStart(dataRoot());
+        }else if(text.starts_with("logstop|")){
+            auto id=text.substr(8);auto it=sessions.find(id);if(validId(id)&&it!=sessions.end())it->second->logStop();
+        }else if(text.starts_with("log|")){
+            auto split=text.find('|',4);if(split==text.npos)return;
+            auto id=text.substr(4,split-4);auto it=sessions.find(id);
+            if(validId(id)&&it!=sessions.end())it->second->logLine(std::string_view(text).substr(split+1));
+        }else if(text.starts_with("gmcp|")){
+            auto split=text.find('|',5);if(split==text.npos)return;
+            auto id=text.substr(5,split-5);auto it=sessions.find(id);
+            if(validId(id)&&it!=sessions.end())it->second->gmcpSend(std::string_view(text).substr(split+1));
+        }else if(text.starts_with("resize|")){
+            auto split=text.find('|',7),last=split==text.npos?text.npos:text.find('|',split+1);
+            if(last==text.npos)return;
+            auto id=text.substr(7,split-7),width=text.substr(split+1,last-split-1),height=text.substr(last+1);
+            if(!validId(id)||width.empty()||width.size()>4||height.empty()||height.size()>4||
+                width.find_first_not_of("0123456789")!=width.npos||height.find_first_not_of("0123456789")!=height.npos)return;
+            auto w=std::stoul(width),h=std::stoul(height);
+            if(w<1||w>4096||h<1||h>4096)return;
+            auto it=sessions.find(id);if(it!=sessions.end())it->second->resize((unsigned short)w,(unsigned short)h);
+        }else if(text.starts_with("export|")){
+            auto split=text.find('|',7);if(split==text.npos)return;
+            exportTranscript(text.substr(7,split-7),std::string_view(text).substr(split+1));
+        }else if(text.starts_with("secret:save|")){
+            auto split=text.find('|',12);if(split!=text.npos)saveSecret(text.substr(12,split-12),std::string_view(text).substr(split+1));
+        }else if(text.starts_with("secret:delete|"))deleteSecret(text.substr(14));
+        else if(text.starts_with("secret:status|"))secretStatus(text.substr(14));
+        else if(text.starts_with("login|")){
+            auto split=text.find('|',6),last=split==text.npos?text.npos:text.find('|',split+1);
+            if(last!=text.npos){
+                auto consent=text.find('|',last+1);
+                bool allowPlain=consent!=text.npos&&text.substr(consent+1)=="allow-plain";
+                if(consent==text.npos||allowPlain)loginWithSecret(text.substr(6,split-6),text.substr(split+1,last-split-1),
+                    std::string_view(text).substr(last+1,consent==text.npos?text.npos:consent-last-1),allowPlain);
+            }
+        }
         else if(text.starts_with("external|")){
-            std::string url=text.substr(9);if(url.starts_with("https://")||url.starts_with("http://"))ShellExecuteW(window,L"open",wide(url).c_str(),nullptr,nullptr,SW_SHOWNORMAL);
-        }else if(testPort&&text.starts_with("testresult:")){
+            std::string url=text.substr(9);if(url.size()<=2048&&(url.starts_with("https://")||url.starts_with("http://")))ShellExecuteW(window,L"open",wide(url).c_str(),nullptr,nullptr,SW_SHOWNORMAL);
+        }else if(testMode&&text.starts_with("testresult:")){
             KillTimer(window,1);std::filesystem::create_directories(testPath);std::ofstream(testPath/"result.json",std::ios::binary)<<text.substr(11);
             ComPtr<IStream> stream;HRESULT hr=SHCreateStreamOnFileEx((testPath/L"preview.png").c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream);
             if(SUCCEEDED(hr))view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,stream](HRESULT){DestroyWindow(window);return S_OK;}).Get());
@@ -108,15 +403,45 @@ struct Application {
     }
     void start(){
         wchar_t executable[MAX_PATH];GetModuleFileNameW(nullptr,executable,MAX_PATH);auto ui=std::filesystem::path(executable).parent_path()/L"ui";
-        PWSTR local=nullptr;SHGetKnownFolderPath(FOLDERID_LocalAppData,0,nullptr,&local);auto profile=std::filesystem::path(local?local:L".")/L"BeipMU-Recovery"/L"WebView";CoTaskMemFree(local);
+        auto profile=dataRoot()/L"WebView";
         auto hr=CreateCoreWebView2EnvironmentWithOptions(nullptr,profile.c_str(),nullptr,Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([this,ui](HRESULT hr,ICoreWebView2Environment* env){
             if(FAILED(hr)||!env){fail(L"Microsoft Edge WebView2 Runtime is required. Install the Evergreen Runtime from Microsoft, then reopen this preview.");return S_OK;}
+            environment=env;
             env->CreateCoreWebView2Controller(window,Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>([this,ui](HRESULT hr,ICoreWebView2Controller* control){
                 if(FAILED(hr)||!control){fail(L"Could not initialize the display.");return S_OK;}controller=control;controller->get_CoreWebView2(&view);resize();
-                ComPtr<ICoreWebView2_3> mapping;view.As(&mapping);if(!mapping){fail(L"Please update the WebView2 Runtime.");return S_OK;}
-                mapping->SetVirtualHostNameToFolderMapping(L"beipmu-preview.local",ui.c_str(),COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
-                ComPtr<ICoreWebView2Settings> settings;view->get_Settings(&settings);settings->put_AreDefaultScriptDialogsEnabled(FALSE);settings->put_AreDevToolsEnabled(FALSE);settings->put_IsStatusBarEnabled(FALSE);
                 EventRegistrationToken token;
+                view->AddWebResourceRequestedFilter(L"https://beipmu-preview.local/*",COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                view->add_WebResourceRequested(Callback<ICoreWebView2WebResourceRequestedEventHandler>([this,ui](ICoreWebView2*,ICoreWebView2WebResourceRequestedEventArgs* args){
+                    ComPtr<ICoreWebView2WebResourceRequest> request;if(FAILED(args->get_Request(&request)))return S_OK;
+                    LPWSTR uri=nullptr;if(FAILED(request->get_Uri(&uri)))return S_OK;
+                    std::wstring requested=uri?uri:L"";CoTaskMemFree(uri);
+                    constexpr std::wstring_view origin=L"https://beipmu-preview.local/";
+                    if(!requested.starts_with(origin))return S_OK;
+                    auto name=std::wstring_view(requested).substr(origin.size());
+                    bool safe=!name.empty()&&name.size()<=80;
+                    for(wchar_t c:name)if(!((c>=L'A'&&c<=L'Z')||(c>=L'a'&&c<=L'z')||(c>=L'0'&&c<=L'9')||c==L'-'||c==L'_'||c==L'.'))safe=false;
+                    bool html=name==L"index.html",css=name.ends_with(L".css"),javascript=name.ends_with(L".js");
+                    safe=safe&&(html||css||javascript)&&name!=L"."&&name!=L"..";
+                    std::string body;std::error_code ec;
+                    if(safe){
+                        auto filePath=ui/std::wstring(name);auto size=std::filesystem::file_size(filePath,ec);
+                        if(!ec&&size<=512*1024){std::ifstream file(filePath,std::ios::binary);if(file)body.assign(std::istreambuf_iterator<char>(file),{});}
+                    }
+                    bool rules=name==L"rules-worker.js",script=name==L"script-worker.js";
+                    if(rules||script)trace("WORKER",rules?"rules-worker":"script-worker");
+                    if(body.empty())body="Not found";
+                    ComPtr<IStream> stream;stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(body.data()),UINT(body.size())));
+                    ComPtr<ICoreWebView2WebResourceResponse> response;
+                    std::wstring headers=html?L"Content-Type: text/html; charset=utf-8":css?L"Content-Type: text/css; charset=utf-8":L"Content-Type: application/javascript; charset=utf-8";
+                    headers+=L"\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store";
+                    if(html)headers+=L"\r\nContent-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src http: https:; media-src http: https:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+                    else if(rules)headers+=L"\r\nContent-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'; worker-src 'none'";
+                    else if(script)headers+=L"\r\nContent-Security-Policy: default-src 'none'; script-src 'unsafe-eval'; connect-src 'none'; worker-src 'none'";
+                    bool found=safe&&body!="Not found";
+                    if(SUCCEEDED(environment->CreateWebResourceResponse(stream.Get(),found?200:404,found?L"OK":L"Not Found",headers.c_str(),&response)))args->put_Response(response.Get());
+                    return S_OK;
+                }).Get(),&token);
+                ComPtr<ICoreWebView2Settings> settings;view->get_Settings(&settings);settings->put_AreDefaultScriptDialogsEnabled(FALSE);settings->put_AreDevToolsEnabled(FALSE);settings->put_IsStatusBarEnabled(FALSE);
                 view->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>([](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args){LPWSTR uri=nullptr;args->get_Uri(&uri);std::wstring url=uri?uri:L"";CoTaskMemFree(uri);if(url!=L"https://beipmu-preview.local/index.html")args->put_Cancel(TRUE);return S_OK;}).Get(),&token);
                 view->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>([](ICoreWebView2*,ICoreWebView2NewWindowRequestedEventArgs* args){args->put_Handled(TRUE);return S_OK;}).Get(),&token);
                 view->add_PermissionRequested(Callback<ICoreWebView2PermissionRequestedEventHandler>([](ICoreWebView2*,ICoreWebView2PermissionRequestedEventArgs* args){args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);return S_OK;}).Get(),&token);
@@ -132,17 +457,24 @@ struct Application {
 };
 LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
     auto app=(Application*)GetWindowLongPtrW(window,GWLP_USERDATA);
-    if(message==WM_NCCREATE){app=(Application*)((CREATESTRUCTW*)l)->lpCreateParams;app->window=window;app->client.attach(window);SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
+    if(message==WM_NCCREATE){app=(Application*)((CREATESTRUCTW*)l)->lpCreateParams;app->window=window;app->legacyClient=std::make_unique<Client>(window,"legacy",true);SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
     if(app){if(message==NetworkMessage){auto event=(Event*)l;app->message(event->text);delete event;return 0;}
         if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){app->client.disconnect();if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_DESTROY){app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);WSADATA ws{};if(WSAStartup(MAKEWORD(2,2),&ws))return 1;
-    Application app;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argc==4&&std::wstring(argv[1])==L"--test"){app.testPort=_wtoi(argv[2]);app.testPath=argv[3];}LocalFree(argv);
+    Application app;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
+    if(argc==4&&(std::wstring(argv[1])==L"--test"||std::wstring(argv[1])==L"--test-tls")){
+        app.testPort=_wtoi(argv[2]);app.testMode=app.testPort>0;app.testTls=std::wstring(argv[1])==L"--test-tls";app.testPath=argv[3];
+    }else if(argc==5&&std::wstring(argv[1])==L"--test-core"){
+        int first=_wtoi(argv[2]),second=_wtoi(argv[3]);
+        if(first>0&&first<=65535&&second>0&&second<=65535){app.testCorePorts={first,second};app.testMode=true;app.testPath=argv[4];}
+    }
+    LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery Preview 0.2",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery Preview 0.3",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.
     while(PeekMessageW(&msg,window,NetworkMessage,NetworkMessage,PM_REMOVE))delete (Event*)msg.lParam;

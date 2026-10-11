@@ -2,7 +2,7 @@ name: Build recovery preview
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/build-recovery-pueblo-mxp']
+    branches: ['master', 'codex/client-features']
     paths: ['recovery/**', '.github/workflows/recovery-preview.yml']
   pull_request:
     paths: ['recovery/**', '.github/workflows/recovery-preview.yml']
@@ -21,5 +21,5 @@ jobs:
         run: ./recovery/build.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: BeipMU-Recovery-0.2-x64
-          path: recovery/dist/BeipMU-Recovery-0.2-x64.zip
+          name: BeipMU-Recovery-0.3-x64
+          path: recovery/dist/BeipMU-Recovery-0.3-x64.zip
