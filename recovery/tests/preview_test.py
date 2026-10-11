@@ -17,7 +17,7 @@ class Images(http.server.BaseHTTPRequestHandler):
 http=http.server.ThreadingHTTPServer(('127.0.0.1',0),Images)
 threading.Thread(target=http.serve_forever,daemon=True).start()
 image_base=f'http://127.0.0.1:{http.server_port}/'
-exe=ROOT/'dist/BeipMU-Recovery-0.1/BeipMU-Recovery.exe'
+exe=ROOT/'dist/BeipMU-Recovery-0.2/BeipMU-Recovery.exe'
 assert exe.exists(), 'Build first.'
 results={}
 for protocol in ['pueblo','mxp']:
@@ -37,6 +37,7 @@ for protocol in ['pueblo','mxp']:
                     while b'\xff\xfd\x5b' not in received:received.extend(conn.recv(4096))
                     conn.sendall(b'\xff\xfa\x5b\xff\xf0')
                     content=f'''\x1b[6zBeipMU recovery: MXP fixture\r\n<send href="look fixture|inventory" hint="Room actions|Inspect|Inventory">Inspect the room</send>\r\n<image url="{image_base}" fname="fixture.png" height="160" alt="MXP room image">\r\n<img src="{image_base}render?id=1&amp;size=320" alt="MXP query image">\r\n<img src="{image_base}missing.png" alt="Missing image">\r\nFIXTURE COMPLETE\r\n'''
+                if protocol=='pueblo':content=content.replace('FIXTURE COMPLETE','WHO START<BR>\r\nName        On for<BR>\r\nAlice       01:00<BR>\r\nBob         02:00<BR>\r\nWHO END<BR>\r\nFIXTURE COMPLETE')
                 content=content.replace('FIXTURE COMPLETE',f'Plain image URL: {image_base}fixture.png?raw=1\r\nFIXTURE COMPLETE')
                 payload=content.encode()
                 # Split tags, ANSI controls, entities and multibyte Unicode on wire.
@@ -61,6 +62,9 @@ for protocol in ['pueblo','mxp']:
     assert not failure,failure
     assert (out/'result.json').exists(),f'No WebView test result in {out}'
     result=json.loads((out/'result.json').read_text(encoding='utf-8'))
+    if protocol=='pueblo':
+        start=result['lines'].index('WHO START');end=result['lines'].index('WHO END')
+        assert result['lines'][start:end+1]==['WHO START','Name        On for','Alice       01:00','Bob         02:00','WHO END'],result['lines']
     assert result['images']==4,result
     assert result['loaded']==3 and result['failed']==1,result
     assert result['commandClicked'] and b'look fixture\r\n' in received,result

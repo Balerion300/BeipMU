@@ -30,7 +30,7 @@ function incoming(message){if(message.startsWith('data:')){const bytes=Uint8Arra
  else if(message==='ended:'){parser.feed(decoder.decode());parser.finish();finalizeLine();}
  else if(message==='test:'){test=true;output.replaceChildren();line=null;}
  if(test&&!testClicked){const a=output.querySelector('a[data-kind="command"]');if(a){testClicked=true;a.click();}}
- if(test&&!testReported&&output.textContent.includes('FIXTURE COMPLETE')){testReported=true;setTimeout(()=>send('testresult:'+JSON.stringify({images,loaded,failed,commandClicked:testClicked,protocol:$('protocol').textContent,text:output.textContent})),1500);}
+ if(test&&!testReported&&output.textContent.includes('FIXTURE COMPLETE')){testReported=true;setTimeout(()=>send('testresult:'+JSON.stringify({images,loaded,failed,commandClicked:testClicked,protocol:$('protocol').textContent,lines:[...output.querySelectorAll('.line')].map(e=>e.textContent),text:output.textContent})),1500);}
 }
 bridge?.addEventListener('message',e=>incoming(e.data));
 $('connection').onsubmit=e=>{e.preventDefault();send('connect|'+$('host').value.trim()+'|'+$('port').value.trim());};

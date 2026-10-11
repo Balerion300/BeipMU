@@ -1,4 +1,4 @@
-# BeipMU recovery preview 0.1
+# BeipMU recovery preview 0.2
 
 This is the first buildable replacement runtime in the Balerion300/BeipMU fork.
 The original `src/` remains intact. The published client cannot currently be
@@ -28,7 +28,7 @@ Install Visual Studio 2022 Build Tools with Desktop development with C++, Node.j
 
 The script downloads the pinned WebView2 SDK 1.0.4258.31 from NuGet, builds the
 application and native tests, runs the parser tests, and creates
-`recovery/dist/BeipMU-Recovery-0.1-x64.zip`. Extract the entire archive and open
+`recovery/dist/BeipMU-Recovery-0.2-x64.zip`. Extract the entire archive and open
 `BeipMU-Recovery.exe`. Keep the `ui` directory beside the executable.
 
 For Blood of Dragons the initial fields are `bod.westeros.org`, port `3000`.
@@ -42,11 +42,12 @@ does not save passwords or transcripts. Its WebView profile is stored under
 
 ## Verification
 
-The build runs 26 parser checks and native telnet tests. With Python installed,
+The build runs 318 parser checks and native telnet tests. With Python installed,
 `python recovery/tests/preview_test.py` runs the compiled application against
 local Pueblo and MXP servers. Each test verifies three successfully rendered
 images, a visible failed-image fallback, and a clicked command received by the
-server. It saves the rendered application view and wire evidence under
+server. The Pueblo test also verifies consecutive WHO rows without extra blank
+lines, preserving column spaces. It saves the rendered application view and wire evidence under
 `recovery/test-results/`. These tests use no live game credentials.
 
 ## Supported protocol subset
@@ -66,8 +67,10 @@ definitions/macros, image maps, and full protocol conformance are pending.
   scripting, accessibility, GMCP packages, and other application features.
 * Add verified TLS connections; this preview supports plain TCP only.
 * Complete the MXP implementation and test against real-world servers.
-* Verify Blood of Dragons images in a live session; fixture success alone does
-  not establish compatibility with the live world's markup or image host.
+The user verified login and inline images on Blood of Dragons in preview 0.1.
+Preview 0.2 additionally fixes paired BR/wire line endings inside Pueblo PRE,
+following the Valyria and Atlantis spacing correction. Intentional blank lines
+and spaces remain intact.
 
 The reconstruction was informed by the published source and analysis of the
 official 4.335 x64 executable (SHA256

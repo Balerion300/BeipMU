@@ -29,4 +29,24 @@ check('MXP support does not claim unsupported attributes',()=>assert.ok(parse('\
 check('Prompt sends to command box',()=>assert.equal(parse(start+'<send href="look" prompt>go</send>').events.find(e=>e.text==='go').link.prompt,true));
 check('Numeric entities validate codepoints',()=>assert.equal(entity('&#x1f409; &#0;'),'🐉 \ufffd'));
 check('URLs with embedded credentials rejected',()=>assert.equal(webURL('https://user:secret@example.org/a.png'),null));
+
+for(const ending of ['\n','\r\n','\r']){
+ const input='</xch_mudtext><pre>Name        On for<BR>'+ending+'Alice       01:00<BR>'+ending+'Bob         02:00<BR>'+ending+'</pre>';
+ for(let split=0;split<=input.length;split++)check('WHO paired ending '+JSON.stringify(ending)+' split '+split,()=>{
+  const events=[],p=new Parser(e=>events.push(e),()=>{});p.feed(input.slice(0,split));p.feed(input.slice(split));p.finish();
+  assert.equal(events.filter(e=>e.type==='text').map(e=>e.text).join(''),'Name        On for\nAlice       01:00\nBob         02:00\n');
+ });
+}
+for(const [input,expected] of [
+ ['<pre>a<BR>\r\n\r\nb</pre>','a\n\nb'],
+ ['<pre>a<BR><BR>\r\nb</pre>','a\n\nb'],
+ ['<pre>a<BR>&#10;\nb</pre>','a\n\n\nb'],
+ ['<pre>a<BR><b>\nb</b></pre>','a\n\nb'],
+ ['a<BR>\nb','a\n\nb'],
+ ['<pre>a<BR> \nb</pre>','a\n \nb'],
+ ['<pre>a<BR></pre>\nb','a\n\nb'],
+ ['<pre>a<BR><xch_mudtext>\nb','a\n\nb'],
+ ['<pre>a\t  b<BR>\r\nc</pre>','a\t  b\nc']
+])check('Preserve intentional spacing '+JSON.stringify(input),()=>assert.equal(parse('</xch_mudtext>'+input,{split:true}).text,expected));
+check('Reset clears paired newline state',()=>{let text='';const p=new Parser(e=>{if(e.type==='text')text+=e.text;},()=>{});p.feed('</xch_mudtext><pre>a<BR>');p.reset();p.feed('\nb');assert.equal(text,'a\n\nb');});
 console.log(`${count} parser checks passed.`);

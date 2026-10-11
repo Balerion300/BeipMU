@@ -142,7 +142,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);WSADATA ws{};if(WSAStartup(MAKEWORD(2,2),&ws))return 1;
     Application app;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(argc==4&&std::wstring(argv[1])==L"--test"){app.testPort=_wtoi(argv[2]);app.testPath=argv[3];}LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery Preview 0.1",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery Preview 0.2",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.
     while(PeekMessageW(&msg,window,NetworkMessage,NetworkMessage,PM_REMOVE))delete (Event*)msg.lParam;
