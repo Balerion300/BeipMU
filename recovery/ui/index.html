@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src http: https:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>BeipMU Recovery Preview</title><link rel="stylesheet" href="style.css"></head><body>
+<header><div><strong>BeipMU</strong><span class="badge">Recovery preview · 0.2</span></div><div id="protocol">Plain text</div></header>
+<form id="connection"><label>Server <input id="host" value="bod.westeros.org" spellcheck="false" aria-label="Server address"></label><label>Port <input id="port" value="3000" inputmode="numeric" aria-label="Server port"></label><button>Connect</button><button id="disconnect" type="button">Disconnect</button><span class="note">Plain TCP · separate preview profile</span></form>
+<div id="status" role="status">Ready. Pueblo and MXP are detected automatically.</div>
+<main id="output" tabindex="0" aria-label="World output"><div class="welcome"><h1>A buildable beginning.</h1><p>Connect to a world to test clickable links and images in the conversation.</p><p>Pueblo and the supported MXP tags are handled automatically. Images show loading failures and retain a link to their source.</p><p class="note">This recovery build does not yet include the original client's scripting, triggers, world profiles, or TLS connections.</p></div></main>
+<div id="menu" hidden role="menu"></div>
+<form id="command"><label for="input">Command</label><input id="input" autocomplete="off" spellcheck="false" placeholder="Type a command…"><button>Send</button></form>
+<footer><span id="counts">0 images</span><label><input id="autoscroll" type="checkbox" checked> Follow output</label><button id="clear" type="button">Clear display</button></footer>
+<script src="parser.js"></script><script src="app.js"></script></body></html>

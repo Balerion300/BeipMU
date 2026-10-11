@@ -1,6 +1,14 @@
 # BeipMU
 Windows MU* Client
 
+## Fork build recovery
+
+This fork now has a [buildable Windows recovery preview](recovery/README.md)
+with automatic Pueblo negotiation, a supported MXP subset, clickable links,
+and inline images. Build it with `recovery/build.ps1`.
+It is an initial replacement runtime; the complete original client still needs
+its missing shared libraries and application components restored.
+
 Feel free to ask any questions on our Discord channel, or to log any issues here.
 
 Invite link to join our Discord: https://discord.gg/3A5quTU

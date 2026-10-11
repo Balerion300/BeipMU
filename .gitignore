@@ -3,3 +3,7 @@
 ################################################################################
 
 /.vs
+/recovery/vendor/
+/recovery/build/
+/recovery/dist/
+/recovery/test-results/
