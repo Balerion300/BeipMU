@@ -5,13 +5,18 @@ window.BeipCoreTest=async function(config){
  const el=id=>document.getElementById(id);
  const press=(target,key,options={})=>{const event=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});target.dispatchEvent(event);return event;};
  const visible=id=>{const node=el(id);return !!node&&getComputedStyle(node).display!=='none'&&node.getClientRects().length>0;};
- const openDock=async(action,label,type)=>{let tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);if(!tab){if(window.BeipDockPanels?.floatingStatus(app.current).some(item=>item.type===type)){await wait(()=>window.BeipDockPanels.floatingStatus(app.current).some(item=>item.type===type&&item.ready&&item.rendered),'restored floating '+label);window.BeipDockPanels.dockPane(type,app.current);}else app.incoming(action);}await wait(()=>{tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);return !!tab;},label+' dock tab');tab.click();await wait(()=>!!el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]'),label+' dock pane');return el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]');};
+ const paneFor=type=>document.querySelector('.dock-host .dock-pane[data-dock="'+type+'"]');
+ const edgeOf=type=>paneFor(type)?.closest('.dock-host')?.dataset.edge;
+ const tabFor=label=>[...document.querySelectorAll('.dock-host [role="tab"]')].find(item=>item.textContent===label);
+ const openDock=async(action,label,type)=>{let tab=tabFor(label);if(!tab){if(window.BeipDockPanels?.floatingStatus(app.current).some(item=>item.type===type)){await wait(()=>window.BeipDockPanels.floatingStatus(app.current).some(item=>item.type===type&&item.ready&&item.rendered),'restored floating '+label);window.BeipDockPanels.dockPane(type,app.current);}else app.incoming(action);}await wait(()=>{tab=tabFor(label);return !!tab;},label+' dock tab');tab.click();await wait(()=>!!paneFor(type),label+' dock pane');return paneFor(type);};
  const scriptSource=[
   'window.UserData=0;',
   'window.connection.SetOnReceive(function(text,win){if(text==="CORE SCRIPT SUPPRESS"){win.UserData++;win.output.write("RECEIVE SCRIPT "+win.connection.Character.name+":"+win.UserData);return true;}return false;},window);',
   'window.connection.SetOnSend(function(text,win){if(text==="core-hook-blocked"){win.output.write("SEND SCRIPT "+win.connection.Character.name);return true;}return false;},window);',
   'window.connection.SetOnConnect(function(win){win.output.write("CONNECT SCRIPT "+win.connection.Character.name);},window);',
+  'window.SetOnCommand(function(name,parameters,win){if(name==="core-script-command"){win.output.write("COMMAND SCRIPT "+win.connection.Character.name+":"+parameters);return true;}if(name==="core-script-input"){win.Input.Set("script draft "+win.connection.Character.name);win.Input.SetSel(0,6);app.OutputDebugText("DEBUG SCRIPT "+win.connection.Character.name);win.output.write("INPUT SCRIPT "+win.connection.Character.name);return true;}if(name==="core-script-timer-input"){app.CreateTimeout(250,function(owner){owner.output.write("TIMER INPUT "+owner.Input.Get());},win);return true;}return false;},window);',
   'function CoreTrigger(win,line,ranges){win.output.write("TRIGGER SCRIPT "+line.string.slice(ranges(2),ranges(3)));}',
+  'window.output.write("PROFILE SCRIPT "+app.Worlds("Core fixture").Characters("Alpha").Name+":"+app.Windows.Count+":"+window.Title);',
   'app.CreateTimeout(150,function(win){win.output.write("TIMER SCRIPT "+win.connection.Character.name);},window);'
  ].join('\n');
  let alpha,beta,persistenceLoaded=false,persistenceSaved=false;
@@ -81,6 +86,21 @@ window.BeipCoreTest=async function(config){
   send('connect|alpha|127.0.0.1|'+config.ports[0]+'|plain|corecharA');send('connect|beta|127.0.0.1|'+config.ports[1]+'|plain|corecharB');
   await wait(()=>alpha.connected&&beta.connected&&alpha.logging&&beta.logging,'both connected and logging');
   await wait(()=>alpha.view.textContent.includes('CONNECT SCRIPT Alpha')&&beta.view.textContent.includes('CONNECT SCRIPT Beta')&&alpha.view.textContent.includes('TIMER SCRIPT Alpha')&&beta.view.textContent.includes('TIMER SCRIPT Beta'),'independent startup scripts and timers');
+  const scriptProfiles=alpha.view.textContent.includes('PROFILE SCRIPT Alpha:')&&alpha.view.textContent.includes(':Alpha')&&beta.view.textContent.includes('PROFILE SCRIPT Alpha:')&&beta.view.textContent.includes(':Beta');
+  app.command('/core-script-command hello',false,alpha);
+  await wait(()=>alpha.view.textContent.includes('COMMAND SCRIPT Alpha:hello'),'script slash-command hook');
+  const scriptCommand=!beta.view.textContent.includes('COMMAND SCRIPT');
+  app.selectSession('beta');el('input').value='beta untouched';
+  app.command('/core-script-input',false,alpha);
+  await wait(()=>alpha.view.textContent.includes('INPUT SCRIPT Alpha')&&el('scriptDebugDialog')?.textContent.includes('DEBUG SCRIPT Alpha'),'script input and debug effects');
+  const scriptInputIsolation=app.current===beta&&el('input').value==='beta untouched'&&alpha.draft==='script draft Alpha'&&alpha.draftSelection?.start===0&&alpha.draftSelection?.end===6;
+  app.selectSession('alpha');const scriptInputVisible=el('input').value==='script draft Alpha'&&el('input').selectionStart===0&&el('input').selectionEnd===6;el('input').value='';
+  app.selectSession('beta');el('input').value='beta untouched';
+  await app.command('/core-script-timer-input',false,alpha);
+  alpha.draft='fresh Alpha';alpha.draftSelection={start:0,end:5};
+  await wait(()=>alpha.view.textContent.includes('TIMER INPUT fresh Alpha'),'fresh session input in script timer');
+  const scriptTimerInput=app.current===beta&&el('input').value==='beta untouched'&&!beta.view.textContent.includes('TIMER INPUT');
+  app.selectSession('alpha');el('input').value='';
   app.appendText(alpha,'CORE SCRIPT SUPPRESS\n');app.appendText(beta,'CORE SCRIPT SUPPRESS\n');
   await wait(()=>alpha.view.textContent.includes('RECEIVE SCRIPT Alpha:1')&&beta.view.textContent.includes('RECEIVE SCRIPT Beta:1'),'per-session receive hooks');
   const scriptReceive=[alpha,beta].every(session=>![...session.view.querySelectorAll('.line')].some(line=>line.textContent==='CORE SCRIPT SUPPRESS'));
@@ -136,7 +156,7 @@ window.BeipCoreTest=async function(config){
   const dockMap=mapDock.querySelectorAll('.dock-map g').length===2&&mapDock.querySelector('select[aria-label="Map destination"]')?.options.length===2;
   const dockSplitter=el('dockSplitter'),dockBefore=Number(dockSplitter.getAttribute('aria-valuenow'));dockSplitter.focus();press(dockSplitter,'ArrowLeft');
   const dockResize=Number(dockSplitter.getAttribute('aria-valuenow'))===Math.min(700,dockBefore+10);
-  app.selectSession('beta');const dockIsolation=!el('dockContent').querySelector('.dock-pane[data-dock="map"]');app.selectSession('alpha');
+  app.selectSession('beta');const dockIsolation=config.phase==='first'?!tabFor('Map'):!!tabFor('Map')&&!beta.view.textContent.includes('CORE A COMPLETE');app.selectSession('alpha');
   await openDock('ui:window-spawn','Spawn Window','spawn');
   await wait(()=>[...(el('dockContent').querySelector('.dock-pane[data-dock="spawn"] select[aria-label="Spawned window"]')?.options||[])].some(option=>option.value==='Core notifications'),'trigger spawn stream');
   const spawnPane=el('dockContent').querySelector('.dock-pane[data-dock="spawn"]');
@@ -151,8 +171,10 @@ window.BeipCoreTest=async function(config){
   const groupedCapture=captureLines.join('|')==='WHO BEGIN|WHO body|WHO END'&&alpha.view.textContent.includes('AFTER WHO')&&!beta.view.textContent.includes('WHO BEGIN');
   app.appendText(alpha,'WHO START\n');
   await wait(()=>[...el('dockContent').querySelectorAll('.dock-pane[data-dock="spawn"] .dock-output-copy .line')].filter(line=>line.textContent==='WHO BEGIN').length===2,'second spawn capture started');
-  app.command('/capturecancel',false,alpha);app.appendText(alpha,'AFTER CANCEL\n');
-  await wait(()=>alpha.view.textContent.includes('Spawn capture canceled.')&&alpha.view.textContent.includes('AFTER CANCEL'),'manual capture cancellation');
+  app.command('/capturecancel',false,alpha);
+  await wait(()=>alpha.view.textContent.includes('Spawn capture canceled.'),'manual capture cancellation acknowledgement');
+  app.appendText(alpha,'AFTER CANCEL\n');
+  await wait(()=>alpha.view.textContent.includes('AFTER CANCEL'),'output after manual capture cancellation');
   const captureCancel=[...alpha.view.querySelectorAll('.line')].some(line=>line.textContent==='AFTER CANCEL');
   const splitPane=await openDock('ui:window-split','Split Output','split');
   const splitOutput=splitPane.querySelector('.dock-output-copy')?.textContent||'';
@@ -161,6 +183,7 @@ window.BeipCoreTest=async function(config){
   const imagePane=await openDock('ui:window-image','Image Window','image');
   await wait(()=>imagePane.querySelector('.dock-image')?.complete&&imagePane.querySelector('.dock-image')?.naturalWidth===32,'docked image loaded');
   const imageDock=imagePane.querySelector('.dock-image').alt==='Core dock image'&&imagePane.textContent.includes('Core dock image');
+  const imagePlacement=edgeOf('image')==='top';
   const notesPane=await openDock('ui:window-character-notes','Character Notes','notes');
   const noteInput=notesPane.querySelector('.dock-notes');if(config.phase==='first')noteInput.value='Core alpha note';
   notesPane.querySelector('.dock-toolbar button').click();
@@ -174,11 +197,11 @@ window.BeipCoreTest=async function(config){
   macroDialog.querySelector('.classic-description').value='Core macro';macroDialog.querySelector('[data-action="ok"]').click();
   const macroEditor=!macroDialog.open&&app.state.macros.some(macro=>macro.description==='Core macro');
   if(!macroEditor)throw Error('Classic macro editor did not save its change.');
-  app.command('/delay 1s "core-delayed-alpha"',false,alpha);
-  app.command('/delay 2s "core-cancelled-alpha"',false,alpha);
+  await app.command('/delay 1s "core-delayed-alpha"',false,alpha);
+  await app.command('/delay 2s "core-cancelled-alpha"',false,alpha);
   const cancelledJob=window.BeipClientCommands.scheduler.list(alpha.id).find(job=>job.command==='core-cancelled-alpha');
   if(!cancelledJob)throw Error('Delayed command was not scheduled.');
-  app.command('/delay kill '+cancelledJob.id,false,alpha);
+  await app.command('/delay kill '+cancelledJob.id,false,alpha);
   app.selectSession('beta');
   await wait(()=>!window.BeipClientCommands.scheduler.list(alpha.id).length,'session-owned delayed command');
   const delayRouting=app.current===beta&&!window.BeipClientCommands.scheduler.list(alpha.id).length;
@@ -196,6 +219,8 @@ window.BeipCoreTest=async function(config){
   await wait(()=>input.value==='','Enter submits multiline commands');
   const typingUI=entered.defaultPrevented&&input.tagName==='TEXTAREA';
   const historyPane=await openDock('ui:window-input-history','Input History','history');
+  const historyPlacement=edgeOf('history')===(config.phase==='first'?'bottom':'left');
+  const layoutPersisted=config.phase==='first'||Number(el('dockSplitterLeft').getAttribute('aria-valuenow'))===290;
   const historyRows=[...historyPane.querySelectorAll('.dock-history-row')];
   const historyVisible=historyRows.some(row=>row.textContent==='core-line-one')&&historyRows.some(row=>row.textContent==='core-line-two');
   historyRows.find(row=>row.textContent==='core-line-two').click();const historyRecall=input.value==='core-line-two';
@@ -203,6 +228,22 @@ window.BeipCoreTest=async function(config){
   press(input,'ArrowUp',{ctrlKey:true});const draftRecall=input.value==='saved unsent draft';input.value='';
   app.selectSession('beta');const betaHistory=await openDock('ui:window-input-history','Input History','history');
   const historyIsolated=!betaHistory.textContent.includes('core-line-one')&&!betaHistory.textContent.includes('core-line-two')&&historyVisible&&historyRecall&&draftSaved&&draftRecall;
+  app.selectSession('alpha');
+  const movedEdges=[];
+  for(const edge of ['right','top','bottom','left']){
+   if(!window.BeipDockPanels.movePane('history',edge,alpha))throw Error('Could not move Input History to '+edge+'.');
+   await wait(()=>edgeOf('history')===edge,'Input History '+edge+' dock');
+   movedEdges.push(edgeOf('history')===edge);
+  }
+  const leftSplitter=el('dockSplitterLeft'),leftBefore=Number(leftSplitter.getAttribute('aria-valuenow'));
+  leftSplitter.focus();press(leftSplitter,'ArrowRight');
+  const leftAfter=Number(leftSplitter.getAttribute('aria-valuenow'));
+  const layoutResize=leftAfter===leftBefore+10;
+  const copied=window.BeipDockPanels.copyAllWindowSettings(alpha);
+  app.selectSession('beta');const pasted=window.BeipDockPanels.pasteAllWindowSettings(beta);
+  await wait(()=>edgeOf('history')==='left','copied Input History placement');
+  const betaCopiedHistory=paneFor('history');
+  const layoutCopyPaste=copied&&pasted&&edgeOf('history')==='left'&&Number(el('dockSplitterLeft').getAttribute('aria-valuenow'))===leftAfter&&!betaCopiedHistory.textContent.includes('core-line-one')&&!betaCopiedHistory.textContent.includes('core-line-two');
   app.selectSession('alpha');
   if(config.phase==='first'){
    app.state.preferences.shortcuts=window.BeipShortcuts.assign(app.state.preferences.shortcuts,'clearInput','Ctrl+K');
@@ -230,10 +271,27 @@ window.BeipCoreTest=async function(config){
   app.incoming('float:event|'+floatId+'|'+btoa(JSON.stringify({action:'history-recall',index:0})));
   const floatingOwner=app.current===alpha&&el('input').value===expectedRecall;
   app.incoming('float:event|'+floatId+'|'+btoa(JSON.stringify({action:'dock'})));
-  await wait(()=>!window.BeipDockPanels.floatingStatus(alpha).some(item=>item.type==='history')&&!!el('dockContent').querySelector('.dock-pane[data-dock="history"]'),'floating history docks back');
-  const floatingDock=!!el('dockContent').querySelector('.dock-pane[data-dock="history"]');
+  await wait(()=>!window.BeipDockPanels.floatingStatus(alpha).some(item=>item.type==='history')&&!!paneFor('history'),'floating history docks back');
+  const floatingDock=!!paneFor('history');
   el('input').value='';
-  const result={phase:config.phase,classicLayout:initialLayout,connectionDialog,quickConnect,nativeDialogs:nativeDialogs.every(Boolean),settingsUI,loggingDialog,loggingControls,aliasEditor,triggerEditor,macroEditor,inputResize,typingUI,isolated:!alpha.view.textContent.includes('CORE B COMPLETE')&&!beta.view.textContent.includes('CORE A COMPLETE'),commandsSent:true,logging:alpha.logging&&beta.logging,persistenceSaved,persistenceLoaded,alpha:{text:alpha.view.textContent,connected:alpha.connected},beta:{text:beta.view.textContent,connected:beta.connected},logPaths:[alpha.logPath,beta.logPath],gmcpStats:alpha.gmcp.rows(),scripts:true,scriptReceive,scriptTrigger,scriptTimers,scriptIsolation,draftsIsolated,spawn,credentialSaved:app.secretStatuses?.get('corecharA')==='on',avatarLoaded,tilemapRendered,mediaDisabled,mapperUI,dockMap,dockResize,dockIsolation,groupedCapture,captureCancel,splitIsolated,imageDock,notesIsolated,historyIsolated,shortcutRemap,delayRouting,smartPasteRouting,floatingOwner,floatingDock,errors};
+  app.incoming('ui:options-atlas-export');await wait(()=>el('classicMapExportDialog')?.open,'native Atlas export dialog');
+  const exportDialog=el('classicMapExportDialog');
+  exportDialog.querySelector('[data-world]').value='coreworld';
+  exportDialog.querySelector('[data-world]').dispatchEvent(new Event('change'));
+  const atlasExportPreview=exportDialog.querySelector('[data-preview]').textContent.includes('2')&&!exportDialog.querySelector('[data-save]').disabled;
+  const exported=window.BeipAtlasExportCore.exportAtlas(app.state.maps.coreworld,app.state.maps.coreworld.name||'Core fixture');
+  if(exported.bytes.length>16384)throw Error('Fixture Atlas export is unexpectedly large.');
+  const atlasBytes=btoa(String.fromCharCode(...exported.bytes));
+  exportDialog.querySelector('[data-save]').click();await wait(()=>!exportDialog.open,'native Atlas save acknowledgement');
+  const atlasPlan=await window.BeipClassicImport.previewAtlas(exported.bytes,'exported-map.atlas');
+  const importDialog=el('classicImportDialog');
+  const atlasExportPreviewed=atlasPlan.maps.length===1&&atlasPlan.maps[0].graph.rooms.length===2&&atlasPlan.maps[0].graph.exits.some(exit=>exit.command==='n')&&importDialog.open;
+  importDialog.querySelector('[data-target="world"]').value='coreworld';
+  importDialog.querySelector('[data-target="world"]').dispatchEvent(new Event('change'));
+  importDialog.querySelector('[data-action="apply"]').click();
+  const reimported=app.state.maps.coreworld;
+  const atlasReimport=!!reimported&&reimported.rooms.length===2&&reimported.exits.some(exit=>exit.command==='n')&&!importDialog.open;
+  const result={phase:config.phase,classicLayout:initialLayout,connectionDialog,quickConnect,nativeDialogs:nativeDialogs.every(Boolean),settingsUI,loggingDialog,loggingControls,aliasEditor,triggerEditor,macroEditor,inputResize,typingUI,isolated:!alpha.view.textContent.includes('CORE B COMPLETE')&&!beta.view.textContent.includes('CORE A COMPLETE'),commandsSent:true,logging:alpha.logging&&beta.logging,persistenceSaved,persistenceLoaded,alpha:{text:alpha.view.textContent,connected:alpha.connected},beta:{text:beta.view.textContent,connected:beta.connected},logPaths:[alpha.logPath,beta.logPath],gmcpStats:alpha.gmcp.rows(),scripts:true,scriptReceive,scriptTrigger,scriptTimers,scriptIsolation,scriptProfiles,scriptCommand,scriptInputIsolation,scriptInputVisible,scriptTimerInput,draftsIsolated,spawn,credentialSaved:app.secretStatuses?.get('corecharA')==='on',avatarLoaded,tilemapRendered,mediaDisabled,mapperUI,dockMap,dockResize,dockIsolation,groupedCapture,captureCancel,splitIsolated,imageDock,imagePlacement,notesIsolated,historyIsolated,historyPlacement,layoutPersisted,layoutMoves:movedEdges.every(Boolean),layoutResize,layoutCopyPaste,shortcutRemap,delayRouting,smartPasteRouting,floatingOwner,floatingDock,atlasExportPreview,atlasExportPreviewed,atlasReimport,atlasBytes,errors};
   // Kill a runaway user script while preserving the other session and UI.
   app.command('/@try{new Worker("script-worker.js");window.output.write("CHILD ALLOWED");}catch(e){window.output.write("CHILD BLOCKED");}',false,alpha);await wait(()=>alpha.view.textContent.includes('CHILD BLOCKED'),'worker CSP');result.workerCSP=!alpha.view.textContent.includes('CHILD ALLOWED');
   app.command('/@while(true){}',false,alpha);await wait(()=>!alpha.scripts.enabled,'runaway script termination');result.scriptTimeout=alpha.view.textContent.includes('execution time limit');

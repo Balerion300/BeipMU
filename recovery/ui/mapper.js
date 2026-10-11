@@ -21,8 +21,32 @@
   function validTitle(value) { return typeof value === 'string' && value.length > 0 && value.length <= 160 && !/[\u0000-\u001f]/.test(value); }
   function validCoordinate(value) { return Number.isInteger(value) && Math.abs(value) <= MAX_COORDINATE; }
   function validCommand(value) { return typeof value === 'string' && value.trim().length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/.test(value); }
-  function cloneRoom(room) { return { id: room.id, title: room.title, x: room.x, y: room.y }; }
-  function cloneExit(exit) { return { id: exit.id, from: exit.from, to: exit.to, command: exit.command }; }
+  function validColor(value) { return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value); }
+  function validRect(value) { return Array.isArray(value) && value.length === 4 && value.every(validCoordinate) && value[0] < value[2] && value[1] < value[3]; }
+  function validPoints(value) { return Array.isArray(value) && value.length <= 32 && value.every(point => Array.isArray(point) && point.length === 2 && point.every(validCoordinate)); }
+  function validRoomExtras(room) {
+    return (room.rect === undefined || validRect(room.rect) && Math.round((room.rect[0]+room.rect[2])/2)===room.x && Math.round((room.rect[1]+room.rect[3])/2)===room.y) &&
+      (room.color === undefined || validColor(room.color)) &&
+      (room.outlineColor === undefined || validColor(room.outlineColor)) &&
+      (room.textAngle === undefined || Number.isInteger(room.textAngle) && room.textAngle >= 0 && room.textAngle < 360) &&
+      (room.underConstruction === undefined || typeof room.underConstruction === 'boolean');
+  }
+  function validExitExtras(exit) {
+    return (exit.points === undefined || validPoints(exit.points)) &&
+      (exit.atlasPair === undefined || validId(exit.atlasPair));
+  }
+  function cloneRoom(room) {
+    const result = { id: room.id, title: room.title, x: room.x, y: room.y };
+    if (room.rect !== undefined) result.rect = [...room.rect];
+    for (const key of ['color', 'outlineColor', 'textAngle', 'underConstruction']) if (room[key] !== undefined) result[key] = room[key];
+    return result;
+  }
+  function cloneExit(exit) {
+    const result = { id: exit.id, from: exit.from, to: exit.to, command: exit.command };
+    if (exit.points !== undefined) result.points = exit.points.map(point => [...point]);
+    if (exit.atlasPair !== undefined) result.atlasPair = exit.atlasPair;
+    return result;
+  }
   function normalize(raw) {
     if (raw == null) return { version: 1, rooms: [], exits: [], currentRoomId: null };
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
@@ -32,20 +56,29 @@
     const roomIds = new Set(), exitIds = new Set(), rooms = [], exits = [];
     for (const room of raw.rooms) {
       if (!room || !validId(room.id) || roomIds.has(room.id) ||
-          !validTitle(room.title) || !validCoordinate(room.x) || !validCoordinate(room.y))
+          !validTitle(room.title) || !validCoordinate(room.x) || !validCoordinate(room.y) || !validRoomExtras(room))
         throw new TypeError('Invalid room data.');
       roomIds.add(room.id); rooms.push(cloneRoom(room));
     }
     for (const exit of raw.exits) {
       if (!exit || !validId(exit.id) || exitIds.has(exit.id) ||
-          !roomIds.has(exit.from) || !roomIds.has(exit.to) || !validCommand(exit.command))
+          !roomIds.has(exit.from) || !roomIds.has(exit.to) || !validCommand(exit.command) || !validExitExtras(exit))
         throw new TypeError('Invalid exit data.');
       exitIds.add(exit.id); exits.push(cloneExit(exit));
     }
     const currentRoomId = raw.currentRoomId == null ? null : raw.currentRoomId;
     if (currentRoomId !== null && !roomIds.has(currentRoomId))
       throw new TypeError('Current room does not exist.');
-    return { version: 1, rooms, exits, currentRoomId };
+    const result = { version: 1, rooms, exits, currentRoomId };
+    if (raw.name !== undefined) {
+      if (typeof raw.name !== 'string' || !raw.name || raw.name.length > 80 || /[\u0000-\u001f]/.test(raw.name)) throw new TypeError('Invalid map name.');
+      result.name = raw.name;
+    }
+    for (const key of ['backgroundColor', 'exitColor']) if (raw[key] !== undefined) {
+      if (!validColor(raw[key])) throw new TypeError('Invalid map color.');
+      result[key] = raw[key];
+    }
+    return result;
   }
   function createWorld(initial) {
     const snapshot = normalize(initial);
@@ -60,18 +93,23 @@
     function addRoom(input) {
       if (!input || rooms.size >= MAX_ROOMS) throw new Error('Room limit reached.');
       const id = input.id ?? generated('r', rooms, () => nextRoom++);
-      const room = { id, title: input.title, x: input.x, y: input.y };
+      const room = { ...input, id, title: input.title, x: input.x, y: input.y };
       if (!validId(id) || rooms.has(id) || !validTitle(room.title) ||
-          !validCoordinate(room.x) || !validCoordinate(room.y)) throw new TypeError('Invalid room.');
-      rooms.set(id, room); return cloneRoom(room);
+          !validCoordinate(room.x) || !validCoordinate(room.y) || !validRoomExtras(room)) throw new TypeError('Invalid room.');
+      rooms.set(id, cloneRoom(room)); return cloneRoom(room);
     }
     function editRoom(id, patch) {
       const old = rooms.get(id);
       if (!old || !patch || patch.id != null) throw new TypeError('Invalid room edit.');
       const updated = { ...old, ...patch };
+      if (old.rect && patch.rect === undefined && (patch.x !== undefined || patch.y !== undefined)) {
+        const dx=updated.x-old.x,dy=updated.y-old.y;
+        updated.rect=[old.rect[0]+dx,old.rect[1]+dy,old.rect[2]+dx,old.rect[3]+dy];
+      }
       if (!validTitle(updated.title) || !validCoordinate(updated.x) || !validCoordinate(updated.y))
         throw new TypeError('Invalid room edit.');
-      rooms.set(id, updated); return cloneRoom(updated);
+      if (!validRoomExtras(updated)) throw new TypeError('Invalid room edit.');
+      rooms.set(id, cloneRoom(updated)); return cloneRoom(updated);
     }
     function removeRoom(id) {
       if (!rooms.delete(id)) return false;
@@ -83,18 +121,18 @@
     function addExit(input) {
       if (!input || exits.size >= MAX_EXITS) throw new Error('Exit limit reached.');
       const id = input.id ?? generated('e', exits, () => nextExit++);
-      const exit = { id, from: input.from, to: input.to, command: input.command };
+      const exit = { ...input, id, from: input.from, to: input.to, command: input.command };
       if (!validId(id) || exits.has(id) || !rooms.has(exit.from) || !rooms.has(exit.to) ||
-          !validCommand(exit.command)) throw new TypeError('Invalid exit.');
-      exits.set(id, exit); return cloneExit(exit);
+          !validCommand(exit.command) || !validExitExtras(exit)) throw new TypeError('Invalid exit.');
+      exits.set(id, cloneExit(exit)); return cloneExit(exit);
     }
     function editExit(id, patch) {
       const old = exits.get(id);
       if (!old || !patch || patch.id != null) throw new TypeError('Invalid exit edit.');
       const updated = { ...old, ...patch };
-      if (!rooms.has(updated.from) || !rooms.has(updated.to) || !validCommand(updated.command))
+      if (!rooms.has(updated.from) || !rooms.has(updated.to) || !validCommand(updated.command) || !validExitExtras(updated))
         throw new TypeError('Invalid exit edit.');
-      exits.set(id, updated); return cloneExit(updated);
+      exits.set(id, cloneExit(updated)); return cloneExit(updated);
     }
     function removeExit(id) { return exits.delete(id); }
     function setCurrentRoom(id) {
@@ -141,8 +179,8 @@
       return validCoordinate(x) && validCoordinate(y) ? { x, y } : null;
     }
     function serialize() {
-      return { version: 1, rooms: [...rooms.values()].map(cloneRoom),
-        exits: [...exits.values()].map(cloneExit), currentRoomId };
+      return { ...Object.fromEntries(['name','backgroundColor','exitColor'].filter(key=>snapshot[key]!==undefined).map(key=>[key,snapshot[key]])),
+        version: 1, rooms: [...rooms.values()].map(cloneRoom), exits: [...exits.values()].map(cloneExit), currentRoomId };
     }
     return { addRoom, editRoom, removeRoom, addExit, editExit, removeExit,
       setCurrentRoom, shortestPath, walkCommands, suggestCoordinates, serialize,

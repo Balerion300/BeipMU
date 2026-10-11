@@ -14,6 +14,22 @@ function hook(name,fn,data){if(fn!==null&&typeof fn!=='function')throw Error('Ex
 function call(name,...args){const item=hooks.get(name);return item?item.fn(...args,item.data)===true:false;}
 function outputLine(type,value){emit(type,value);}
 const output=Object.freeze({write:value=>outputLine('output',value),Write:value=>outputLine('output',value),writeHTML:value=>outputLine('html',value),WriteHTML:value=>outputLine('html',value)});
+function collection(items){
+ const list=Array.isArray(items)?items:[];
+ const get=value=>typeof value==='number'?list[value]||null:list.find(item=>item.name?.toLocaleLowerCase()===String(value).toLocaleLowerCase())||null;
+ const result=value=>get(value);result.Item=get;Object.defineProperty(result,'Count',{get:()=>list.length});return Object.freeze(result);
+}
+function characterObject(item){if(!item)return null;return Object.freeze({id:item.id,name:item.name,Name:item.name,info:item.notes||'',Info:item.notes||''});}
+function worldObject(item){if(!item)return null;const characters=collection((item.characters||[]).map(characterObject));return Object.freeze({id:item.id,name:item.name,Name:item.name,host:item.host,Host:item.host,info:item.notes||'',Info:item.notes||'',characters,Characters:characters});}
+function windowSummary(item){return Object.freeze({id:item.id,name:item.title,title:item.title,Title:item.title});}
+const input=Object.freeze({
+ Get:()=>context.input?.text||'',get:()=>context.input?.text||'',
+ Set(value){value=String(value);if(value.length>MAX_VALUE)throw Error('Input text is too long.');if(effects.length>=MAX_EFFECTS)throw Error('Script action limit exceeded.');effects.push({type:'input-set',value});context.input={text:value,start:value.length,end:value.length};},
+ set(value){return input.Set(value);},
+ SetSel(start,end){const length=context.input?.text?.length||0;start=Number(start);end=Number(end);if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end))throw Error('Invalid input selection.');start=Math.max(0,Math.min(length,start));end=Math.max(start,Math.min(length,end));if(effects.length>=MAX_EFFECTS)throw Error('Script action limit exceeded.');effects.push({type:'input-select',start,end});context.input={...context.input,start,end};},
+ GetSelStart:()=>context.input?.start||0,GetSelEnd:()=>context.input?.end||0,
+ get Length(){return context.input?.text?.length||0;}
+});
 const connection={
  send(value){value=String(value);if(!call('send',value))emit('send',value);},
  Send(value){return connection.send(value);},
@@ -24,20 +40,15 @@ const connection={
  SetOnConnect:(fn,data)=>hook('connect',fn,data),SetOnDisconnect:(fn,data)=>hook('disconnect',fn,data),
  IsConnected:()=>!!context.connected,IsLogging:()=>!!context.logging,
  isconnected:()=>!!context.connected,islogging:()=>!!context.logging,
- get World(){return context.world||null;},get Character(){return context.character||null;}
+ get World(){return worldObject(context.world);},get Character(){return characterObject(context.character);}
 };
 Object.freeze(connection);
-const windowObject={output,Output:output,connection,Connection:connection,
+const windowObject={output,Output:output,input,Input:input,connection,Connection:connection,
  SetOnCommand:(fn,data)=>hook('command',fn,data),Run:source=>{source=String(source);if(source.length>65536)throw Error('Script exceeds 64 KB.');return (0,eval)(source);},
  get UserData(){return windowData;},set UserData(value){windowData=value;},
  get userdata(){return windowData;},set userdata(value){windowData=value;},
  get Title(){return context.title||context.character?.name||context.world?.name||'';}};
 Object.freeze(windowObject);
-function collection(items){
- const list=Array.isArray(items)?items:[];
- const get=value=>typeof value==='number'?list[value]||null:list.find(item=>item.name===String(value))||null;
- const result=value=>get(value);result.Item=get;Object.defineProperty(result,'Count',{get:()=>list.length});return Object.freeze(result);
-}
 function newTimer(delay,fn,data,repeat){
  delay=Number(delay);
  if(!Number.isSafeInteger(delay)||delay<100||delay>3600000)throw Error('Timer interval must be 100–3600000 ms.');
@@ -52,8 +63,9 @@ const app={
  CreateInterval:(ms,fn,data)=>newTimer(ms,fn,data,true),
  createtimeout:(ms,fn,data)=>newTimer(ms,fn,data,false),
  createinterval:(ms,fn,data)=>newTimer(ms,fn,data,true),
- get Worlds(){return collection(context.worlds);},get worlds(){return collection(context.worlds);},
- get Windows(){return collection(context.windows);},get windows(){return collection(context.windows);},
+ get Worlds(){return collection(context.worlds.map(worldObject));},get worlds(){return collection(context.worlds.map(worldObject));},
+ get Windows(){return collection(context.windows.map(windowSummary));},get windows(){return collection(context.windows.map(windowSummary));},
+ OutputDebugText:value=>emit('debug',String(value).slice(0,512)),outputdebugtext:value=>emit('debug',String(value).slice(0,512)),
  get BuildNumber(){return Number(context.buildNumber)||0;},get buildnumber(){return Number(context.buildNumber)||0;}
 };
 Object.freeze(app);
@@ -83,7 +95,7 @@ async function run(type,value){
   return handled;
  }
  if(type==='connect'||type==='disconnect')return call(type);
- if(type==='command'){const raw=String(value),space=raw.indexOf(' ');return call('command',space<0?raw:raw.slice(0,space),space<0?'':raw.slice(space+1));}
+ if(type==='command'){const raw=String(value).replace(/^\/(?!\/)/,''),space=raw.indexOf(' ');return call('command',space<0?raw:raw.slice(0,space),space<0?'':raw.slice(space+1));}
  if(type==='timer'){
   const timer=timers.get(Number(value));if(!timer)return false;
   if(!timer.repeat)timers.delete(timer.id);

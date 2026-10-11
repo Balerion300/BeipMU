@@ -1,7 +1,7 @@
 # BeipMU recovery feature inventory
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the 0.6 recovery worktree (`recovery/`). The original 4.335 executable was
+from the 0.7 recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.
 "Verified" below means focused tests or an app fixture passed for the stated
 subset. Version labels identify the verified milestone; they do not mean full
@@ -19,9 +19,9 @@ upstream compatibility.
 | Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. 0.6 adds native floating panes; full free drag docking remains open. |
 | Keyboard shortcuts and macros | Remappable application shortcuts and per-world macros | **0.3 app fixture verified subset:** scoped keyboard macros and command history. **0.5 app fixture verified:** session history pane, entry recall, and Ctrl+Down saving a draft without sending it. 0.6 adds remapping of supported application actions. |
 | Logging | Manual and automatic per-character logs, date naming, log from scrollback | **0.3 app fixture verified subset:** start/stop session logs, local log files and transcript export. **0.5 app fixture verified:** restarting a log from the beginning includes existing scrollback; captured lines marked log-gag are absent. Original per-character naming and full lifecycle options remain open. |
-| Scripting | JavaScript startup and immediate mode, trigger functions, application objects | **0.3 app fixture verified subset:** opt-in worker JavaScript with startup/immediate execution, line/GMCP callbacks, bounded effects and execution timeout. 0.6 adds send/receive suppression, raw GMCP callbacks, named trigger functions, window userdata, connection Display/Transmit, bounded timers and script error output. Native COM/filesystem and the complete application object model remain open. |
+| Scripting | JavaScript startup and immediate mode, trigger functions, application objects | **0.3 app fixture verified subset:** opt-in worker JavaScript with startup/immediate execution, line/GMCP callbacks, bounded effects and execution timeout. 0.6 adds send/receive suppression, raw GMCP callbacks, named trigger functions, window userdata, connection Display/Transmit, bounded timers and script error output. 0.7 adds input controls, character collections, window titles, debug output and command callbacks. Native COM/filesystem and the complete application object model remain open. |
 | GMCP | Core.Hello/Supports and `Beip.Stats`, `Beip.Tilemap`, `Beip.Id`, `Client.Media` | **0.3 app fixture verified subset:** telnet GMCP negotiation, Core.Hello/Supports, `Beip.Stats` and `Beip.Id`; incoming `Beip.Tilemap` and `Client.Media` messages reach their browser modules. Core.Supports advertises Stats, Tilemap, Id and Client.Media version 1. |
-| Mapping | Interactive atlas with rooms, exits, route finding, editing | **0.3 app fixture verified subset:** per-world rooms, coordinates, directed exits and shortest routes; browser map dialog creates and edits two rooms, adds an exit, marks the current room, displays the `n` route, and persists the graph. 0.6 adds reviewed XML/ZIP Atlas import. Atlas export, layers, drawings and automatic location tracking remain open. |
+| Mapping | Interactive atlas with rooms, exits, route finding, editing | **0.3 app fixture verified subset:** per-world rooms, coordinates, directed exits and shortest routes; browser map dialog creates and edits two rooms, adds an exit, marks the current room, displays the `n` route, and persists the graph. 0.6 adds reviewed XML/ZIP Atlas import. 0.7 adds single-map Atlas export with supported room and exit metadata. Multiple layers, drawings and automatic location tracking remain open. |
 | Client commands and Smart Paste | Documented slash commands, delayed sends, multiline clipboard/file sending with pace and affixes | **0.5 app fixture verified subset:** `/delay` sends on its originating session after the active tab changes, cancellation prevents a pending send, and Smart Paste sends two paced prefixed/suffixed lines only to its originating session. Module tests cover the broader implemented command subset and paste validation. Complete original command vocabulary and dialog behavior remain open. |
 | Stat windows | Text/range/progress displays and updates | **0.3 app fixture verified subset:** `Beip.Stats` text, range and progress display. Richer original layout behavior remains open. |
 | Client.Media | Default/Load/Play/Stop; name-based sound playback | **Partial browser fixture verified:** incoming `Default` and `Load` messages set the media base and cache a name while playback stays disabled by default. Isolated module tests cover `Play`, `Stop`, volume and loops. Browser audio playback still needs checking. |
@@ -53,13 +53,12 @@ remains outside this slice.
 | Rules | Original aliases and triggers offer nested processing, folders, variables, conditions and richer actions | The app fixture exercised capture-until, grouping, move/copy, filtered text, log-gag, manual cancellation and an editor save; module tests cover bounds and disabled behavior | Features not explicitly modeled or tested remain open, particularly original script and action compatibility |
 | Client commands and Smart Paste | Delayed session commands and paced sending of clipboard or file lines | A delayed command and two paced paste lines reached the originating connection after another tab became active; cancel prevented a second delayed send | Complete original command vocabulary, clipboard selection flow, and all paste options |
 
-The highest-value documented gaps beyond this slice are the original flexible
-docking and floating-window layout, nested rules, variables and additional
-trigger actions ([Triggers](../Documentation/Triggers.md)); remappable built-in
-shortcuts ([Shortcuts](../Documentation/Shortcuts.md)); and automatic selection
-copy plus the complete Pause behavior ([Getting Started](../Documentation/GettingStarted.md)).
-The 0.5 Smart Paste and capture-until work address supported subsets of those
-features; they do not imply full original compatibility.
+Remaining high-value gaps include free drag docking and arbitrary nested pane
+arrangements, nested rules and variables, additional trigger actions, complete
+per-profile settings inheritance, original connect templates and log naming,
+and the complete original scripting object model. Remappable supported
+shortcuts, selection copy, Pause and native floating panes are implemented in
+the earlier slices; they no longer belong in the unimplemented list.
 
 ## Rules contract in this recovery branch
 
@@ -128,7 +127,7 @@ exits have stable IDs, endpoints, and one-line commands. Its editor methods,
 only on local graph state. The caller must send returned walk commands only
 after an explicit user action. `normalize()` rejects invalid persisted maps,
 with limits of 1,024 rooms and 4,096 exits. This is the route and room data
-foundation. `classic-import-core.js` reads bounded original XML/ZIP `.atlas` files; writing Atlas files remains open.
+foundation. `classic-import-core.js` reads bounded original XML/ZIP `.atlas` files; 0.7 adds reviewed single-map Atlas export with supported metadata retention.
 
 References: [Aliases](../Documentation/Aliases.md),
 [Triggers](../Documentation/Triggers.md),
@@ -171,3 +170,29 @@ startup, send/receive suppression, named trigger ranges, session timers,
 watchdog/debug output, worker restrictions and per-session command routing.
 These checks establish the supported subset; they do not establish complete
 original BeipMU feature or visual parity.
+
+## Preview 0.7 scope
+
+Pane layouts support left/right/top/bottom groups, edge-specific sizes, and an
+internal Copy/Paste all window settings action. Input History defaults below
+the main output; Image Window defaults above it. Floating panes remain native
+Windows windows. This supports the original arrangement workflow, while free
+drag docking, arbitrary splits and copied original preference groups remain open.
+
+Atlas export creates a bounded ZIP containing one Atlas.xml. It retains supported
+room rectangles, fill/outline colors, text angles, construction flags and exit
+bend points/pair relationships. Map names and colors persist. Multiple map layers,
+cross-map links, embedded images and arbitrary drawings remain outside the graph.
+Export review identifies this scope before saving.
+
+Scripting adds session-owned input text and selection effects, read-only character
+collections and window titles, debug output, and slash-command callbacks before
+built-in command handling. These are bounded compatibility APIs; native COM,
+filesystem and cross-session mutation remain unsupported.
+
+0.7 packaged acceptance passed on fresh and persisted launches
+(`sessions-20261011-234930`), including four-edge movement/resizing, copied
+layouts with separate session content, native floating-pane lifecycle, script
+input/selection and live timer context, Atlas save-byte verification through
+Python ZIP/XML readers, and reviewed browser reimport. Pueblo/MXP image/link
+and WHO-spacing fixtures also passed. Browser and native screenshots were inspected.

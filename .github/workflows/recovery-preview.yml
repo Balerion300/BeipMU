@@ -21,5 +21,5 @@ jobs:
         run: ./recovery/build.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: BeipMU-Recovery-0.6-x64
-          path: recovery/dist/BeipMU-Recovery-0.6-x64.zip
+          name: BeipMU-Recovery-0.7-x64
+          path: recovery/dist/BeipMU-Recovery-0.7-x64.zip

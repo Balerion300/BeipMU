@@ -1,7 +1,9 @@
 """Exercise independent native sessions and isolated settings through WebView2."""
 
 import json
+import base64
 import http.server
+import io
 import pathlib
 import socket
 import struct
@@ -9,9 +11,11 @@ import subprocess
 import threading
 import time
 import zlib
+import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.6" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.7" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -148,14 +152,17 @@ def run(phase):
     assert result.get("commandsSent") is True, result
     assert result.get("logging") is True, result
     assert result.get("scripts") is True and result.get("scriptTimeout") is True, result
-    for check in ("scriptReceive", "scriptTrigger", "scriptTimers", "scriptIsolation", "scriptDebug"):
+    for check in ("scriptReceive", "scriptTrigger", "scriptTimers", "scriptIsolation", "scriptDebug",
+                  "scriptProfiles", "scriptCommand", "scriptInputIsolation", "scriptInputVisible", "scriptTimerInput"):
         assert result.get(check) is True, (check, result)
     assert result.get("credentialSaved") is True, result
     assert result.get("avatarLoaded") is True and result.get("tilemapRendered") is True, result
     assert result.get("mediaDisabled") is True, result
     assert result.get("mapperUI") is True, result
     for check in ("dockMap", "dockResize", "dockIsolation", "groupedCapture", "captureCancel", "splitIsolated",
-                  "imageDock", "notesIsolated", "historyIsolated", "floatingOwner", "floatingDock",
+                  "imageDock", "imagePlacement", "notesIsolated", "historyIsolated", "historyPlacement",
+                  "layoutPersisted", "layoutMoves", "layoutResize", "layoutCopyPaste", "floatingOwner", "floatingDock",
+                  "atlasExportPreview", "atlasExportPreviewed", "atlasReimport",
                   "floatingSessionCleanup", "shortcutRemap", "delayRouting", "smartPasteRouting"):
         assert result.get(check) is True, (check, result)
     imported = result.get("classicImport") or {}
@@ -168,6 +175,12 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
+    exported = (OUT / "exported-map.atlas").read_bytes()
+    assert exported == base64.b64decode(result.get("atlasBytes") or ""), f"{phase}: native Atlas bytes differ from reviewed export"
+    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+        atlas_xml = ET.fromstring(archive.read("Atlas.xml"))
+    assert [room.get("name") for room in atlas_xml.iter("room")] == ["Start", "North"], atlas_xml
+    assert any(exit_node.get("name_from") == "n" for exit_node in atlas_xml.iter("exit")), atlas_xml
     if phase == "first":
         assert result.get("persistenceSaved") is True, result
     for key, marker in (("alpha", "CORE A COMPLETE"), ("beta", "CORE B COMPLETE")):
@@ -199,6 +212,7 @@ def run(phase):
     assert b"core-trigger-alpha\r\n" in a and b"core-trigger-alpha\r\n" not in b,(phase,a,b)
     assert b"core-hook-allowed\r\n" in a and b"core-hook-allowed\r\n" not in b, (phase,a,b)
     assert b"core-hook-blocked\r\n" not in a + b, (phase,a,b)
+    assert b"core-script-command" not in a + b and b"core-script-input" not in a + b, (phase,a,b)
     assert b"connect SampleUser sample-pass\r\n" in a and b"connect SampleUser sample-pass\r\n" not in b,(phase,a,b)
     assert b"BlockedWrong" not in a + b and b"BlockedPlain" not in a + b, (phase, a, b)
     assert result.get("workerCSP") is True,result

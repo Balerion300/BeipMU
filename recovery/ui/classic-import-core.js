@@ -32,9 +32,12 @@ function attrs(source){const result=Object.create(null),regex=/([A-Za-z_][\w:-]*
 function parseAtlasXml(source){
  if(typeof source!=='string'||source.length>MAX_ATLAS)throw new Error('Atlas XML is too large.');
  if(/<!DOCTYPE|<!ENTITY/i.test(source))throw new Error('Atlas XML entities are unsupported.');
- if(!/<atlas\b([^>]*)>/i.test(source))throw new Error('Not an Atlas XML file.');
- const maps=[],report={skipped:Object.create(null),notes:['Only room centers and traversable exits are imported; artwork, labels, colors, and map layout details are omitted.']};
+ const atlasTag=/<atlas\b([^>]*)>/i.exec(source);if(!atlasTag)throw new Error('Not an Atlas XML file.');
+ const maps=[],report={skipped:Object.create(null),notes:['Rooms, supported styles, and traversable exits retain their map coordinates and route bends. Drawings, images, labels, and cross-layer links are not imported.']};
  const skipped=key=>{report.skipped[key]=(report.skipped[key]||0)+1;};
+ const validColor=value=>/^#[0-9a-f]{6}$/i.test(value||'');
+ const palette=attrs(atlasTag[1]);
+ const points=value=>{if(!value)return undefined;const parsed=value.split('|').map(pair=>pair.split(',').map(Number));return parsed.length<=32&&parsed.every(pair=>pair.length===2&&pair.every(x=>Number.isInteger(x)&&Math.abs(x)<=100000))?parsed:null;};
  const mapRegex=/<map\b([^>]*)>([\s\S]*?)<\/map\s*>/gi;let match;
  while((match=mapRegex.exec(source))){
   if(maps.length>=16){skipped('Excess maps');break;}
@@ -46,21 +49,40 @@ function parseAtlasXml(source){
    if(numbers.length!==4||numbers.some(x=>!Number.isFinite(x))||!title||title.length>160){rooms.push(null);skipped('Invalid rooms');index++;continue;}
    const x=Math.round((numbers[0]+numbers[2])/2),y=Math.round((numbers[1]+numbers[3])/2);
    if(Math.abs(x)>100000||Math.abs(y)>100000){rooms.push(null);skipped('Out-of-range rooms');index++;continue;}
-   rooms.push({id:'r'+index,title,x,y});index++;
+   const room={id:'r'+index,title,x,y};
+   if(numbers.every(Number.isInteger)&&numbers[0]<numbers[2]&&numbers[1]<numbers[3])room.rect=numbers;
+   else skipped('Unsupported room rectangles');
+   if(a.color){if(validColor(a.color))room.color=a.color;else skipped('Unsupported room colors');}
+   if(a.color_outline){if(validColor(a.color_outline))room.outlineColor=a.color_outline;else skipped('Unsupported room colors');}
+   if(a.text_angle){const angle=Number(a.text_angle);if(Number.isInteger(angle)&&angle>=0&&angle<360)room.textAngle=angle;else skipped('Unsupported text angles');}
+   if(a.under_construction)room.underConstruction=/^(?:t|true|1)$/i.test(a.under_construction);
+   rooms.push(room);index++;
   }
   let exitIndex=0,sourceExits=0;
   for(const tag of body.matchAll(/<exit\b([^>]*?)\/?\s*>/gi)){
    if(++sourceExits>8192){skipped('Excess exits');break;}
-   const a=attrs(tag[1]),from=rooms[Number(a.from)],to=rooms[Number(a.to)];
+   const a=attrs(tag[1]),mapIndex=maps.length;
+   if((a.map_from!==undefined&&Number(a.map_from)!==mapIndex)||(a.map_to!==undefined&&Number(a.map_to)!==mapIndex)){skipped('Cross-layer exits');continue;}
+   const from=rooms[Number(a.from)],to=rooms[Number(a.to)];
    if(!from||!to){skipped('Unresolved exits');continue;}
-   for(const [origin,target,command] of [[from,to,a.name_from],[to,from,a.name_to]]){
+   const route=points(a.points);if(route===null)skipped('Unsupported exit points');
+   if(a.points_split)skipped('Split exit routing');
+   const pair='p'+sourceExits;
+   for(const [origin,target,command,reverse] of [[from,to,a.name_from,false],[to,from,a.name_to,true]]){
     if(!command||command.length>256||/[\u0000-\u001f\u007f]/.test(command)){skipped('Unroutable exit directions');continue;}
     if(exits.length>=4096){skipped('Excess exits');break;}
-    exits.push({id:'e'+exitIndex++,from:origin.id,to:target.id,command});
+    const exit={id:'e'+exitIndex++,from:origin.id,to:target.id,command,atlasPair:pair};
+    if(route)exit.points=reverse?[...route].reverse():route.map(point=>[...point]);
+    exits.push(exit);
    }
   }
-  maps.push({name:(meta.name||'Map '+(maps.length+1)).slice(0,80),graph:{version:1,rooms:rooms.filter(Boolean),exits,currentRoomId:null}});
+  const name=(meta.name||'Map '+(maps.length+1)).replace(/[\u0000-\u001f]/g,' ').slice(0,80);
+  const graph={version:1,name,rooms:rooms.filter(Boolean),exits,currentRoomId:null};
+  for(const [source,target] of [['color_background','backgroundColor'],['color_exit','exitColor']])if(palette[source]){if(validColor(palette[source]))graph[target]=palette[source];else skipped('Unsupported atlas colors');}
+  maps.push({name,graph});
  }
+ const outside=source.replace(/<map\b[^>]*>[\s\S]*?<\/map\s*>/gi,'');
+ for(const tag of outside.matchAll(/<exit\b[^>]*\/?\s*>/gi))skipped('Cross-layer exits');
  if(!maps.length)throw new Error('Atlas contains no maps.');
  return {maps,report};
 }

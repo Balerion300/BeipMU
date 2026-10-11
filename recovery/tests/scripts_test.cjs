@@ -58,6 +58,27 @@ function fakeTimers(){
   assert.equal((await w.run('eval','window.output.write(window.UserData.n+":"+window.connection.World.name);',{context})).effects[0].value,'7:Harbor');
   assert.equal((await worker().run('eval','window.output.write(String(window.UserData));')).effects[0].value,'null');
  });
+ await test('Worlds expose bounded read-only character collections and window titles',async()=>{
+  const w=worker(),context={world:{id:'w1',name:'Harbor',host:'harbor.example',notes:'port'},character:{id:'c1',name:'Mira',notes:'wizard'},
+   worlds:[{id:'w1',name:'Harbor',host:'harbor.example',characters:[{id:'c1',name:'Mira',notes:'wizard',password:'hidden'}]}],windows:[{id:'alpha',title:'Mira'}],title:'Mira - Harbor'};
+  const source='window.output.write(app.Worlds("harbor").Characters("mira").Name+":"+app.Worlds(0).Host+":"+app.Windows(0).Title+":"+window.Title+":"+window.connection.Character.Info+":"+String(app.Worlds(0).Characters(0).password));';
+  const result=await w.run('eval',source,{context:contextOf(context)});
+  assert.equal(result.effects[0].value,'Mira:harbor.example:Mira:Mira - Harbor:wizard:undefined');
+ });
+ await test('Input control reads and updates only the bounded session draft',async()=>{
+  const w=worker(),context=contextOf({input:{text:'north',start:1,end:3}});
+  const result=await w.run('eval','window.output.write(window.Input.Get()+":"+window.Input.Length+":"+window.Input.GetSelStart()+":"+window.Input.GetSelEnd());window.Input.Set("look");window.Input.SetSel(1,3);window.output.write(window.Input.Get()+":"+window.Input.GetSelStart()+":"+window.Input.GetSelEnd());',{context});
+  assert.deepEqual(Array.from(result.effects,x=>x.type),['output','input-set','input-select','output']);
+  assert.equal(result.effects[0].value,'north:5:1:3');assert.equal(result.effects[1].value,'look');
+  assert.deepEqual([result.effects[2].start,result.effects[2].end],[1,3]);assert.equal(result.effects[3].value,'look:1:3');
+  assert.match((await w.run('eval','window.Input.Set("x".repeat(8193));')).error,/too long/);
+ });
+ await test('Debug output and slash-command hook use documented callbacks',async()=>{
+  const w=worker();await w.run('eval','window.SetOnCommand(function(command,parameters,win){win.output.write(command+":"+parameters);return command==="mycmd";},window);');
+  const command=await w.run('command','/mycmd one two');assert.equal(command.handled,true);assert.equal(command.effects[0].value,'mycmd:one two');
+  assert.equal((await w.run('command','/other')).handled,false);
+  const debug=await w.run('eval','app.OutputDebugText("debug message");');assert.deepEqual(Array.from(debug.effects,x=>[x.type,x.value]),[['debug','debug message']]);
+ });
  await test('Original trigger callback can read line and capture ranges',async()=>{
   const w=worker();await w.run('eval','function ShowText(win,line,ranges){win.output.write(line.string.slice(ranges(2),ranges(3))+":"+ranges.Count);}');
   const result=await w.run('trigger',{name:'ShowText',text:'foo one',ranges:[0,7,4,7]});
@@ -112,6 +133,20 @@ function fakeTimers(){
   assert.equal(instance.last.type,'timer');runtime.result({id:instance.last.id,effects:[{type:'output',value:'fired'}]});assert.equal(seen[0][0].value,'fired');
   const pending=runtime.dispatch('send','look');runtime.stop();assert.equal((await pending).handled,false);assert.equal(clock.jobs.size,0);
  });
+ await test('Timer callback receives current input without crossing sessions',async()=>{
+  class Fake{postMessage(value){this.last=value;}terminate(){this.dead=true;}}
+  const clock=fakeTimers();let live={sessionId:'alpha',input:{text:'draft now',start:1,end:3}};
+  clock.contextProvider=()=>live;
+  const runtime=new Runtime(()=>{},()=>{},Fake,clock),start=runtime.start('startup',{sessionId:'alpha',input:{text:'old draft'}}),instance=runtime.worker;
+  runtime.result({id:instance.last.id,effects:[{type:'timer-start',id:1,delay:100,repeat:false}]});await start;
+  const timer=[...clock.jobs.entries()].find(([,job])=>job.ms===100);clock.fire(timer[0]);
+  assert.equal(instance.last.type,'timer');assert.deepEqual(instance.last.context.input,{text:'draft now',start:1,end:3});
+  runtime.result({id:instance.last.id,effects:[]});
+  const next=runtime.dispatch('line','refresh',{sessionId:'alpha'});runtime.result({id:instance.last.id,effects:[{type:'timer-start',id:2,delay:100,repeat:false}]});await next;
+  live={sessionId:'beta',input:{text:'other session'}};
+  const other=[...clock.jobs.entries()].find(([,job])=>job.ms===100);const serial=instance.last.id;clock.fire(other[0]);
+  assert.equal(instance.last.id,serial);assert.equal(runtime.timers.size,0);runtime.stop();
+ });
  await test('Repeating timer stops when callback requests Kill',async()=>{
   class Fake{postMessage(value){this.last=value;}terminate(){this.dead=true;}}
   const clock=fakeTimers(),runtime=new Runtime(()=>{},()=>{},Fake,clock),start=runtime.start('startup'),instance=runtime.worker;
@@ -121,9 +156,12 @@ function fakeTimers(){
   assert.equal(runtime.timers.size,0);assert.equal(clock.jobs.size,0);runtime.stop();
  });
  await test('Context and effects are allowlisted',async()=>{
-  const safe=contextOf({sessionId:'alpha',world:{id:'w',name:'World',password:'secret'},worlds:[{id:'w',name:'World'}],token:'secret'});
+  const safe=contextOf({sessionId:'alpha',world:{id:'w',name:'World',password:'secret',characters:[{id:'c',name:'Alice',password:'hidden'}]},worlds:[{id:'w',name:'World'}],input:{text:'draft',start:2,end:4},token:'secret'});
   assert.equal(safe.world.name,'World');assert.equal('password' in safe.world,false);assert.equal('token' in safe,false);
+  assert.equal('password' in safe.world.characters[0],false);assert.deepEqual(safe.input,{text:'draft',start:2,end:4});
   assert.equal(validEffect({type:'send',value:'look'}).value,'look');assert.equal(validEffect({type:'send',value:'one\ntwo'}),null);assert.equal(validEffect({type:'file',value:'bad'}),null);
+  assert.equal(validEffect({type:'input-set',value:'look'}).value,'look');assert.equal(validEffect({type:'input-select',start:1,end:3}).end,3);
+  assert.equal(validEffect({type:'input-select',start:3,end:1}),null);assert.equal(validEffect({type:'debug',value:'x'.repeat(513)}),null);
  });
  await test('Worker startup failure and event timeout fail closed',async()=>{
   class Broken{constructor(){throw Error('Unavailable');}}

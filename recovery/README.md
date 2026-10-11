@@ -1,10 +1,21 @@
-# BeipMU recovery preview 0.6
+# BeipMU recovery preview 0.7
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
 several implementations, generated properties and Visual Studio project are
 absent. This runtime builds without those components or a downloaded upstream
 executable. Its code is distributed under the repository MIT license.
+
+Version 0.7 adds resizable docks on all four edges. Input History defaults to
+bottom and Image Window to top; pane captions let you choose another edge or
+float the pane. Windows → Copy/Paste all window settings transfers the supported
+pane arrangement between saved worlds or characters without copying their content.
+Tools → Export Atlas Map reviews and saves a single-map `.atlas` archive.
+Supported imported room geometry/colors and exit bends survive the round trip;
+multiple map layers, cross-layer links and artwork remain unsupported.
+Scripts gain `window.Input.Get/Set/SetSel/Length`, read-only world character
+collections, window titles, `app.OutputDebugText`, and original-style
+`window.SetOnCommand` callbacks. Tools → Script Debug Output opens their messages.
 
 Version 0.4 follows the original 4.335 client inspected directly on Windows:
 a bottom-left native popup menu, black output and command input, and connection
@@ -58,7 +69,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.6-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.7-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -75,7 +86,7 @@ The login template currently sends `connect name password`.
 
 Settings live in `%LOCALAPPDATA%/BeipMU-Recovery/settings.json`, session logs in
 the adjacent `Logs` directory and browser state in `WebView`. Original BeipMU
-settings are not imported or changed. Profile settings exclude passwords,
+settings can be reviewed and imported through Tools; the original files are not changed. Profile settings exclude passwords,
 transcripts and command history. Passwords explicitly remembered in the character
 editor use Windows Credential Manager. Export saves retained visible scrollback;
 session logs record completed lines while logging is enabled.
@@ -105,7 +116,7 @@ fixture and three native TLS cases passed. The session fixture checks grouped
 capture and cancellation, image/history/map/notes/split panes, logging from
 scrollback, timer ownership and cancellation, and paced Smart Paste routing.
 The full-app TLS fixture was last verified in 0.3; its 0.4 rerun stopped at the
-Windows certificate-install prompt. It has not been rerun for 0.6.
+Windows certificate-install prompt. No complete later full-app TLS run is claimed.
 
 Pueblo/MXP fixtures check three loaded images, a failed-image fallback, command
 clicks and consecutive WHO rows. Session fixtures check separate connections,
@@ -163,3 +174,13 @@ decompression/apply; and worker callbacks, trigger ranges, timers and debug
 output. The 0.6 native TLS attempt passed untrusted-certificate rejection but
 its trusted case timed out; the last complete native TLS verification remains
 0.5. No TLS implementation was changed in this preview.
+
+For 0.7, the Windows build, native telnet checks and all module tests passed.
+The packaged Pueblo/MXP fixtures rendered three images, reported a missing image,
+sent clicked commands and preserved consecutive WHO rows. The two-launch session
+fixture (`sessions-20261011-234930`) passed on fresh and persisted launches,
+including all four dock edges, copied layouts and content isolation, native
+floating-pane cleanup, reviewed Atlas save with byte-for-byte ZIP verification
+and reimport, original script Input controls, command callbacks and a timer that
+reads an updated inactive-session draft. Source UI files matched the packaged files.
+TLS implementation is unchanged; no complete fresh TLS run is claimed for 0.7.

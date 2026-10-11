@@ -35,12 +35,12 @@ function refreshTabs(){
  }
 }
 function selectSession(id){
- const previous=current();if(previous)previous.draft=$('input').value;
+ const previous=current();if(previous){previous.draft=$('input').value;previous.draftSelection={start:$('input').selectionStart,end:$('input').selectionEnd};}
  const next=sessions.get(id);if(!next)return;
  for(const session of sessions.values())session.view.hidden=session.id!==id;
  activeId=id;next.unread=0;refreshTabs();renderStatus(next.status);$('protocol').textContent=next.protocol;updateCounts();$('logging').checked=next.logWanted;$('logging').disabled=next.kind!=='world';$('disconnect').disabled=next.kind!=='world';
  if(next.kind==='world'){$('world').value=next.worldId||'';updateCharacterChoices();$('character').value=next.characterId||'';const world=state.worlds.find(x=>x.id===next.worldId);if(world){$('host').value=world.host;$('port').value=world.port;$('tls').checked=!!world.tls;}}
- $('input').value=next.draft||'';window.BeipFeatures?.selected();window.BeipDockPanels?.selected(next);window.BeipDesktopShell?.refreshPauseBadge();$('input').focus();
+ $('input').value=next.draft||'';if(next.draftSelection)$('input').setSelectionRange(next.draftSelection.start,next.draftSelection.end);window.BeipFeatures?.selected();window.BeipDockPanels?.selected(next);window.BeipDesktopShell?.refreshPauseBadge();$('input').focus();
 }
 function closeSession(id){
  const session=sessions.get(id);if(!session)return;
@@ -50,9 +50,10 @@ function closeSession(id){
  if(activeId===id)selectSession(sessions.keys().next().value);else refreshTabs();
 }
 function sendRaw(session,value){const target=session.kind==='spawn'?sessions.get(session.parentId):session;if(!target||target.kind!=='world')return;if(/[\r\n]/.test(value)||new TextEncoder().encode(value).length>8192){showStatus(target,'Command rejected: one line at a time, up to 8192 bytes.');return;}send('send|'+(test&&target.id==='default'?'':target.id+'|')+value);}
-function command(value,prompt,session=current()){
+async function command(value,prompt,session=current()){
  if(prompt){$('input').value=value;$('input').focus();return;}
  if(!session)return;
+ if(value.startsWith('/')&&!value.startsWith('//')){const epoch=session.connectionEpoch;const result=await window.BeipFeatures?.dispatch(session,'command',value);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||result?.handled)return;}
  if(window.BeipFeatures?.handleCommand(value,session))return;
  const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(state.preferences.localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
  const context={serverId:session.worldId,characterId:session.characterId};

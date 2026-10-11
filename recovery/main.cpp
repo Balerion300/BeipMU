@@ -38,7 +38,7 @@ enum MenuCommand : UINT {
     ConnectionConnect,ConnectionDisconnect,ConnectionConnectAll,ConnectionDisconnectAll,ConnectionProfiles,
     LoggingToggle,
     OptionsAliases,OptionsTriggers,OptionsMacros,OptionsScripts,OptionsMap,OptionsPreferences,
-    HelpAbout,EditFollowOutput,WindowHistory,WindowImage,WindowNotes,WindowSplit,WindowSpawn,EditSmartPaste,OptionsImport,OptionsShortcuts
+    HelpAbout,EditFollowOutput,WindowHistory,WindowImage,WindowNotes,WindowSplit,WindowSpawn,EditSmartPaste,OptionsImport,OptionsShortcuts,WindowCopySettings,WindowPasteSettings,OptionsAtlasExport,OptionsScriptDebug
 };
 HMENU createMainPopup(){
     HMENU root=CreatePopupMenu();if(!root)return nullptr;
@@ -47,7 +47,7 @@ HMENU createMainPopup(){
         for(auto [id,label]:items)AppendMenuW(popup,id?MF_STRING:MF_SEPARATOR,id,label);
         if(!AppendMenuW(root,MF_POPUP,reinterpret_cast<UINT_PTR>(popup),title))DestroyMenu(popup);
     };
-    section(L"&Windows",{{FileNew,L"New &Tab"},{WindowHistory,L"Toggle &History Window"},{WindowImage,L"Toggle &Image Window"},{OptionsMap,L"Toggle &Map Window"},{WindowNotes,L"Toggle Character &Notes"},{WindowSplit,L"Toggle &Split Output"},{WindowSpawn,L"Show &Spawn Windows"},{0,nullptr},{FileClose,L"&Close Tab"}});
+    section(L"&Windows",{{FileNew,L"New &Tab"},{WindowHistory,L"Toggle &History Window"},{WindowImage,L"Toggle &Image Window"},{OptionsMap,L"Toggle &Map Window"},{WindowNotes,L"Toggle Character &Notes"},{WindowSplit,L"Toggle &Split Output"},{WindowSpawn,L"Show &Spawn Windows"},{0,nullptr},{WindowCopySettings,L"Copy all window settings"},{WindowPasteSettings,L"Paste all window settings"},{0,nullptr},{FileClose,L"&Close Tab"}});
     HMENU tools=CreatePopupMenu();
     if(tools){
         AppendMenuW(tools,MF_STRING,OptionsTriggers,L"&Triggers...\tCtrl+Shift+T");
@@ -57,7 +57,9 @@ HMENU createMainPopup(){
         AppendMenuW(tools,MF_STRING,EditFind,L"&Find...");
         AppendMenuW(tools,MF_STRING,FileExport,L"&Export Transcript...");
         AppendMenuW(tools,MF_STRING,OptionsScripts,L"&Scripts...");
+        AppendMenuW(tools,MF_STRING,OptionsScriptDebug,L"Script Debug Output...");
         AppendMenuW(tools,MF_STRING,OptionsImport,L"Import Original Settings or Map...");
+        AppendMenuW(tools,MF_STRING,OptionsAtlasExport,L"Export Atlas Map...");
         AppendMenuW(tools,MF_STRING,OptionsShortcuts,L"Keyboard Shortcuts...");
         HMENU edit=CreatePopupMenu();
         if(edit){
@@ -85,6 +87,9 @@ const char* menuAction(UINT command){
         case EditSmartPaste:return "ui:edit-smart-paste";
         case WindowHistory:return "ui:window-input-history";case WindowImage:return "ui:window-image";
         case WindowNotes:return "ui:window-character-notes";case WindowSplit:return "ui:window-split";case WindowSpawn:return "ui:window-spawn";
+        case WindowCopySettings:return "ui:window-copy-settings";case WindowPasteSettings:return "ui:window-paste-settings";
+        case OptionsAtlasExport:return "ui:options-atlas-export";
+        case OptionsScriptDebug:return "ui:options-script-debug";
         case ConnectionConnect:return "ui:connection-connect";case ConnectionDisconnect:return "ui:connection-disconnect";
         case ConnectionConnectAll:return "ui:connection-connect-all";case ConnectionDisconnectAll:return "ui:connection-disconnect-all";case ConnectionProfiles:return "ui:connection-profiles";
         case LoggingToggle:return "ui:logging-toggle";
@@ -494,11 +499,40 @@ struct Application {
         }
         scoped(id,"exportstatus:saved:"+base64(utf8(path.wstring())));
     }
+    void exportAtlas(std::string_view encodedName,std::string_view encodedData){
+        auto reply=[this](const std::string& value){message("atlasexportstatus:"+value);};
+        std::string name,bytes;
+        if(!unbase64(encodedName,name,160)||!validUtf8(name)||!unbase64(encodedData,bytes,4*1024*1024)||
+            bytes.size()<22||bytes.compare(0,4,"PK\x03\x04",4)!=0){reply("error:"+base64("Invalid Atlas archive or size exceeds 4 MiB."));return;}
+        for(char& c:name)if(static_cast<unsigned char>(c)<32||std::string_view("<>:\"/\\|?*").find(c)!=std::string_view::npos)c='_';
+        if(name.empty()||name=="."||name=="..")name="World map";
+        std::filesystem::path path;
+        if(testMode)path=testPath/L"exported-map.atlas";
+        else{
+            wchar_t filename[MAX_PATH]{};auto suggested=wide(name)+L".atlas";wcsncpy_s(filename,suggested.c_str(),_TRUNCATE);
+            static const wchar_t filter[]=L"BeipMU Atlas (*.atlas)\0*.atlas\0All files (*.*)\0*.*\0\0";
+            OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window;
+            dialog.lpstrFile=filename;dialog.nMaxFile=MAX_PATH;dialog.lpstrFilter=filter;
+            dialog.lpstrDefExt=L"atlas";dialog.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR|OFN_EXPLORER;
+            if(!GetSaveFileNameW(&dialog)){reply(CommDlgExtendedError()?"error:"+base64("Could not open the Save dialog."):"cancelled");return;}
+            path=filename;
+        }
+        auto temp=path.parent_path()/(path.filename().wstring()+L".beipmu-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".tmp");
+        std::error_code ec;
+        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(bytes.data(),std::streamsize(bytes.size()));file.flush();
+            if(!file){file.close();std::filesystem::remove(temp,ec);reply("error:"+base64("Could not write the Atlas archive."));return;}
+            file.close();if(!file){std::filesystem::remove(temp,ec);reply("error:"+base64("Could not close the Atlas archive."));return;}}
+        if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+            std::filesystem::remove(temp,ec);reply("error:"+base64("Could not finish saving the Atlas archive."));return;
+        }
+        reply("saved:"+base64(utf8(path.wstring())));
+    }
     void resize(){if(controller){RECT r;GetClientRect(window,&r);controller->put_Bounds(r);}}
     void fail(const wchar_t* text){MessageBoxW(window,text,L"BeipMU Recovery Preview",MB_OK|MB_ICONERROR);DestroyWindow(window);}
     void receive(const std::string& text){
         trace("UI",text);
         if(text.size()>1024*1024+64&&!(text.starts_with("export|")&&text.size()<=6*1024*1024)&&
+            !(text.starts_with("atlasexport|")&&text.size()<=6*1024*1024)&&
             !(text.starts_with("clipboard|")&&text.size()<=10+4*((ClipboardTextLimit+2)/3))){
             message(text.starts_with("clipboard|")?"ui:clipboard-failed":"settings:error:Message is too large.");return;
         }
@@ -566,6 +600,9 @@ struct Application {
             auto w=std::stoul(width),h=std::stoul(height);
             if(w<1||w>4096||h<1||h>4096)return;
             auto it=sessions.find(id);if(it!=sessions.end())it->second->resize((unsigned short)w,(unsigned short)h);
+        }else if(text.starts_with("atlasexport|")){
+            auto split=text.find('|',12);if(split==text.npos)return;
+            exportAtlas(std::string_view(text).substr(12,split-12),std::string_view(text).substr(split+1));
         }else if(text.starts_with("export|")){
             auto split=text.find('|',7);if(split==text.npos)return;
             exportTranscript(text.substr(7,split-7),std::string_view(text).substr(split+1));
@@ -675,7 +712,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.6",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.7",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

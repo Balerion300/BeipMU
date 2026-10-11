@@ -50,3 +50,12 @@ the bottom history arrangement and original caption/drag system are not exact
 replicas. Version 0.6 gives the supported panes independent Windows windows.
 The shortcut editor follows original documented action labels and uses a
 compact light list and key field. The import review is a recovery addition.
+
+The next direct inspection on October 11 reconfirmed the Windows submenu labels
+and expanded the original Input History by dragging its divider. History sits
+below command input and above the bottom tab strip; growing it reduces the main
+output while preserving input height. The 0.7 recovery layout follows that
+placement, adds top/left/right groups, and retains its explicit edge chooser and
+Float/Dock controls. Copy/Paste all window settings transfers the supported
+pane layout internally, following the original internal clipboard workflow;
+it does not yet copy every original output/input preference.
