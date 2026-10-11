@@ -37,3 +37,16 @@ verified those supported behaviors as session-scoped actions in two launches.
 The original saves flexible docking layouts;
 the recovery worktree stores open pane types per profile and dock width, but
 cannot yet reproduce the original arrangement.
+
+
+The October 11 follow-up used the same original 4.335 executable directly.
+Windows includes New Tab, New Window, New Input Window, New Edit Window,
+Toggle Input History/Image/Map/Character Notes, Copy/Paste all window settings,
+and Show Hidden Captions. Input History initially opened as a small bottom
+pane; dragging its horizontal divider expanded it. Its context menu exposes
+Find, Pause, Split, Copy screen to clipboard, Clear, Use global settings and
+Settings. Recovery keeps its right dock and explicit Float/Dock controls;
+the bottom history arrangement and original caption/drag system are not exact
+replicas. Version 0.6 gives the supported panes independent Windows windows.
+The shortcut editor follows original documented action labels and uses a
+compact light list and key field. The import review is a recovery addition.

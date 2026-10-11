@@ -32,7 +32,7 @@ check('Invalid hosts, IDs, ports, duplicates, and orphaned characters are droppe
 });
 check('Preferences are clamped and unknown fields are excluded',()=>{
  const result=normalizeSettings({preferences:{fontSize:300,scrollback:1,theme:'sunset',fontFamily:'Comic Sans',inlineImages:false,localEcho:true,defaultLogging:true,secret:'discard'}});
- assert.deepEqual(result.preferences,{fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false,inputHeight:40});
+ assert.deepEqual(result.preferences,{fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false,shortcuts:{},inputHeight:40});
 });
 check('Input pane height persists within usable limits',()=>{
  assert.equal(serializeSettings({preferences:{inputHeight:125}}).preferences.inputHeight,125);
@@ -81,4 +81,12 @@ check('Script source is explicit and bounded; enable needs nonempty source',()=>
  assert.equal(on.scriptSource,'window.output.write("Hi")');
  assert.equal(JSON.stringify(on).includes('secret'),false);
 });
-console.log(passed+' profile checks passed.');
+
+check('Shortcut overrides and named trigger callbacks persist through allowlisting',()=>{
+ const source={preferences:{shortcuts:{clearInput:'Ctrl+K',unknown:'Ctrl+Q'}},triggers:[{id:'scripted',match:'ping',scriptName:'onPing',scope:{level:'global'}},{id:'invalidscript',match:'pong',scriptName:'alert(1)',scope:{level:'global'}}]};
+ const settings=normalizeSettings(source);
+ assert.equal(settings.preferences.shortcuts.clearInput,'Ctrl+K');assert.equal(settings.preferences.shortcuts.unknown,undefined);
+ assert.equal(settings.triggers[0].scriptName,'onPing');assert.equal(settings.triggers[1].scriptName,'');
+});
+
+console.log(`${passed} profile checks passed.`);

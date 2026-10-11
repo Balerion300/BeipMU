@@ -5,11 +5,19 @@ window.BeipCoreTest=async function(config){
  const el=id=>document.getElementById(id);
  const press=(target,key,options={})=>{const event=new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true,...options});target.dispatchEvent(event);return event;};
  const visible=id=>{const node=el(id);return !!node&&getComputedStyle(node).display!=='none'&&node.getClientRects().length>0;};
- const openDock=async(action,label,type)=>{let tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);if(!tab)app.incoming(action);await wait(()=>{tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);return !!tab;},label+' dock tab');tab.click();await wait(()=>!!el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]'),label+' dock pane');return el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]');};
+ const openDock=async(action,label,type)=>{let tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);if(!tab){if(window.BeipDockPanels?.floatingStatus(app.current).some(item=>item.type===type)){await wait(()=>window.BeipDockPanels.floatingStatus(app.current).some(item=>item.type===type&&item.ready&&item.rendered),'restored floating '+label);window.BeipDockPanels.dockPane(type,app.current);}else app.incoming(action);}await wait(()=>{tab=[...el('dockTabs').querySelectorAll('[role="tab"]')].find(item=>item.textContent===label);return !!tab;},label+' dock tab');tab.click();await wait(()=>!!el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]'),label+' dock pane');return el('dockContent').querySelector('.dock-pane[data-dock="'+type+'"]');};
+ const scriptSource=[
+  'window.UserData=0;',
+  'window.connection.SetOnReceive(function(text,win){if(text==="CORE SCRIPT SUPPRESS"){win.UserData++;win.output.write("RECEIVE SCRIPT "+win.connection.Character.name+":"+win.UserData);return true;}return false;},window);',
+  'window.connection.SetOnSend(function(text,win){if(text==="core-hook-blocked"){win.output.write("SEND SCRIPT "+win.connection.Character.name);return true;}return false;},window);',
+  'window.connection.SetOnConnect(function(win){win.output.write("CONNECT SCRIPT "+win.connection.Character.name);},window);',
+  'function CoreTrigger(win,line,ranges){win.output.write("TRIGGER SCRIPT "+line.string.slice(ranges(2),ranges(3)));}',
+  'app.CreateTimeout(150,function(win){win.output.write("TIMER SCRIPT "+win.connection.Character.name);},window);'
+ ].join('\n');
  let alpha,beta,persistenceLoaded=false,persistenceSaved=false;
  try{
   await wait(()=>app.settingsLoaded,'settings load');
-  persistenceLoaded=config.phase==='persist'&&app.state.worlds.some(w=>w.id==='coreworld')&&app.state.characters.some(c=>c.id==='corecharA'&&c.notes==='Core alpha note')&&app.state.preferences.fontSize===18&&app.state.preferences.inputHeight===120&&app.state.aliases.length===2&&app.state.aliases.some(rule=>rule.description==='Core alias')&&app.state.triggers.some(rule=>rule.description==='Core trigger')&&app.state.triggers.some(rule=>rule.id==='corecapture'&&rule.captureUntil==='^WHO END$')&&app.state.macros.some(macro=>macro.description==='Core macro');
+  persistenceLoaded=config.phase==='persist'&&app.state.worlds.some(w=>w.id==='coreworld')&&app.state.characters.some(c=>c.id==='corecharA'&&c.notes==='Core alpha note')&&app.state.preferences.fontSize===18&&app.state.preferences.inputHeight===120&&app.state.preferences.shortcuts?.clearInput==='Ctrl+K'&&app.state.aliases.length===2&&app.state.aliases.some(rule=>rule.description==='Core alias')&&app.state.triggers.some(rule=>rule.description==='Core trigger')&&app.state.triggers.some(rule=>rule.id==='corecapture'&&rule.captureUntil==='^WHO END$')&&app.state.triggers.some(rule=>rule.id==='corescripttrigger'&&rule.scriptName==='CoreTrigger')&&app.state.scriptEnabled===true&&app.state.scriptSource===scriptSource&&app.state.macros.some(macro=>macro.description==='Core macro');
   const header=document.querySelector('.app-header');
   const initialLayout=!visible('connection')&&!visible('connectDialog')&&!visible('profilesDialog')&&(!header||getComputedStyle(header).display==='none')&&el('sessionTabs').getBoundingClientRect().top>=el('command').getBoundingClientRect().bottom&&el('command').getBoundingClientRect().top>=el('output').getBoundingClientRect().bottom;
   if(!initialLayout)throw Error('Classic output, input, and bottom tab layout is missing.');
@@ -50,7 +58,8 @@ window.BeipCoreTest=async function(config){
    app.state.characters=[{id:'corecharA',worldId:'coreworld',name:'Alpha'},{id:'corecharB',worldId:'coreworld',name:'Beta'}];
    app.state.preferences.fontSize=18;
    app.state.aliases=['A','B'].map((letter,i)=>({id:'alias'+letter,match:i?'^q(b)$':'^q(a)$',matchType:'regex',replacement:i?'core-\\1eta':'core-\\1lpha',scope:{level:'character',serverId:'coreworld',characterId:'corechar'+letter}}));
-   app.state.triggers=[{id:'coretrigger',match:'^CORE A COMPLETE$',matchType:'regex',sendText:'core-trigger-alpha',spawnTitle:'Core notifications',spawnCopy:true,scope:{level:'character',serverId:'coreworld',characterId:'corecharA'},highlight:{color:'#87c47f',wholeLine:true}},{id:'corecapture',match:'^WHO START$',matchType:'regex',spawnTitle:'Who list',spawnGroup:'Info',captureUntil:'^WHO END$',spawnGagLog:true,filterText:'WHO BEGIN',scope:{level:'character',serverId:'coreworld',characterId:'corecharA'}}];
+   app.state.triggers=[{id:'coretrigger',match:'^CORE A COMPLETE$',matchType:'regex',sendText:'core-trigger-alpha',spawnTitle:'Core notifications',spawnCopy:true,scope:{level:'character',serverId:'coreworld',characterId:'corecharA'},highlight:{color:'#87c47f',wholeLine:true}},{id:'corecapture',match:'^WHO START$',matchType:'regex',spawnTitle:'Who list',spawnGroup:'Info',captureUntil:'^WHO END$',spawnGagLog:true,filterText:'WHO BEGIN',scope:{level:'character',serverId:'coreworld',characterId:'corecharA'}},{id:'corescripttrigger',match:'^CORE (SCRIPT) HIT$',matchType:'regex',scriptName:'CoreTrigger',scope:{level:'character',serverId:'coreworld',characterId:'corecharA'}}];
+   app.state.scriptSource=scriptSource;app.state.scriptEnabled=true;
    app.rebuildRules();const before=app.state.saveCount||0;app.saveSettings();await wait(()=>(app.state.saveCount||0)>before,'settings save');persistenceSaved=true;
   }
   app.incoming('ui:options-aliases');await wait(()=>el('classicAliasesDialog')?.open,'alias editor');
@@ -71,6 +80,18 @@ window.BeipCoreTest=async function(config){
   alpha.logWanted=true;beta.logWanted=true;
   send('connect|alpha|127.0.0.1|'+config.ports[0]+'|plain|corecharA');send('connect|beta|127.0.0.1|'+config.ports[1]+'|plain|corecharB');
   await wait(()=>alpha.connected&&beta.connected&&alpha.logging&&beta.logging,'both connected and logging');
+  await wait(()=>alpha.view.textContent.includes('CONNECT SCRIPT Alpha')&&beta.view.textContent.includes('CONNECT SCRIPT Beta')&&alpha.view.textContent.includes('TIMER SCRIPT Alpha')&&beta.view.textContent.includes('TIMER SCRIPT Beta'),'independent startup scripts and timers');
+  app.appendText(alpha,'CORE SCRIPT SUPPRESS\n');app.appendText(beta,'CORE SCRIPT SUPPRESS\n');
+  await wait(()=>alpha.view.textContent.includes('RECEIVE SCRIPT Alpha:1')&&beta.view.textContent.includes('RECEIVE SCRIPT Beta:1'),'per-session receive hooks');
+  const scriptReceive=[alpha,beta].every(session=>![...session.view.querySelectorAll('.line')].some(line=>line.textContent==='CORE SCRIPT SUPPRESS'));
+  app.command('core-hook-blocked',false,alpha);app.command('core-hook-blocked',false,beta);
+  app.command('core-hook-allowed',false,alpha);
+  await wait(()=>alpha.view.textContent.includes('SEND SCRIPT Alpha')&&beta.view.textContent.includes('SEND SCRIPT Beta'),'per-session send hooks');
+  app.appendText(alpha,'CORE SCRIPT HIT\n');app.appendText(beta,'CORE SCRIPT HIT\n');
+  await wait(()=>alpha.view.textContent.includes('TRIGGER SCRIPT SCRIPT'),'named trigger script with capture ranges');
+  const scriptTrigger=!beta.view.textContent.includes('TRIGGER SCRIPT');
+  const scriptTimers=alpha.view.textContent.includes('TIMER SCRIPT Alpha')&&beta.view.textContent.includes('TIMER SCRIPT Beta');
+  const scriptIsolation=scriptReceive&&scriptTrigger&&!alpha.view.textContent.includes('RECEIVE SCRIPT Beta')&&!beta.view.textContent.includes('RECEIVE SCRIPT Alpha');
   app.selectSession('alpha');window.BeipClassicSettings.openLogging();
   await wait(()=>el('classicLoggingDialog').querySelectorAll('.classic-logging-row').length===2,'two active logs in dialog');
   el('classicLoggingDialog').querySelector('[data-action="stop"]').click();
@@ -128,7 +149,9 @@ window.BeipCoreTest=async function(config){
   await wait(()=>[...alpha.view.querySelectorAll('.line')].every(line=>!['WHO START','WHO body','WHO END'].includes(line.textContent)),'captured lines removed from main output');
   const captureLines=[...el('dockContent').querySelectorAll('.dock-pane[data-dock="spawn"] .dock-output-copy .line')].map(line=>line.textContent);
   const groupedCapture=captureLines.join('|')==='WHO BEGIN|WHO body|WHO END'&&alpha.view.textContent.includes('AFTER WHO')&&!beta.view.textContent.includes('WHO BEGIN');
-  app.appendText(alpha,'WHO START\n');app.command('/capturecancel',false,alpha);app.appendText(alpha,'AFTER CANCEL\n');
+  app.appendText(alpha,'WHO START\n');
+  await wait(()=>[...el('dockContent').querySelectorAll('.dock-pane[data-dock="spawn"] .dock-output-copy .line')].filter(line=>line.textContent==='WHO BEGIN').length===2,'second spawn capture started');
+  app.command('/capturecancel',false,alpha);app.appendText(alpha,'AFTER CANCEL\n');
   await wait(()=>alpha.view.textContent.includes('Spawn capture canceled.')&&alpha.view.textContent.includes('AFTER CANCEL'),'manual capture cancellation');
   const captureCancel=[...alpha.view.querySelectorAll('.line')].some(line=>line.textContent==='AFTER CANCEL');
   const splitPane=await openDock('ui:window-split','Split Output','split');
@@ -181,13 +204,51 @@ window.BeipCoreTest=async function(config){
   app.selectSession('beta');const betaHistory=await openDock('ui:window-input-history','Input History','history');
   const historyIsolated=!betaHistory.textContent.includes('core-line-one')&&!betaHistory.textContent.includes('core-line-two')&&historyVisible&&historyRecall&&draftSaved&&draftRecall;
   app.selectSession('alpha');
-  const result={phase:config.phase,classicLayout:initialLayout,connectionDialog,quickConnect,nativeDialogs:nativeDialogs.every(Boolean),settingsUI,loggingDialog,loggingControls,aliasEditor,triggerEditor,macroEditor,inputResize,typingUI,isolated:!alpha.view.textContent.includes('CORE B COMPLETE')&&!beta.view.textContent.includes('CORE A COMPLETE'),commandsSent:true,logging:alpha.logging&&beta.logging,persistenceSaved,persistenceLoaded,alpha:{text:alpha.view.textContent,connected:alpha.connected},beta:{text:beta.view.textContent,connected:beta.connected},logPaths:[alpha.logPath,beta.logPath],gmcpStats:alpha.gmcp.rows(),scripts:true,draftsIsolated,spawn,credentialSaved:app.secretStatuses?.get('corecharA')==='on',avatarLoaded,tilemapRendered,mediaDisabled,mapperUI,dockMap,dockResize,dockIsolation,groupedCapture,captureCancel,splitIsolated,imageDock,notesIsolated,historyIsolated,delayRouting,smartPasteRouting,errors};
+  if(config.phase==='first'){
+   app.state.preferences.shortcuts=window.BeipShortcuts.assign(app.state.preferences.shortcuts,'clearInput','Ctrl+K');
+   const before=app.state.saveCount||0;app.saveSettings();await wait(()=>(app.state.saveCount||0)>before,'shortcut remapping save');
+  }
+  const inputForShortcut=el('input');inputForShortcut.value='Keep old shortcut';
+  const oldShortcut=press(inputForShortcut,'u',{ctrlKey:true,code:'KeyU'});
+  const oldPreserved=!oldShortcut.defaultPrevented&&inputForShortcut.value==='Keep old shortcut';
+  const remappedShortcut=press(inputForShortcut,'k',{ctrlKey:true,code:'KeyK'});
+  const shortcutRemap=oldPreserved&&remappedShortcut.defaultPrevented&&inputForShortcut.value==='';
+  if(!shortcutRemap)throw Error('Remapped clear-input shortcut did not replace Ctrl+U with Ctrl+K.');
+  if(config.phase==='persist'){
+   app.state.preferences.shortcuts=window.BeipShortcuts.assign(app.state.preferences.shortcuts,'clearInput','Ctrl+U');
+   app.saveSettings();
+  }
+  const floatHistory=await openDock('ui:window-input-history','Input History','history');
+  const floatButton=floatHistory.querySelector('.dock-float, button[title="Float Input History"]');
+  if(!floatButton)throw Error('Input History has no Float action.');
+  floatButton.click();
+  await wait(()=>window.BeipDockPanels.floatingStatus(alpha).some(item=>item.type==='history'&&item.ready&&item.rendered),'native floating history window ready and rendered');
+  const floatId=window.BeipDockPanels.floatingStatus(alpha).find(item=>item.type==='history')?.id;
+  await wait(()=>window.BeipTestCaptures?.size>0,'native floating pane screenshot');
+  const expectedRecall=alpha.history.at(-1);
+  app.selectSession('beta');
+  app.incoming('float:event|'+floatId+'|'+btoa(JSON.stringify({action:'history-recall',index:0})));
+  const floatingOwner=app.current===alpha&&el('input').value===expectedRecall;
+  app.incoming('float:event|'+floatId+'|'+btoa(JSON.stringify({action:'dock'})));
+  await wait(()=>!window.BeipDockPanels.floatingStatus(alpha).some(item=>item.type==='history')&&!!el('dockContent').querySelector('.dock-pane[data-dock="history"]'),'floating history docks back');
+  const floatingDock=!!el('dockContent').querySelector('.dock-pane[data-dock="history"]');
+  el('input').value='';
+  const result={phase:config.phase,classicLayout:initialLayout,connectionDialog,quickConnect,nativeDialogs:nativeDialogs.every(Boolean),settingsUI,loggingDialog,loggingControls,aliasEditor,triggerEditor,macroEditor,inputResize,typingUI,isolated:!alpha.view.textContent.includes('CORE B COMPLETE')&&!beta.view.textContent.includes('CORE A COMPLETE'),commandsSent:true,logging:alpha.logging&&beta.logging,persistenceSaved,persistenceLoaded,alpha:{text:alpha.view.textContent,connected:alpha.connected},beta:{text:beta.view.textContent,connected:beta.connected},logPaths:[alpha.logPath,beta.logPath],gmcpStats:alpha.gmcp.rows(),scripts:true,scriptReceive,scriptTrigger,scriptTimers,scriptIsolation,draftsIsolated,spawn,credentialSaved:app.secretStatuses?.get('corecharA')==='on',avatarLoaded,tilemapRendered,mediaDisabled,mapperUI,dockMap,dockResize,dockIsolation,groupedCapture,captureCancel,splitIsolated,imageDock,notesIsolated,historyIsolated,shortcutRemap,delayRouting,smartPasteRouting,floatingOwner,floatingDock,errors};
   // Kill a runaway user script while preserving the other session and UI.
-  app.command('/@new Promise(resolve=>{const child=new Worker("script-worker.js");child.onerror=e=>{e.preventDefault();window.output.write("CHILD BLOCKED");resolve();};child.onmessage=()=>{child.terminate();window.output.write("CHILD ALLOWED");resolve();};child.postMessage({id:99,type:"eval",value:"postMessage(\\\"CHILD RAN\\\")"});});',false,alpha);await wait(()=>alpha.view.textContent.includes('CHILD BLOCKED'),'worker CSP');result.workerCSP=true;
+  app.command('/@try{new Worker("script-worker.js");window.output.write("CHILD ALLOWED");}catch(e){window.output.write("CHILD BLOCKED");}',false,alpha);await wait(()=>alpha.view.textContent.includes('CHILD BLOCKED'),'worker CSP');result.workerCSP=!alpha.view.textContent.includes('CHILD ALLOWED');
   app.command('/@while(true){}',false,alpha);await wait(()=>!alpha.scripts.enabled,'runaway script termination');result.scriptTimeout=alpha.view.textContent.includes('execution time limit');
+  await wait(()=>el('scriptDebugDialog')?.open&&el('scriptDebugDialog').textContent.includes('execution time limit'),'Script Debug Output');
+  result.scriptDebug=el('scriptDebugDialog').querySelector('.script-debug-entry')?.textContent.includes('Alpha');
+  el('scriptDebugDialog').querySelector('[data-action="close"]').click();
   send('logstop|alpha');send('logstop|beta');await wait(()=>!alpha.logging&&!beta.logging,'logs stopped');
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
-  app.closeSession(closed);await new Promise(r=>setTimeout(r,200));result.macros=true;result.closedIsolation=!app.sessions.has(closed)&&app.sessions.get(survivor)?.connected;app.selectSession(survivor);
+  app.selectSession(closed);
+  const closingPane=await openDock('ui:window-input-history','Input History','history');
+  closingPane.querySelector('.dock-float, button[title="Float Input History"]').click();
+  await wait(()=>window.BeipDockPanels.floatingStatus(app.sessions.get(closed)).some(item=>item.type==='history'&&item.ready&&item.rendered),'closing session floating window');
+  const closingSession=app.sessions.get(closed);
+  app.closeSession(closed);await new Promise(r=>setTimeout(r,200));result.macros=true;result.closedIsolation=!app.sessions.has(closed)&&app.sessions.get(survivor)?.connected;result.floatingSessionCleanup=window.BeipDockPanels.floatingStatus(closingSession).length===0;app.selectSession(survivor);
+  result.classicImport=await window.BeipClassicImportFixture.run();
   send('testresult:'+JSON.stringify(result));
- }catch(error){errors.push(String(error.message||error));send('testresult:'+JSON.stringify({phase:config.phase,errors,alpha:{text:alpha?.view.textContent},beta:{text:beta?.view.textContent}}));}
+ }catch(error){errors.push(String(error.message||error),...(window.BeipTestErrors||[]));send('testresult:'+JSON.stringify({phase:config.phase,errors,alpha:{text:alpha?.view.textContent},beta:{text:beta?.view.textContent}}));}
 };

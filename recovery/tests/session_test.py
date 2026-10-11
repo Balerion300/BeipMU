@@ -11,7 +11,7 @@ import time
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.5" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.6" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -122,7 +122,7 @@ def run(phase):
     )
     try:
         try:
-            app.wait(timeout=38)
+            app.wait(timeout=75)
         except subprocess.TimeoutExpired:
             app.kill()
             app.wait()
@@ -141,17 +141,28 @@ def run(phase):
     assert result.get("inputResize") is True and result.get("typingUI") is True, result
     menu = json.loads((OUT / "menu.json").read_text(encoding="utf-8"))
     assert menu == {"count": 6, "itemCount": 7, "labels": ["&Windows", "&Tools", "&Logging...\tCtrl+L", "&Settings...", "&Help", "Close all Windows and E&xit"]}, menu
+    floats = json.loads((OUT / "floating-windows.json").read_text(encoding="utf-8"))
+    assert floats["created"] >= 2 and floats["ready"] == floats["created"] and floats["closed"] == floats["created"] and floats["live"] == 0, floats
+    assert (OUT / "floating-preview.png").stat().st_size > 1000, f"{phase}: no native floating pane screenshot"
     assert result.get("isolated") is True, result
     assert result.get("commandsSent") is True, result
     assert result.get("logging") is True, result
     assert result.get("scripts") is True and result.get("scriptTimeout") is True, result
+    for check in ("scriptReceive", "scriptTrigger", "scriptTimers", "scriptIsolation", "scriptDebug"):
+        assert result.get(check) is True, (check, result)
     assert result.get("credentialSaved") is True, result
     assert result.get("avatarLoaded") is True and result.get("tilemapRendered") is True, result
     assert result.get("mediaDisabled") is True, result
     assert result.get("mapperUI") is True, result
     for check in ("dockMap", "dockResize", "dockIsolation", "groupedCapture", "captureCancel", "splitIsolated",
-                  "imageDock", "notesIsolated", "historyIsolated", "delayRouting", "smartPasteRouting"):
+                  "imageDock", "notesIsolated", "historyIsolated", "floatingOwner", "floatingDock",
+                  "floatingSessionCleanup", "shortcutRemap", "delayRouting", "smartPasteRouting"):
         assert result.get(check) is True, (check, result)
+    imported = result.get("classicImport") or {}
+    for check in ("configPreview", "reviewBeforeApply", "credentialsOmitted", "scriptOmitted",
+                  "configApplied", "atlasPreview", "zipDecompression", "atlasApplied", "restorationSaved"):
+        assert imported.get(check) is True, (check, imported)
+    assert not imported.get("error"), imported
     assert result.get("draftsIsolated") is True and result.get("closedIsolation") is True, result
     assert result.get("spawn") is True, result
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
@@ -186,6 +197,8 @@ def run(phase):
     assert b"sample-pass" not in b, (phase, b)
     assert b"core-macro-alpha\r\n" in a and b"core-macro-alpha\r\n" not in b, (phase,a,b)
     assert b"core-trigger-alpha\r\n" in a and b"core-trigger-alpha\r\n" not in b,(phase,a,b)
+    assert b"core-hook-allowed\r\n" in a and b"core-hook-allowed\r\n" not in b, (phase,a,b)
+    assert b"core-hook-blocked\r\n" not in a + b, (phase,a,b)
     assert b"connect SampleUser sample-pass\r\n" in a and b"connect SampleUser sample-pass\r\n" not in b,(phase,a,b)
     assert b"BlockedWrong" not in a + b and b"BlockedPlain" not in a + b, (phase, a, b)
     assert result.get("workerCSP") is True,result

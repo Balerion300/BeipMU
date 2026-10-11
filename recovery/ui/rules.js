@@ -57,7 +57,7 @@
       const end = at + pattern.length;
       if ((!rule.lineStart || at === 0) && (!rule.lineEnd || end === text.length) &&
           (!rule.wholeWord || wholeWordAt(text, at, end)))
-        return { start: at, end, captures: [text.slice(at, end)] };
+        return { start: at, end, captures: [text.slice(at, end)], ranges: [at, end] };
       at = source.indexOf(needle, at + 1);
     }
     return null;
@@ -82,21 +82,21 @@
       return yes;
     }
     if (!possible(0, 0)) return null;
-    const captures = [text];
+    const captures = [text], ranges = [0, text.length];
     let pi = 0, ti = 0;
     while (pi < glob.length) {
       if (glob[pi] === '*') {
         const start = ti;
         while (!possible(pi + 1, ti)) ti++;
-        captures.push(text.slice(start, ti));
+        captures.push(text.slice(start, ti));ranges.push(start,ti);
         pi++;
       } else { pi++; ti++; }
     }
-    return { start: 0, end: text.length, captures };
+    return { start: 0, end: text.length, captures, ranges };
   }
   function regexMatch(text, pattern, rule, from, diagnostics) {
     let regex;
-    try { regex = new RegExp(pattern, rule.matchCase ? 'g' : 'gi'); }
+    try { regex = new RegExp(pattern, rule.matchCase ? 'gd' : 'gid'); }
     catch { diagnostics.push('Invalid regex in rule ' + String(rule.id ?? '(unnamed)') + '.'); return null; }
     regex.lastIndex = from;
     let hit;
@@ -104,7 +104,8 @@
       const start = hit.index, end = start + hit[0].length;
       if ((!rule.lineStart || start === 0) && (!rule.lineEnd || end === text.length) &&
           (!rule.wholeWord || wholeWordAt(text, start, end)))
-        return { start, end, captures: Array.from(hit, value => value ?? '') };
+        return { start, end, captures: Array.from(hit, value => value ?? ''),
+          ranges: hit.indices.flatMap(pair => pair ? pair : [-1, -1]) };
       regex.lastIndex = start + Math.max(1, hit[0].length);
     }
     return null;
@@ -249,6 +250,11 @@
           }
         }
         if (rule.notify) actions.push({ type: 'notification', text, ...detail });
+        if (typeof rule.scriptName === 'string' && rule.scriptName) {
+          if (!/^[A-Za-z_$][\w$]{0,79}$/.test(rule.scriptName))diagnostics.push('Invalid trigger script name in rule ' + id + '.');
+          else if(actions.length < limits.maxActions)
+            actions.push({ type: 'script', name: rule.scriptName, text, ranges: hit.ranges.slice(0, 32), ...detail });
+        }
         if (typeof rule.filterText === 'string') {
           const replacement = interpolate(rule.filterText, hit.captures);
           const next = text.slice(0, hit.start) + replacement + text.slice(hit.end);

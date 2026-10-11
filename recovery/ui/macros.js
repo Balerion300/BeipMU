@@ -64,7 +64,7 @@
   for(const rule of macroarray.slice(0,MAX_MACROS)){
    if(!rule||rule.enabled===false||rule.folder||normalizeCombo(rule.key)!==key)continue;
    const rank=applicable(rule,scope);if(!rank||rank<=priority)continue;
-   if(RESERVED.has(key)&&rule.overrideBuiltins!==true)continue;
+   if((scope.reservedCombos?.has?.(key)??RESERVED.has(key))&&rule.overrideBuiltins!==true)continue;
    if(typeof rule.text!=='string'||rule.text.length>MAX_TEXT)continue;
    selected=rule;priority=rank;
   }

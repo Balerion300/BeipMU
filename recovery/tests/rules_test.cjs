@@ -66,6 +66,22 @@ test('spawn moves filtered text by default and copy keeps the main line', () => 
     .processLine('hello', scope);
   assert.equal(copied.gagged, false);
 });
+test('named trigger script action carries bounded original line and match ranges', () => {
+  const simple = createEngine({ triggers: [{ id: 'script', match: 'world', scriptName: 'ShowText' }] })
+    .processLine('hello world end', scope);
+  assert.deepEqual(simple.actions[0], { type: 'script', name: 'ShowText', text: 'hello world end', ranges: [6, 11], triggerId: 'script' });
+  const wildcard = createEngine({ triggers: [{ match: '[*] *', matchType: 'wildcard', scriptName: 'ShowText' }] })
+    .processLine('[public] hello', scope);
+  assert.deepEqual(wildcard.actions[0].ranges, [0, 14, 1, 7, 9, 14]);
+  const invalid = createEngine({ triggers: [{ match: 'hit', scriptName: 'bad-name' }] }).processLine('hit', scope);
+  assert.equal(invalid.actions.length, 0);assert.ok(invalid.diagnostics.some(message => message.includes('script name')));
+});
+test('regex trigger script action exposes capture ranges in worker engine', () => {
+  const engine = createEngine({ workerEngine: true, allowRegex: true,
+    triggers: [{ match: 'foo (\\w+) (\\w+)', matchType: 'regex', scriptName: 'ShowText' }] });
+  const script = engine.processLine('This is foo one two.', scope).actions[0];
+  assert.deepEqual(script.ranges, [8, 19, 12, 15, 16, 19]);
+});
 test('cooldown and once per engine instance', () => {
   const engine = createEngine({ triggers: [
     { id: 'cool', match: 'hit', notify: true, cooldownMs: 1000 },

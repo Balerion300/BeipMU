@@ -1,7 +1,7 @@
 # BeipMU recovery feature inventory
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the 0.5 recovery worktree (`recovery/`). The original 4.335 executable was
+from the 0.6 recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.
 "Verified" below means focused tests or an app fixture passed for the stated
 subset. Version labels identify the verified milestone; they do not mean full
@@ -9,19 +9,19 @@ upstream compatibility.
 
 | Feature | Original BeipMU behavior | Recovery status |
 | --- | --- | --- |
-| Desktop layout | Bottom-left popup, output/input panes, bottom session tabs and activity indicators | **0.4 app fixture verified:** native Windows/Tools/Logging/Settings/Help/Exit popup, black output and input, resizable command pane, and tabs/activity on one bottom row. Worlds and supported feature editors follow the directly inspected original 4.335 dialog layouts. **0.5 app fixture verified:** right-side session panes with keyboard resizing; free drag docking and floating remain open. |
+| Desktop layout | Bottom-left popup, output/input panes, bottom session tabs and activity indicators | **0.4 app fixture verified:** native Windows/Tools/Logging/Settings/Help/Exit popup, black output and input, resizable command pane, and tabs/activity on one bottom row. Worlds and supported feature editors follow the directly inspected original 4.335 dialog layouts. **0.5 app fixture verified:** right-side session panes with keyboard resizing; 0.6 adds independent native floating panes and Dock actions; free drag docking remains open. |
 | Connections and output | Multiple worlds/characters, telnet, configurable sessions, ANSI text | **0.3 app fixture verified:** two concurrent telnet sessions with independent output and command routing. The 0.2 baseline supported one plain TCP connection. |
 | Pueblo/MXP | Pueblo plus MXP support, clickable commands, images and text formatting | Preview 0.3 retains the documented Pueblo and explicit MXP subset, with parser and local-server tests. Full MXP remains open. |
 | World profiles | Server and character entries, connect strings, notes, per-profile rules and logging | **0.3 app fixture verified:** saved world/character labels, startup choices, settings persistence, scoped rules, and character-bound login with a password kept in Windows Credential Manager. The test-mode vault is memory-only; wrong-character and unapproved plain-TCP login attempts were rejected. **0.5 app fixture verified:** one character's notes saved and reloaded without appearing in another's pane. Original connect templates and complete per-profile behavior remain open. |
 | TLS | Secure server connections | **0.3 full-app fixture verified:** Schannel transport with system trust and hostname checks. Local trusted, untrusted and wrong-host certificate tests also passed. |
 | Aliases | Ordered global/server/character aliases, simple or regex replacement, capture substitutions, multi-line output, folders, variables, processing options | **0.3 app fixture verified subset:** ordered scopes, simple/wildcard and worker-isolated regex captures, `\0`/`\1` replacement, multi-line output and bounded command expansion. Folders, variables and complete internal-command ordering remain open. |
 | Triggers | Ordered global/server/character triggers, regex or simple matching, appearance, filtering, gagging, send, spawn, toast, sound, speech, scripts, children and multi-line capture | **0.3 app fixture verified subset:** completed-line simple/wildcard and worker-isolated regex matching, captures, commands, highlight, gag, spawn and notification actions. **0.5 app fixture verified:** original-style editor saves a description without losing enabled/copy/send/highlight fields; grouped spawn, capture-until, filtered spawn text, move/copy, log-gag and manual capture cancellation work in the supported subset. Child processing, focus conditions, sound/speech and advanced appearance remain open. |
-| Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. Floating and full docking remain open. |
-| Keyboard shortcuts and macros | Remappable application shortcuts and per-world macros | **0.3 app fixture verified subset:** scoped keyboard macros and command history. **0.5 app fixture verified:** session history pane, entry recall, and Ctrl+Down saving a draft without sending it. Full shortcut remapping remains open. |
+| Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. 0.6 adds native floating panes; full free drag docking remains open. |
+| Keyboard shortcuts and macros | Remappable application shortcuts and per-world macros | **0.3 app fixture verified subset:** scoped keyboard macros and command history. **0.5 app fixture verified:** session history pane, entry recall, and Ctrl+Down saving a draft without sending it. 0.6 adds remapping of supported application actions. |
 | Logging | Manual and automatic per-character logs, date naming, log from scrollback | **0.3 app fixture verified subset:** start/stop session logs, local log files and transcript export. **0.5 app fixture verified:** restarting a log from the beginning includes existing scrollback; captured lines marked log-gag are absent. Original per-character naming and full lifecycle options remain open. |
-| Scripting | JavaScript startup and immediate mode, trigger functions, application objects | **0.3 app fixture verified subset:** opt-in worker JavaScript with startup/immediate execution, line/GMCP callbacks, bounded effects and execution timeout. The original application object API remains largely open. |
+| Scripting | JavaScript startup and immediate mode, trigger functions, application objects | **0.3 app fixture verified subset:** opt-in worker JavaScript with startup/immediate execution, line/GMCP callbacks, bounded effects and execution timeout. 0.6 adds send/receive suppression, raw GMCP callbacks, named trigger functions, window userdata, connection Display/Transmit, bounded timers and script error output. Native COM/filesystem and the complete application object model remain open. |
 | GMCP | Core.Hello/Supports and `Beip.Stats`, `Beip.Tilemap`, `Beip.Id`, `Client.Media` | **0.3 app fixture verified subset:** telnet GMCP negotiation, Core.Hello/Supports, `Beip.Stats` and `Beip.Id`; incoming `Beip.Tilemap` and `Client.Media` messages reach their browser modules. Core.Supports advertises Stats, Tilemap, Id and Client.Media version 1. |
-| Mapping | Interactive atlas with rooms, exits, route finding, editing | **0.3 app fixture verified subset:** per-world rooms, coordinates, directed exits and shortest routes; browser map dialog creates and edits two rooms, adds an exit, marks the current room, displays the `n` route, and persists the graph. Atlas import/export, map layers, path highlighting, and automatic location tracking remain open. |
+| Mapping | Interactive atlas with rooms, exits, route finding, editing | **0.3 app fixture verified subset:** per-world rooms, coordinates, directed exits and shortest routes; browser map dialog creates and edits two rooms, adds an exit, marks the current room, displays the `n` route, and persists the graph. 0.6 adds reviewed XML/ZIP Atlas import. Atlas export, layers, drawings and automatic location tracking remain open. |
 | Client commands and Smart Paste | Documented slash commands, delayed sends, multiline clipboard/file sending with pace and affixes | **0.5 app fixture verified subset:** `/delay` sends on its originating session after the active tab changes, cancellation prevents a pending send, and Smart Paste sends two paced prefixed/suffixed lines only to its originating session. Module tests cover the broader implemented command subset and paste validation. Complete original command vocabulary and dialog behavior remain open. |
 | Stat windows | Text/range/progress displays and updates | **0.3 app fixture verified subset:** `Beip.Stats` text, range and progress display. Richer original layout behavior remains open. |
 | Client.Media | Default/Load/Play/Stop; name-based sound playback | **Partial browser fixture verified:** incoming `Default` and `Load` messages set the media base and cache a name while playback stays disabled by default. Isolated module tests cover `Play`, `Stop`, volume and loops. Browser audio playback still needs checking. |
@@ -46,8 +46,8 @@ remains outside this slice.
 
 | Area | Original behavior to compare | 0.5 verified behavior | Remaining gap after this slice |
 | --- | --- | --- | --- |
-| Docked panes | Original window menu can show history, map, image and character-notes panes; panes can be docked and grouped | Native actions opened the supported panes; the map rendered two saved rooms, the dock resized by keyboard, and another character's pane state stayed separate | Full drag docking, floating windows and copied layouts; recovery saves which pane types are open per character, but not an original-compatible arrangement |
-| History and command input | History window shows sent commands; Ctrl+Up/Down recalls them; Ctrl+Down can save a draft without sending | Two sent lines appeared in their originating session's history; clicking a row recalled it, while Ctrl+Down saved an unsent draft | Remappable shortcuts, original history search interface and all original editing rules |
+| Docked panes | Original window menu can show history, map, image and character-notes panes; panes can be docked and grouped | Native actions opened the supported panes; the map rendered two saved rooms, the dock resized by keyboard, and another character's pane state stayed separate | Full drag docking and copied layouts; recovery saves which pane types are open per character, but not an original-compatible arrangement |
+| History and command input | History window shows sent commands; Ctrl+Up/Down recalls them; Ctrl+Down can save a draft without sending | Two sent lines appeared in their originating session's history; clicking a row recalled it, while Ctrl+Down saved an unsent draft | The complete original history search interface and all original editing rules |
 | Output split and image | Original output can split for scrollback; the image window displays separate imagery | A split pane reflected only one session's visible lines; the image pane loaded a real local test image | Original pane persistence, media controls and complete image window options |
 | Character notes | Notes belong to a selected character profile | A note saved for one character survived the persisted relaunch and did not appear for another character | Original note formatting and every profile inheritance behavior |
 | Rules | Original aliases and triggers offer nested processing, folders, variables, conditions and richer actions | The app fixture exercised capture-until, grouping, move/copy, filtered text, log-gag, manual cancellation and an editor save; module tests cover bounds and disabled behavior | Features not explicitly modeled or tested remain open, particularly original script and action compatibility |
@@ -128,7 +128,7 @@ exits have stable IDs, endpoints, and one-line commands. Its editor methods,
 only on local graph state. The caller must send returned walk commands only
 after an explicit user action. `normalize()` rejects invalid persisted maps,
 with limits of 1,024 rooms and 4,096 exits. This is the route and room data
-foundation; it does not read or write `.atlas` files.
+foundation. `classic-import-core.js` reads bounded original XML/ZIP `.atlas` files; writing Atlas files remains open.
 
 References: [Aliases](../Documentation/Aliases.md),
 [Triggers](../Documentation/Triggers.md),
@@ -138,3 +138,36 @@ References: [Aliases](../Documentation/Aliases.md),
 [GMCP](../Documentation/GMCP.md),
 [Tilemap format](../TileMap.md), and the
 [recovery notes](README.md).
+
+
+## Preview 0.6 compatibility boundaries
+
+Floating panes are owned Windows windows with separate restricted WebViews.
+Snapshots contain semantic data and bounded text; panel events return through
+the owning window identity. The supported pane types are map, input history,
+images, notes, split output and spawn output. Floating split output preserves bounded styles and command/URL links. Floating
+spawn output uses plain text snapshots; docked views retain richer original DOM. Free drag
+rearrangement and copied original docking layouts remain incomplete.
+
+Original Config.txt imports the supported subset after a category review.
+Passwords, connect strings and script-like actions are omitted. Imported
+profiles receive fresh identities. Atlas maps support plain XML and Deflate ZIP
+Atlas.xml with CRC and expansion limits. Shipped Fluff, FurryMUCK and Arx files
+are covered by tests. Arx has unresolved references that are reported; map
+layers/drawings and all original exit metadata cannot be represented.
+
+Shortcut overrides persist inside allowlisted preferences. Unsupported original
+actions are not offered. Script callbacks and trigger functions run in a
+session-owned disposable worker, with execution, queue, effect and timer limits.
+Filesystem/COM/native UI scripting is outside this preview's supported API.
+
+0.6 packaged acceptance passed on a fresh launch and a persisted second launch
+(`sessions-20261011-232953`). Both phases verified floating history through a
+real native child WebView with rendered acknowledgment and screenshot, Dock,
+restored layouts and zero live floating windows after session cleanup; moved
+Ctrl+U to Ctrl+K and checked the old binding no longer clears input; exercised
+review/apply Config.txt and compressed Atlas imports; and checked script
+startup, send/receive suppression, named trigger ranges, session timers,
+watchdog/debug output, worker restrictions and per-session command routing.
+These checks establish the supported subset; they do not establish complete
+original BeipMU feature or visual parity.

@@ -11,6 +11,7 @@
 .dock-pane{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
 .dock-pane-head{flex:none;display:flex;align-items:center;justify-content:space-between;background:#d4d0c8;color:#111;border-bottom:1px solid #777;font:12px "Segoe UI",sans-serif;padding:2px 4px;min-height:24px}
 .dock-pane-head button{border:1px solid #888;background:#e7e7e7;color:#111;padding:0 5px;font:14px "Segoe UI",sans-serif;line-height:17px;min-width:21px}
+.dock-head-controls{display:flex;gap:2px}
 .dock-pane-body{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0;overflow:auto;padding:5px;background:#000;color:#c0c0c0}
 .dock-pane-body button,.dock-pane-body select{font:11px "Segoe UI",sans-serif;border:1px solid #888;border-radius:0;background:#d4d0c8;color:#111;padding:2px 5px}
 .dock-pane-body button:hover{background:#e5e5e5}
@@ -21,6 +22,7 @@
 .dock-map text{fill:#c0c0c0;font:12px "Courier New",monospace}
 .dock-map g{cursor:pointer}
 .dock-list,.dock-output-copy{flex:1;min-height:0;overflow:auto;background:#000;color:#c0c0c0;white-space:pre-wrap;overflow-wrap:anywhere}
+.dock-history-search{flex:none;width:100%;background:#fff;color:#111;border:1px solid #777;padding:3px 5px;font:12px "Segoe UI",sans-serif}
 .dock-history-row{display:block!important;width:100%;text-align:left!important;border:0!important;border-bottom:1px solid #292929!important;background:#000!important;color:#c0c0c0!important;font:var(--output-size,13px)/1.2 var(--output-font,"Courier New",monospace)!important;padding:3px 2px!important;overflow-wrap:anywhere}
 .dock-history-row:hover{background:#173e55!important}
 .dock-image{max-width:100%;max-height:calc(100% - 70px);object-fit:contain;align-self:center}

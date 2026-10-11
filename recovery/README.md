@@ -1,4 +1,4 @@
-# BeipMU recovery preview 0.5
+# BeipMU recovery preview 0.6
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
@@ -58,7 +58,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.5-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.6-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -89,7 +89,8 @@ after user interaction.
 
 ## Verification
 
-The build runs 417 parser and feature-module checks plus native telnet tests.
+The build runs 438 named parser and feature-module checks, a shortcut model
+suite, and native telnet tests.
 With Python installed, run these compiled-app fixtures:
 
 ```powershell
@@ -104,7 +105,7 @@ fixture and three native TLS cases passed. The session fixture checks grouped
 capture and cancellation, image/history/map/notes/split panes, logging from
 scrollback, timer ownership and cancellation, and paced Smart Paste routing.
 The full-app TLS fixture was last verified in 0.3; its 0.4 rerun stopped at the
-Windows certificate-install prompt. It has not been rerun for 0.5.
+Windows certificate-install prompt. It has not been rerun for 0.6.
 
 Pueblo/MXP fixtures check three loaded images, a failed-image fallback, command
 clicks and consecutive WHO rows. Session fixtures check separate connections,
@@ -121,9 +122,44 @@ styles and entities. MXP: telnet option 91, open/secure/locked and permanent
 modes, `SEND href/hint/prompt`, `A href`, `IMAGE url/fname`, `IMG src`, `B`, `I`,
 `U`, `COLOR`, `FONT color`, `BR`, `P`, `VERSION` and `SUPPORT`. Custom elements,
 MXP SOUND, frames, element definitions, image maps and full conformance remain
-open. Other outstanding work includes original config import, nested/multiline
-triggers, full script objects, docking, speech and original atlas compatibility.
+open. Other outstanding work includes nested/multiline triggers, full script
+objects, free drag docking, speech, Atlas export/layers/drawings and unsupported
+original preferences.
 
 The user verified live Blood of Dragons login and images in preview 0.1.
 This reconstruction was informed by published source and analysis of official
 4.335 x64 (SHA256 `446b1a03de52b059df451c0a0591d2b3ed1094146a7f0ce3f775ced1d77f7870`).
+
+
+Version 0.6 adds independent floating Windows windows for the supported panes.
+Use the pane's Float button, then Dock to return it. Each window stays attached
+to its originating session; position and size are saved with its pane layout.
+This supports float/dock actions, not the original free drag docking system.
+
+The Tools menu includes Import Original Settings or Map and Keyboard Shortcuts.
+Config.txt import previews supported worlds, characters, preferences, aliases,
+triggers and macros before applying selected categories. Passwords, connect
+strings and scripts are omitted. Atlas import accepts original XML and ZIP
+Atlas.xml formats, previews room/exit counts and unresolved references, then
+replaces only the selected world's map. Layers, drawings and unresolved exits
+are reported rather than silently presented as fully imported.
+
+Keyboard Shortcuts supports changing or clearing supported built-in actions,
+with conflict resolution and Apply/OK/Cancel. Macro overrides remain explicit.
+Scripts add original-style SetOnSend/SetOnReceive boolean suppression, raw
+SetOnGMCP callbacks, connection Display/Transmit, window.UserData, named trigger
+functions and bounded CreateTimeout/CreateInterval/Kill. Script Debug Output
+collects errors. These are opt-in isolated JavaScript features; arbitrary COM,
+filesystem access, original native application automation and every script
+object are not implemented.
+
+For 0.6, all build/module checks and the packaged Pueblo/MXP image/link/WHO
+fixtures passed. The two-launch session fixture passed in
+`test-results/sessions-20261011-232953`, including real native floating child
+ready/rendered/capture acknowledgments and screenshots, owner routing, docking,
+layout restoration and close cleanup; shortcut remapping/persistence;
+Config.txt review/apply and credential/script omission; real WebView ZIP Atlas
+decompression/apply; and worker callbacks, trigger ranges, timers and debug
+output. The 0.6 native TLS attempt passed untrusted-certificate rejection but
+its trusted case timed out; the last complete native TLS verification remains
+0.5. No TLS implementation was changed in this preview.

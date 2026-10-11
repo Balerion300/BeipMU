@@ -1,4 +1,5 @@
 const assert=require('node:assert/strict');
+const fs=require('node:fs'),vm=require('node:vm');
 const {words,duration,createScheduler,pasteLines}=require('../ui/client-commands.js');
 let checks=0;function check(name,fn){fn();checks++;}
 check('quoted arguments preserve spaces',()=>assert.deepEqual(words('every 2s "say hello"'),['every','2s','say hello']));
@@ -23,4 +24,17 @@ check('closing one session keeps other timers',()=>{const f=fixture();f.schedule
 check('nested timer creation rejected',()=>assert.throws(()=>fixture().scheduler.add('a','1s','/delay 1s WHO')));
 check('multiline timer commands rejected',()=>assert.throws(()=>fixture().scheduler.add('a','1s','one\ntwo')));
 check('timer count bounded',()=>{const f=fixture();for(let i=0;i<64;i++)f.scheduler.add('a','1s','WHO');assert.throws(()=>f.scheduler.add('b','1s','LOOK'));});
-console.log(`${checks} client command checks passed.`);
+(async()=>{
+ let finishLine;const pendingLineWork=new Promise(resolve=>finishLine=resolve),calls=[],reports=[];
+ const session={id:'alpha',worldId:'world',characterId:'character',pendingLineWork,
+  ruleRuntime:{cancelCapture:scope=>{calls.push(scope);return Promise.resolve({cancelled:true});}}};
+ const api={sessions:new Map([['alpha',session]]),appendText:(_,line)=>reports.push(line)};
+ const context=vm.createContext({window:{BeipPreview:api},document:{},TextEncoder,setTimeout,clearTimeout,Date,Math});
+ vm.runInContext(fs.readFileSync(require.resolve('../ui/client-commands.js'),'utf8'),context);
+ assert.equal(context.BeipClientCommands.handle('/capturecancel',session),true);
+ await Promise.resolve();assert.equal(calls.length,0,'cancel ran before pending line finished');
+ finishLine();for(let i=0;i<4;i++)await Promise.resolve();
+ assert.equal(calls.length,1);assert.equal(calls[0].serverId,'world');assert.equal(calls[0].characterId,'character');
+ assert.deepEqual(reports,['Spawn capture canceled.\n']);
+ checks++;console.log(`${checks} client command checks passed.`);
+})().catch(error=>{console.error(error);process.exitCode=1;});

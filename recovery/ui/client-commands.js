@@ -101,8 +101,11 @@
    else if(name==='/smartpaste')smartPaste();
    else if(name==='/capturecancel'){
     const scope={serverId:session.worldId,characterId:session.characterId};
-    if(session.ruleRuntime)session.ruleRuntime.cancelCapture(scope).then(result=>display(session,result.cancelled?'Spawn capture canceled.':'No active spawn capture.'));
-    else display(session,session.ruleEngine?.cancelCapture(scope)?.cancelled?'Spawn capture canceled.':'No active spawn capture.');
+    Promise.resolve(session.pendingLineWork).then(()=>{
+     if(api.sessions.get(session.id)!==session)return;
+     if(session.ruleRuntime)return session.ruleRuntime.cancelCapture(scope).then(result=>display(session,result.cancelled?'Spawn capture canceled.':'No active spawn capture.'));
+     display(session,session.ruleEngine?.cancelCapture(scope)?.cancelled?'Spawn capture canceled.':'No active spawn capture.');
+    });
    }
    else if(name==='/logall'){if(arg.trim())throw new Error('Use /logall without a filename; this preview saves in its Logs folder.');if(!session.connected)throw new Error('Connect before starting a log.');if(session.logging)throw new Error('A log is already running for this session.');api.startLogging?.(session,true);}
    else return false;

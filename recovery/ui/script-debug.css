@@ -1,0 +1,11 @@
+.script-debug{width:min(650px,calc(100vw - 24px));height:min(430px,calc(100vh - 28px));padding:0;border:1px solid #777;background:#f0f0f0;color:#111;box-shadow:0 12px 36px #0008}
+.script-debug::backdrop{background:#0005}
+.script-debug-head{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#dce7f4;border-bottom:1px solid #8b9caf}
+.script-debug-head h2{margin:0;font:600 13px system-ui,sans-serif}
+.script-debug-head button{border:0;background:transparent;color:#111;font-size:20px;line-height:1;min-width:28px;height:25px}
+.script-debug-list{height:calc(100% - 68px);overflow:auto;margin:8px;background:#fff;border:1px solid #888}
+.script-debug-entry{padding:6px 8px;border-bottom:1px solid #ddd;font:12px system-ui,sans-serif}
+.script-debug-entry-head{display:flex;gap:10px;color:#444}
+.script-debug-entry pre{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;color:#8a1919}
+.script-debug-actions{height:30px;display:flex;justify-content:flex-end;align-items:center;gap:7px;padding:0 8px 6px}
+.script-debug-actions button{min-width:66px;height:24px;border:1px solid #777;background:#eee;color:#111;font:12px system-ui,sans-serif}

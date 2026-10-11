@@ -5,7 +5,7 @@ const defaults={fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000
 const state={worlds:[],characters:[],preferences:{...defaults},aliases:[],triggers:[],macros:[],scriptSource:"",scriptEnabled:false,maps:{},secretStatuses:new Map(),secretErrors:new Map()};
 const sessions=new Map(),spawnPanes=new Map(),closedIds=new Set();
 let activeId='default',nextSession=1,test=false,testClicked=false,testReported=false,settingsLoaded=false,ruleEngine=null;
-window.addEventListener('error',e=>send('error|'+e.message));
+window.addEventListener('error',e=>{if(window.BeipCoreTesting)(window.BeipTestErrors??=[]).push(e.message);send('error|'+e.message);});
 
 function safeId(value){return /^[A-Za-z0-9_-]{1,64}$/.test(value);}
 function newId(prefix){return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -54,7 +54,7 @@ function command(value,prompt,session=current()){
  if(prompt){$('input').value=value;$('input').focus();return;}
  if(!session)return;
  if(window.BeipFeatures?.handleCommand(value,session))return;
- const transmit=commands=>{for(const cmd of commands){if(!cmd)continue;sendRaw(session,cmd);if(state.preferences.localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
+ const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(state.preferences.localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
  const context={serverId:session.worldId,characterId:session.characterId};
  if(session.ruleRuntime){session.ruleRuntime.expandCommand(value,context).then(result=>{if(sessions.get(session.id)===session)transmit(result.commands||[]);});return;}
  let commands=[value];try{commands=(session.ruleEngine||ruleEngine)?.expandCommand(value,context).commands||commands;}catch(e){showStatus(session,'Alias error: '+e.message);return;}transmit(commands);
@@ -79,6 +79,7 @@ function finalizeLine(session){
  if(result?.text!==undefined&&result.text!==plain)line.textContent=result.text;
  const highlights=[];for(const action of result?.actions||[]){
   if(action.type==='command'&&action.text)sendRaw(session,action.text);
+  else if(action.type==='script')window.BeipFeatures?.dispatch(session,'trigger',{name:action.name,text:action.text,ranges:action.ranges});
   else if(action.type==='highlight')highlights.push(action);
   else if(action.type==='notification'){if(session.id!==activeId)session.unread++;if('Notification'in window&&Notification.permission==='granted')new Notification(profileLabel(session),{body:action.text||plain});}
   else if(action.type==='spawn')spawnText(session,action.title||'Window',action.text||plain,action.group||'');
@@ -97,8 +98,9 @@ function finalizeLine(session){
  };
  const plain=line.textContent,context={serverId:session.worldId,characterId:session.characterId};
  if(session.kind!=='world'||test||session.suppressAutomation){finish(null);return;}
- if(session.ruleRuntime)session.ruleRuntime.processLine(plain,context).then(finish);
- else{try{finish((session.ruleEngine||ruleEngine)?.processLine(plain,context));}catch(e){showStatus(session,'Trigger error: '+e.message);finish(null);}}
+ const process=()=>{if(sessions.get(session.id)!==session)return;if(session.ruleRuntime)return session.ruleRuntime.processLine(plain,context).then(finish);else{try{finish((session.ruleEngine||ruleEngine)?.processLine(plain,context));}catch(e){showStatus(session,'Trigger error: '+e.message);finish(null);}}};
+ const work=(window.BeipFeatures?.dispatch(session,'line',plain)||Promise.resolve({handled:false})).then(result=>{if(result.handled){line.remove();return;}return process();});
+ session.pendingLineWork=Promise.all([session.pendingLineWork||Promise.resolve(),work]).then(()=>{});
 }
 function logLine(session,text){const bytes=new TextEncoder().encode(text);if(bytes.length<=65536)send('log|'+session.id+'|'+encode64(text));else showStatus(session,'A line was too long to log.');}
 function startLogging(session,fromBeginning=false){
@@ -161,6 +163,7 @@ function autoLogin(session){
 }
 function incoming(message){
  if(typeof message!=='string')return;
+ if(message.startsWith('float:')){if(window.BeipCoreTesting&&message.startsWith('float:captured|'))(window.BeipTestCaptures??=new Set()).add(message.slice(15));window.BeipDockPanels?.handleNative(message);return;}
  if(message.startsWith('ui:')){window.BeipDesktopShell?.handle(message);return;}
  if(message.startsWith('testcore:')){window.BeipCoreTesting=true;window.BeipCoreTest?.(JSON.parse(decode64(message.slice(9))));return;}
  if(message.startsWith('secretstatus:')){secretStatusMessage(message);return;}
@@ -170,12 +173,15 @@ function incoming(message){
  let session=sessions.get(id);
  if(!session&&id!=='default'&&!closedIds.has(id))session=createSession(id,{label:id});
  if(!session)return;
+ if(payload==='reset:')session.connectionEpoch=(session.connectionEpoch||0)+1;
+ if(payload==='connected:on')session.connected=true;
+ if(payload==='ended:'){window.BeipDesktopShell?.resume(session);session.parser?.feed(session.decoder.decode());session.parser?.finish();finalizeLine(session);session.connected=false;session.connecting=false;session.connectedAt=0;}
  if(window.BeipFeatures?.incoming(session,payload))return;
  if(payload.startsWith('data:')){if(session.paused){(session.pausedData??=[]).push(payload);session.pausedDataSize=(session.pausedDataSize||0)+payload.length;if(session.pausedDataSize>8*1024*1024){window.BeipDesktopShell?.resume(session);showStatus(session,'Output resumed after reaching the pause buffer limit.');}return;}try{const bytes=Uint8Array.from(atob(payload.slice(5)),c=>c.charCodeAt(0));session.activityAt=Date.now();session.parser?.feed(session.decoder.decode(bytes,{stream:true}));}catch(e){showStatus(session,'Could not decode server data.');}}
  else if(payload.startsWith('status:'))showStatus(session,payload.slice(7));
  else if(payload==='reset:'){session.parser?.reset();session.decoder=new TextDecoder();session.protocol='Plain text';session.loginAttempted=false;if(id===activeId)$('protocol').textContent=session.protocol;}
  else if(payload==='mxp:on')session.parser?.setMXP(true);else if(payload==='mxp:off')session.parser?.setMXP(false);
- else if(payload==='ended:'){window.BeipDesktopShell?.resume(session);session.parser?.feed(session.decoder.decode());session.parser?.finish();finalizeLine(session);session.connected=false;session.connecting=false;session.connectedAt=0;refreshTabs();}
+ else if(payload==='ended:')refreshTabs();
  else if(payload==='connected:on'){session.connected=true;session.connecting=false;session.connectedAt=Date.now();session.activityAt=Date.now();if(session.logWanted&&!session.logging)startLogging(session);autoLogin(session);refreshTabs();}
  else if(payload==='connected:off'){session.connected=false;session.connecting=false;session.connectedAt=0;refreshTabs();}
  else if(payload.startsWith('logstatus:on:')){session.logging=true;session.logStarting=false;const backlog=session.logBacklog||[];session.logBacklog=null;if(session.logWanted){for(const line of backlog)logLine(session,line);}else send('logstop|'+session.id);refreshLogging(session);try{session.logPath=decode64(payload.slice(13));showStatus(session,'Logging to '+session.logPath);}catch{}}
@@ -316,8 +322,8 @@ $('disconnect').onclick=()=>{const s=current();if(s?.kind==='world')send('discon
 $('connectAll').onclick=()=>{for(const world of state.worlds)connectWorld(world);};
 $('disconnectAll').onclick=()=>{for(const s of sessions.values())if(s.kind==='world'&&(s.connected||s.connecting))send('disconnect|'+s.id);};
 $('command').onsubmit=e=>{e.preventDefault();const s=current(),value=$('input').value;if(!s||!value)return;const lines=value.replace(/\r\n?/g,'\n').split('\n');for(const line of lines){if(!line)continue;s.history.push(line);if(s.history.length>500)s.history.shift();s.historyIndex=s.history.length;s.typedCount++;s.activityAt=Date.now();window.BeipDockPanels?.addHistory(s,line);command(line,false,s);} $('input').value='';window.BeipDesktopShell?.refreshActivity();};
-$('input').onkeydown=e=>{const s=current();if(!s||e.isComposing)return;if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('command').requestSubmit();return;}if(e.ctrlKey&&!e.shiftKey&&e.key.toLowerCase()==='h'){e.preventDefault();window.BeipDockPanels?.open('history',s);return;}const historyKey=e.ctrlKey&&(e.key==='ArrowUp'||e.key==='ArrowDown');if(historyKey&&e.key==='ArrowUp'&&s.history.length){e.preventDefault();s.historyIndex=Math.max(0,s.historyIndex-1);$('input').value=s.history[s.historyIndex];}else if(historyKey&&e.key==='ArrowDown'){e.preventDefault();const draft=$('input').value;if(s.historyIndex>=s.history.length&&draft){s.history.push(draft);if(s.history.length>500)s.history.shift();window.BeipDockPanels?.addHistory(s,draft);s.historyIndex=s.history.length;$('input').value='';return;}s.historyIndex=Math.min(s.history.length,s.historyIndex+1);$('input').value=s.history[s.historyIndex]||'';}};
-document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.defaultPrevented)return;if(e.ctrlKey&&e.key==='Tab'){e.preventDefault();const ids=[...sessions.keys()],step=e.shiftKey?-1:1;selectSession(ids[(ids.indexOf(activeId)+step+ids.length)%ids.length]);}else if(e.altKey&&/^[1-9]$/.test(e.key)){const id=[...sessions.keys()][Number(e.key)-1];if(id){e.preventDefault();selectSession(id);}}});
+
+document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.defaultPrevented)return;if(e.altKey&&/^[1-9]$/.test(e.key)){const id=[...sessions.keys()][Number(e.key)-1];if(id){e.preventDefault();selectSession(id);}}});
 $('clear').onclick=()=>{const s=current();if(!s)return;s.view.replaceChildren();s.line=null;s.images=s.loaded=s.failed=0;s.hasOutput=false;window.BeipDockPanels?.clear(s);updateCounts();};
 $('logging').onchange=()=>{const s=current();if(!s||s.kind!=='world')return;s.logWanted=$('logging').checked;if(s.logWanted)startLogging(s);else {s.logStarting=false;s.logBacklog=null;if(s.logging)send('logstop|'+s.id);}};
 $('profileEditorMount').append($('profileEditor'));
@@ -332,9 +338,9 @@ $('profileForgetSecret').onclick=()=>{const id=$('profileId').value;if(!safeId(i
 $('profileEditor').addEventListener('close',()=>{$('profilePassword').value='';$('profileRememberSecret').checked=false;});
 $('rulesButton').onclick=()=>{renderRuleLists();$('rulesDialog').showModal();openRuleEditor('trigger',state.triggers[0]||null);};$('newAlias').onclick=()=>openRuleEditor('alias');$('newTrigger').onclick=()=>openRuleEditor('trigger');$('ruleScope').onchange=updateRuleScope;$('ruleForm').onsubmit=saveRule;
 $('settingsButton').onclick=()=>{const p=state.preferences;$('fontSize').value=p.fontSize;$('fontFamily').value=p.fontFamily;$('theme').value=p.theme;$('scrollback').value=p.scrollback;$('inlineImages').checked=!!p.inlineImages;$('localEcho').checked=!!p.localEcho;$('defaultLogging').checked=!!p.defaultLogging;$('mediaEnabled').checked=!!p.mediaEnabled;$('settingsDialog').showModal();};
-$('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={fontSize:Math.max(10,Math.min(30,Number($('fontSize').value)||13)),fontFamily:$('fontFamily').value==='system'?'system':'monospace',theme:$('theme').value==='light'?'light':'dark',scrollback:Math.max(100,Math.min(20000,Number($('scrollback').value)||10000)),inlineImages:$('inlineImages').checked,localEcho:$('localEcho').checked,defaultLogging:$('defaultLogging').checked,mediaEnabled:$('mediaEnabled').checked,inputHeight:Math.max(40,Math.min(300,Number(state.preferences.inputHeight)||40))};applyPreferences();for(const session of sessions.values())session.media?.setEnabled(state.preferences.mediaEnabled);saveSettings();$('settingsDialog').close();};
+$('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:state.preferences.shortcuts,fontSize:Math.max(10,Math.min(30,Number($('fontSize').value)||13)),fontFamily:$('fontFamily').value==='system'?'system':'monospace',theme:$('theme').value==='light'?'light':'dark',scrollback:Math.max(100,Math.min(20000,Number($('scrollback').value)||10000)),inlineImages:$('inlineImages').checked,localEcho:$('localEcho').checked,defaultLogging:$('defaultLogging').checked,mediaEnabled:$('mediaEnabled').checked,inputHeight:Math.max(40,Math.min(300,Number(state.preferences.inputHeight)||40))};applyPreferences();for(const session of sessions.values())session.media?.setEnabled(state.preferences.mediaEnabled);saveSettings();$('settingsDialog').close();};
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,appendText,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,saveSettings,applyPreferences,rebuildRules,startLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,appendText,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,rebuildRules,startLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});

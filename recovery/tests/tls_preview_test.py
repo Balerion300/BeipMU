@@ -12,7 +12,7 @@ import time
 from tls_loopback_test import certificates
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.5" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.6" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("tls-app-" + time.strftime("%Y%m%d-%H%M%S"))
 
 

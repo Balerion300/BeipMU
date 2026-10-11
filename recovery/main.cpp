@@ -38,7 +38,7 @@ enum MenuCommand : UINT {
     ConnectionConnect,ConnectionDisconnect,ConnectionConnectAll,ConnectionDisconnectAll,ConnectionProfiles,
     LoggingToggle,
     OptionsAliases,OptionsTriggers,OptionsMacros,OptionsScripts,OptionsMap,OptionsPreferences,
-    HelpAbout,EditFollowOutput,WindowHistory,WindowImage,WindowNotes,WindowSplit,WindowSpawn,EditSmartPaste
+    HelpAbout,EditFollowOutput,WindowHistory,WindowImage,WindowNotes,WindowSplit,WindowSpawn,EditSmartPaste,OptionsImport,OptionsShortcuts
 };
 HMENU createMainPopup(){
     HMENU root=CreatePopupMenu();if(!root)return nullptr;
@@ -57,6 +57,8 @@ HMENU createMainPopup(){
         AppendMenuW(tools,MF_STRING,EditFind,L"&Find...");
         AppendMenuW(tools,MF_STRING,FileExport,L"&Export Transcript...");
         AppendMenuW(tools,MF_STRING,OptionsScripts,L"&Scripts...");
+        AppendMenuW(tools,MF_STRING,OptionsImport,L"Import Original Settings or Map...");
+        AppendMenuW(tools,MF_STRING,OptionsShortcuts,L"Keyboard Shortcuts...");
         HMENU edit=CreatePopupMenu();
         if(edit){
             AppendMenuW(edit,MF_STRING,EditCopy,L"&Copy");
@@ -87,6 +89,7 @@ const char* menuAction(UINT command){
         case ConnectionConnectAll:return "ui:connection-connect-all";case ConnectionDisconnectAll:return "ui:connection-disconnect-all";case ConnectionProfiles:return "ui:connection-profiles";
         case LoggingToggle:return "ui:logging-toggle";
         case OptionsAliases:return "ui:options-aliases";case OptionsTriggers:return "ui:options-triggers";case OptionsMacros:return "ui:options-macros";
+        case OptionsImport:return "ui:options-import";case OptionsShortcuts:return "ui:options-shortcuts";
         case OptionsScripts:return "ui:options-scripts";case OptionsMap:return "ui:options-map";case OptionsPreferences:return "ui:options-preferences";
         case HelpAbout:return "ui:help-about";
         default:return nullptr;
@@ -312,7 +315,47 @@ public:
         });
     }
 };
+#include "floating-window.h"
 struct Application {
+    std::unordered_map<std::string,std::shared_ptr<FloatingWindow>> floats;
+    std::shared_ptr<bool> alive=std::make_shared<bool>(true);
+    std::filesystem::path uiRoot;
+    int floatCreated=0,floatReady=0,floatClosed=0;bool floatCaptured=false;std::string captureFloatId;
+    void captureFloating(){
+        KillTimer(window,2);auto it=floats.find(captureFloatId);ComPtr<IStream> stream;
+        if(it==floats.end()||!it->second->view)return;
+        if(FAILED(SHCreateStreamOnFileEx((testPath/L"floating-preview.png").c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream)))return;
+        auto id=captureFloatId;it->second->view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,live=alive,stream,id](HRESULT hr){
+            if(*live){std::ofstream(testPath/"floating-capture-status.txt")<<hr;if(SUCCEEDED(hr)){floatCaptured=true;message("float:captured|"+id);}else message("float:capture-failed|"+id);}return S_OK;
+        }).Get());
+    }
+    void floating(const std::string& text){
+        std::vector<std::string> a;size_t start=0;for(size_t n;(n=text.find('|',start))!=text.npos;start=n+1)a.push_back(text.substr(start,n-start));a.push_back(text.substr(start));
+        if(a.size()<2||!validId(a[1]))return;
+        auto id=a[1];
+        if(a[0]=="float:close"){if(auto it=floats.find(id);it!=floats.end()&&it->second->hwnd)PostMessageW(it->second->hwnd,WM_CLOSE,0,0);return;}
+        std::string decoded;
+        if(a[0]=="float:update"&&a.size()==3){if(unbase64(a[2],decoded,256*1024)&&validUtf8(decoded)){auto it=floats.find(id);if(it!=floats.end())it->second->update(a[2]);}return;}
+        auto reject=[&]{message("float:error|"+id);};
+        if(a[0]!="float:open"||a.size()!=9||!environment||!validId(a[2])){reject();return;}
+        for(auto it=floats.begin();it!=floats.end();)if(!it->second->hwnd)it=floats.erase(it);else ++it;
+        if(floats.contains(id)){reject();return;}
+        std::string title;if(floats.size()>=12||!unbase64(a[3],title,160)||!validUtf8(title)||!unbase64(a[8],decoded,256*1024)||!validUtf8(decoded)){reject();return;}
+        int geometry[4];try{for(int i=0;i<4;i++){size_t used=0;geometry[i]=std::stoi(a[4+i],&used);if(used!=a[4+i].size())throw 1;}}catch(...){reject();return;}
+        geometry[2]=std::clamp(geometry[2],240,1400);geometry[3]=std::clamp(geometry[3],180,1000);
+        auto f=std::make_shared<FloatingWindow>();f->id=id;f->snapshot=a[8];f->notify=[this,live=alive](const std::string& event){if(!*live)return;
+            if(event.starts_with("float:ready|"))++floatReady;
+            if(event.starts_with("float:closed|"))++floatClosed;
+            if(testMode&&!floatCaptured&&event.starts_with("float:event|")){
+                auto at=event.find('|',12);std::string json;
+                if(at!=event.npos&&unbase64(event.substr(at+1),json)&&json.find("\"action\":\"rendered\"")!=json.npos){
+                    captureFloatId=event.substr(12,at-12);SetTimer(window,2,150,nullptr);
+                }
+            }
+            message(event);
+        };floats[id]=f;
+        if(!f->open(window,environment.Get(),uiRoot,title,geometry[0],geometry[1],geometry[2],geometry[3])){floats.erase(id);reject();}else ++floatCreated;
+    }
     HWND window=nullptr;HMENU mainMenu=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
     std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,ready=false;std::vector<std::string> queued;
@@ -459,7 +502,8 @@ struct Application {
             !(text.starts_with("clipboard|")&&text.size()<=10+4*((ClipboardTextLimit+2)/3))){
             message(text.starts_with("clipboard|")?"ui:clipboard-failed":"settings:error:Message is too large.");return;
         }
-        if(text=="menu:open")openMainMenu();
+        if(text.starts_with("float:"))floating(text);
+        else if(text=="menu:open")openMainMenu();
         else if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
@@ -545,6 +589,8 @@ struct Application {
         }else if(testMode&&text.starts_with("testresult:")){
             KillTimer(window,1);std::filesystem::create_directories(testPath);std::ofstream(testPath/"result.json",std::ios::binary)<<text.substr(11);
             captureNativeWindowEvidence(window,mainMenu,testPath);
+            size_t liveFloats=0;for(auto& [id,f]:floats)if(f->hwnd)++liveFloats;
+            std::ofstream(testPath/"floating-windows.json")<<"{\"created\":"<<floatCreated<<",\"ready\":"<<floatReady<<",\"closed\":"<<floatClosed<<",\"live\":"<<liveFloats<<"}";
             ComPtr<IStream> stream;HRESULT hr=SHCreateStreamOnFileEx((testPath/L"preview.png").c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream);
             if(SUCCEEDED(hr))view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,stream](HRESULT){DestroyWindow(window);return S_OK;}).Get());
             else DestroyWindow(window);
@@ -552,6 +598,7 @@ struct Application {
     }
     void start(){
         wchar_t executable[MAX_PATH];GetModuleFileNameW(nullptr,executable,MAX_PATH);auto ui=std::filesystem::path(executable).parent_path()/L"ui";
+        uiRoot=ui;
         auto profile=dataRoot()/L"WebView";
         auto hr=CreateCoreWebView2EnvironmentWithOptions(nullptr,profile.c_str(),nullptr,Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([this,ui](HRESULT hr,ICoreWebView2Environment* env){
             if(FAILED(hr)||!env){fail(L"Microsoft Edge WebView2 Runtime is required. Install the Evergreen Runtime from Microsoft, then reopen this preview.");return S_OK;}
@@ -612,8 +659,8 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
             if(LOWORD(w)==FileExit){PostMessageW(window,WM_CLOSE,0,0);return 0;}
             if(const char* action=menuAction(LOWORD(w))){app->message(action);return 0;}
         }
-        if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER&&w==2){app->captureFloating();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
+        if(message==WM_DESTROY){*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
@@ -628,7 +675,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.5",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.6",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

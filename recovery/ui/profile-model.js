@@ -2,10 +2,11 @@
 (function(root,factory){
  const macros=typeof module==='object'&&module.exports?require('./macros.js'):root.BeipMacros;
  const mapper=typeof module==='object'&&module.exports?require('./mapper.js'):root.BeipMapper;
- const api=factory(macros,mapper);
+ const shortcuts=typeof module==='object'&&module.exports?require('./shortcut-model.js'):root.BeipShortcuts;
+ const api=factory(macros,mapper,shortcuts);
  if(typeof module==='object'&&module.exports)module.exports=api;
  if(root)root.BeipProfiles=api;
-})(typeof globalThis==='object'?globalThis:this,function(macros,mapper){
+})(typeof globalThis==='object'?globalThis:this,function(macros,mapper,shortcuts){
  'use strict';
  const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40});
  const ID=/^[A-Za-z0-9_-]{1,64}$/;
@@ -53,6 +54,7 @@
    inlineImages:source.inlineImages===undefined?DEFAULTS.inlineImages:bool(source.inlineImages),
    localEcho:bool(source.localEcho),
    defaultLogging:bool(source.defaultLogging),mediaEnabled:bool(source.mediaEnabled),
+   shortcuts:shortcuts?.normalizeOverrides(source.shortcuts)||{},
    inputHeight:number(source.inputHeight,DEFAULTS.inputHeight,40,300)
   };
   function rules(input,kind){
@@ -65,6 +67,7 @@
     if(kind==='alias')result.replacement=text(item.replacement,65536);
     else{
      result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);
+     result.scriptName=typeof item.scriptName==='string'&&/^[A-Za-z_$][\w$]{0,79}$/.test(item.scriptName)?item.scriptName:'';
      result.sendText=text(item.sendText,4096);result.gag=bool(item.gag);result.logGag=bool(item.logGag);
      result.spawnTitle=text(item.spawnTitle,80);result.spawnGroup=text(item.spawnGroup,80);
      result.spawnCopy=bool(item.spawnCopy);result.spawnGagLog=bool(item.spawnGagLog);
