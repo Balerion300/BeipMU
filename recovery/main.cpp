@@ -19,14 +19,75 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include <initializer_list>
+#include <utility>
 #include <unordered_map>
 #include <chrono>
 #include <cctype>
+#include <cstdio>
+#include <cstring>
 #include "protocol.h"
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Callback;
 static constexpr UINT NetworkMessage=WM_APP+1;
+static constexpr size_t ClipboardTextLimit=1024*1024;
+enum MenuCommand : UINT {
+    FileNew=1001,FileClose,FileExport,FileExit,
+    EditCopy,EditSelectAll,EditFind,EditClear,
+    ConnectionConnect,ConnectionDisconnect,ConnectionConnectAll,ConnectionDisconnectAll,ConnectionProfiles,
+    LoggingToggle,
+    OptionsAliases,OptionsTriggers,OptionsMacros,OptionsScripts,OptionsMap,OptionsPreferences,
+    HelpAbout,EditFollowOutput
+};
+HMENU createMainPopup(){
+    HMENU root=CreatePopupMenu();if(!root)return nullptr;
+    auto section=[root](const wchar_t* title,std::initializer_list<std::pair<UINT,const wchar_t*>> items){
+        HMENU popup=CreatePopupMenu();if(!popup)return;
+        for(auto [id,label]:items)AppendMenuW(popup,id?MF_STRING:MF_SEPARATOR,id,label);
+        if(!AppendMenuW(root,MF_POPUP,reinterpret_cast<UINT_PTR>(popup),title))DestroyMenu(popup);
+    };
+    section(L"&Windows",{{FileNew,L"New &Tab"},{OptionsMap,L"Toggle &Map Window"},{0,nullptr},{FileClose,L"&Close Tab"}});
+    HMENU tools=CreatePopupMenu();
+    if(tools){
+        AppendMenuW(tools,MF_STRING,OptionsTriggers,L"&Triggers...\tCtrl+Shift+T");
+        AppendMenuW(tools,MF_STRING,OptionsMacros,L"&Macros...\tCtrl+Shift+M");
+        AppendMenuW(tools,MF_STRING,OptionsAliases,L"&Aliases...\tCtrl+Shift+A");
+        AppendMenuW(tools,MF_SEPARATOR,0,nullptr);
+        AppendMenuW(tools,MF_STRING,EditFind,L"&Find...");
+        AppendMenuW(tools,MF_STRING,FileExport,L"&Export Transcript...");
+        AppendMenuW(tools,MF_STRING,OptionsScripts,L"&Scripts...");
+        HMENU edit=CreatePopupMenu();
+        if(edit){
+            AppendMenuW(edit,MF_STRING,EditCopy,L"&Copy");
+            AppendMenuW(edit,MF_STRING,EditSelectAll,L"Select &All");
+            AppendMenuW(edit,MF_STRING,EditClear,L"C&lear Output");
+            AppendMenuW(edit,MF_STRING,EditFollowOutput,L"Follow &Output");
+            if(!AppendMenuW(tools,MF_POPUP,reinterpret_cast<UINT_PTR>(edit),L"&Edit Output"))DestroyMenu(edit);
+        }
+        if(!AppendMenuW(root,MF_POPUP,reinterpret_cast<UINT_PTR>(tools),L"&Tools"))DestroyMenu(tools);
+    }
+    AppendMenuW(root,MF_STRING,LoggingToggle,L"&Logging...\tCtrl+L");
+    AppendMenuW(root,MF_STRING,OptionsPreferences,L"&Settings...");
+    section(L"&Help",{{HelpAbout,L"&About..."}});
+    AppendMenuW(root,MF_SEPARATOR,0,nullptr);
+    AppendMenuW(root,MF_STRING,FileExit,L"Close all Windows and E&xit");
+    return root;
+}
+const char* menuAction(UINT command){
+    switch(command){
+        case FileNew:return "ui:file-new";case FileClose:return "ui:file-close";case FileExport:return "ui:file-export";
+        case EditCopy:return "ui:edit-copy";case EditSelectAll:return "ui:edit-select-all";case EditFind:return "ui:edit-find";case EditClear:return "ui:edit-clear";
+        case EditFollowOutput:return "ui:edit-follow-output";
+        case ConnectionConnect:return "ui:connection-connect";case ConnectionDisconnect:return "ui:connection-disconnect";
+        case ConnectionConnectAll:return "ui:connection-connect-all";case ConnectionDisconnectAll:return "ui:connection-disconnect-all";case ConnectionProfiles:return "ui:connection-profiles";
+        case LoggingToggle:return "ui:logging-toggle";
+        case OptionsAliases:return "ui:options-aliases";case OptionsTriggers:return "ui:options-triggers";case OptionsMacros:return "ui:options-macros";
+        case OptionsScripts:return "ui:options-scripts";case OptionsMap:return "ui:options-map";case OptionsPreferences:return "ui:options-preferences";
+        case HelpAbout:return "ui:help-about";
+        default:return nullptr;
+    }
+}
 struct Event {std::string text;};
 std::wstring wide(std::string_view s) {
     int n=MultiByteToWideChar(CP_UTF8,0,s.data(),int(s.size()),nullptr,0);
@@ -35,6 +96,57 @@ std::wstring wide(std::string_view s) {
 std::string utf8(std::wstring_view s) {
     int n=WideCharToMultiByte(CP_UTF8,0,s.data(),int(s.size()),nullptr,0,nullptr,nullptr);
     std::string out(n,0);WideCharToMultiByte(CP_UTF8,0,s.data(),int(s.size()),out.data(),n,nullptr,nullptr);return out;
+}
+std::string jsonString(std::string_view text){
+    std::string out="\"";
+    for(unsigned char c:text){
+        if(c=='\"'||c=='\\'){out+='\\';out+=char(c);}
+        else if(c<32){char escape[7];sprintf_s(escape,"\\u%04x",unsigned(c));out+=escape;}
+        else out+=char(c);
+    }
+    return out+'\"';
+}
+void captureNativeWindowEvidence(HWND window,HMENU menu,const std::filesystem::path& testPath){
+    int itemCount=menu?GetMenuItemCount(menu):-1;
+    {
+        std::ofstream file(testPath/L"menu.json",std::ios::binary|std::ios::trunc);
+        std::vector<std::string> labels;
+        for(int i=0;i<itemCount&&i<64;++i){
+            MENUITEMINFOW info{};info.cbSize=sizeof(info);info.fMask=MIIM_FTYPE;
+            if(GetMenuItemInfoW(menu,UINT(i),TRUE,&info)&&(info.fType&MFT_SEPARATOR))continue;
+            wchar_t label[256]{};int length=GetMenuStringW(menu,UINT(i),label,256,MF_BYPOSITION);
+            labels.push_back(utf8(std::wstring_view(label,size_t(length))));
+        }
+        file<<"{\"count\":"<<labels.size()<<",\"itemCount\":"<<itemCount<<",\"labels\":[";
+        for(size_t i=0;i<labels.size();++i){if(i)file<<',';file<<jsonString(labels[i]);}
+        file<<"]}\n";
+    }
+    auto failed=[&](const char* reason){std::ofstream(testPath/L"window-capture-error.txt",std::ios::binary|std::ios::trunc)<<reason<<'\n';};
+    RECT rect{};
+    if(!GetWindowRect(window,&rect)){failed("GetWindowRect failed.");return;}
+    int width=rect.right-rect.left,height=rect.bottom-rect.top;
+    if(width<1||height<1||width>4096||height>4096){failed("Window dimensions are outside the capture limit.");return;}
+    HDC screen=GetDC(window);
+    HDC memory=screen?CreateCompatibleDC(screen):nullptr;
+    BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=width;
+    info.bmiHeader.biHeight=-height;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;
+    HBITMAP bitmap=memory?CreateDIBSection(screen,&info,DIB_RGB_COLORS,&pixels,nullptr,0):nullptr;
+    if(!bitmap||!pixels){if(bitmap)DeleteObject(bitmap);if(memory)DeleteDC(memory);if(screen)ReleaseDC(window,screen);failed("Could not create the window bitmap.");return;}
+    HGDIOBJ previous=SelectObject(memory,bitmap);
+    if(!previous||previous==HGDI_ERROR){DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(window,screen);failed("Could not select the window bitmap.");return;}
+    BOOL captured=PrintWindow(window,memory,2); // PW_RENDERFULLCONTENT
+    if(captured){
+        DWORD bytes=DWORD(width)*DWORD(height)*4;
+        info.bmiHeader.biSizeImage=bytes;
+        BITMAPFILEHEADER header{};header.bfType=0x4D42;header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);header.bfSize=header.bfOffBits+bytes;
+        std::ofstream file(testPath/L"window.bmp",std::ios::binary|std::ios::trunc);
+        file.write(reinterpret_cast<const char*>(&header),sizeof(header));
+        file.write(reinterpret_cast<const char*>(&info.bmiHeader),sizeof(info.bmiHeader));
+        file.write(reinterpret_cast<const char*>(pixels),bytes);
+        if(!file)failed("Could not save the window bitmap.");
+    }else failed("PrintWindow failed.");
+    SelectObject(memory,previous);DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(window,screen);
 }
 std::string base64(std::string_view s) {
     static const char alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -56,6 +168,25 @@ bool unbase64(std::string_view s,std::string& out,size_t limit=65536) {
     return out.size()<=limit && ((padding==0&&bits==0)||(padding==1&&bits==2)||(padding==2&&bits==4)) && (value&((1u<<bits)-1))==0;
 }
 bool validUtf8(std::string_view s){return s.empty()||MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),int(s.size()),nullptr,0)>0;}
+bool writeClipboardText(HWND window,std::string_view encoded){
+    std::string decoded;
+    if(!unbase64(encoded,decoded,ClipboardTextLimit)||decoded.empty()||!validUtf8(decoded)||decoded.find('\0')!=decoded.npos)return false;
+    std::wstring value=wide(decoded);
+    if(value.empty())return false;
+    size_t bytes=(value.size()+1)*sizeof(wchar_t);
+    HGLOBAL block=GlobalAlloc(GMEM_MOVEABLE,bytes);
+    if(!block)return false;
+    void* memory=GlobalLock(block);
+    if(!memory){GlobalFree(block);return false;}
+    std::memcpy(memory,value.c_str(),bytes);
+    GlobalUnlock(block);
+    if(!OpenClipboard(window)){GlobalFree(block);return false;}
+    bool saved=EmptyClipboard()!=FALSE && SetClipboardData(CF_UNICODETEXT,block)!=nullptr;
+    if(saved)block=nullptr; // The clipboard now owns the allocation.
+    CloseClipboard();
+    if(block)GlobalFree(block);
+    return saved;
+}
 bool validLoginField(std::string_view s,size_t limit){
     if(s.empty()||s.size()>limit||!validUtf8(s))return false;
     for(unsigned char c:s)if(c<32||c==127)return false;
@@ -178,7 +309,7 @@ public:
     }
 };
 struct Application {
-    HWND window=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
+    HWND window=nullptr;HMENU mainMenu=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
     std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,ready=false;std::vector<std::string> queued;
     std::unordered_map<std::string,std::string> testSecrets;
@@ -195,6 +326,15 @@ struct Application {
         std::ofstream(testPath/"trace.txt",std::ios::app)<<direction<<" "<<kind<<"\n";
     }
     void message(const std::string& text){trace("HOST",text);if(view&&ready)view->PostWebMessageAsString(wide(text).c_str());else if(queued.size()<256)queued.push_back(text);}
+    void openMainMenu(){
+        if(!mainMenu)return;
+        RECT rect{};if(!GetClientRect(window,&rect))return;
+        POINT at{rect.left+8,rect.bottom-6};ClientToScreen(window,&at);
+        SetForegroundWindow(window);
+        UINT command=TrackPopupMenu(mainMenu,TPM_LEFTALIGN|TPM_BOTTOMALIGN|TPM_RETURNCMD|TPM_NONOTIFY,at.x,at.y,0,window,nullptr);
+        PostMessageW(window,WM_NULL,0,0); // Allows the popup to dismiss on the next outside click.
+        if(command)SendMessageW(window,WM_COMMAND,MAKEWPARAM(command,0),0);
+    }
     void scoped(const std::string& id,std::string payload){message("session:"+id+":"+payload);}
     std::wstring secretTarget(std::string_view id){return L"BeipMU-Recovery/character/"+wide(id);}
     void secretReply(const std::string& id,std::string_view result){message("secretstatus:"+id+":"+std::string(result));}
@@ -311,10 +451,12 @@ struct Application {
     void fail(const wchar_t* text){MessageBoxW(window,text,L"BeipMU Recovery Preview",MB_OK|MB_ICONERROR);DestroyWindow(window);}
     void receive(const std::string& text){
         trace("UI",text);
-        if(text.size()>1024*1024+64&&!(text.starts_with("export|")&&text.size()<=6*1024*1024)){
-            message("settings:error:Message is too large.");return;
+        if(text.size()>1024*1024+64&&!(text.starts_with("export|")&&text.size()<=6*1024*1024)&&
+            !(text.starts_with("clipboard|")&&text.size()<=10+4*((ClipboardTextLimit+2)/3))){
+            message(text.starts_with("clipboard|")?"ui:clipboard-failed":"settings:error:Message is too large.");return;
         }
-        if(text=="ready"){
+        if(text=="menu:open")openMainMenu();
+        else if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
             else if(testCorePorts.size()==2){
@@ -379,6 +521,8 @@ struct Application {
         }else if(text.starts_with("export|")){
             auto split=text.find('|',7);if(split==text.npos)return;
             exportTranscript(text.substr(7,split-7),std::string_view(text).substr(split+1));
+        }else if(text.starts_with("clipboard|")){
+            message(writeClipboardText(window,std::string_view(text).substr(10))?"ui:clipboard-saved":"ui:clipboard-failed");
         }else if(text.starts_with("secret:save|")){
             auto split=text.find('|',12);if(split!=text.npos)saveSecret(text.substr(12,split-12),std::string_view(text).substr(split+1));
         }else if(text.starts_with("secret:delete|"))deleteSecret(text.substr(14));
@@ -396,6 +540,7 @@ struct Application {
             std::string url=text.substr(9);if(url.size()<=2048&&(url.starts_with("https://")||url.starts_with("http://")))ShellExecuteW(window,L"open",wide(url).c_str(),nullptr,nullptr,SW_SHOWNORMAL);
         }else if(testMode&&text.starts_with("testresult:")){
             KillTimer(window,1);std::filesystem::create_directories(testPath);std::ofstream(testPath/"result.json",std::ios::binary)<<text.substr(11);
+            captureNativeWindowEvidence(window,mainMenu,testPath);
             ComPtr<IStream> stream;HRESULT hr=SHCreateStreamOnFileEx((testPath/L"preview.png").c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream);
             if(SUCCEEDED(hr))view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,stream](HRESULT){DestroyWindow(window);return S_OK;}).Get());
             else DestroyWindow(window);
@@ -459,8 +604,12 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
     auto app=(Application*)GetWindowLongPtrW(window,GWLP_USERDATA);
     if(message==WM_NCCREATE){app=(Application*)((CREATESTRUCTW*)l)->lpCreateParams;app->window=window;app->legacyClient=std::make_unique<Client>(window,"legacy",true);SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
     if(app){if(message==NetworkMessage){auto event=(Event*)l;app->message(event->text);delete event;return 0;}
+        if(message==WM_COMMAND&&HIWORD(w)==0){
+            if(LOWORD(w)==FileExit){PostMessageW(window,WM_CLOSE,0,0);return 0;}
+            if(const char* action=menuAction(LOWORD(w))){app->message(action);return 0;}
+        }
         if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_DESTROY){app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
@@ -474,7 +623,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     }
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery Preview 0.3",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    app.mainMenu=createMainPopup();
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.4",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.
     while(PeekMessageW(&msg,window,NetworkMessage,NetworkMessage,PM_REMOVE))delete (Event*)msg.lParam;

@@ -1,12 +1,13 @@
 # BeipMU recovery feature inventory
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the recovered 0.3 build (`recovery/`). The original executable is not
+from the recovered 0.4 build (`recovery/`). The original executable is not
 recovered by this work. “Verified” below means focused tests or an app fixture
 passed for the stated subset; it does not mean full upstream compatibility.
 
 | Feature | Original BeipMU behavior | Recovery status |
 | --- | --- | --- |
+| Desktop layout | Bottom-left popup, output/input panes, bottom session tabs and activity indicators | **0.4:** native Windows/Tools/Logging/Settings/Help/Exit popup, black output and input, resizable command pane, and tabs/activity on one bottom row. Worlds and supported feature editors follow the directly inspected original 4.335 dialog layouts. Full original docking remains open. |
 | Connections and output | Multiple worlds/characters, telnet, configurable sessions, ANSI text | **0.3 app fixture verified:** two concurrent telnet sessions with independent output and command routing. The 0.2 baseline supported one plain TCP connection. |
 | Pueblo/MXP | Pueblo plus MXP support, clickable commands, images and text formatting | Preview 0.3 retains the documented Pueblo and explicit MXP subset, with parser and local-server tests. Full MXP remains open. |
 | World profiles | Server and character entries, connect strings, notes, per-profile rules and logging | **0.3 app fixture verified:** saved world/character labels, startup choices, settings persistence, scoped rules, and character-bound login with a password kept in Windows Credential Manager. The test-mode vault is memory-only; wrong-character and unapproved plain-TCP login attempts were rejected. Original connect templates, notes, and complete per-profile behavior remain open. |
@@ -103,4 +104,4 @@ References: [Aliases](../Documentation/Aliases.md),
 [Scripting](../Documentation/Scripting.md),
 [GMCP](../Documentation/GMCP.md),
 [Tilemap format](../TileMap.md), and the
-[0.3 recovery notes](README.md).
+[0.4 recovery notes](README.md).

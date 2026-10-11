@@ -7,7 +7,9 @@ This fork now has a [buildable Windows recovery preview](recovery/README.md)
 with automatic Pueblo negotiation, a supported MXP subset, clickable links,
 and inline images. Build it with `recovery/build.ps1`.
 Preview 0.3 also restores multiple sessions, profiles, TLS, rules, macros, logs,
-GMCP features, mapping and a bounded scripting API. It is a replacement runtime; the complete original client still needs
+GMCP features, mapping and a bounded scripting API. Preview 0.4 restores the
+familiar Windows menus, multiline input pane and bottom connection tabs.
+It is a replacement runtime; the complete original client still needs
 its missing shared libraries and application components restored.
 
 Feel free to ask any questions on our Discord channel, or to log any issues here.

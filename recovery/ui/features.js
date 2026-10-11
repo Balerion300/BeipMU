@@ -62,9 +62,9 @@ byId('scriptForm').onsubmit=e=>{e.preventDefault();api().state.scriptSource=byId
 byId('scriptRun').onclick=()=>{const s=api().current;if(s?.kind==='world'){initialize(s);s.scripts.evaluate(byId('scriptSource').value);}};
 byId('scriptStop').onclick=()=>{for(const s of api().sessions.values())s.scripts?.stop();};
 document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.isComposing||byId('input').type==='password')return;const s=api().current;if(window.BeipMacros&&s){const result=BeipMacros.match?.(e,{serverId:s.worldId,characterId:s.characterId,inputElement:byId('input')},api().state.macros||[]);if(result){e.preventDefault();e.stopImmediatePropagation();if(result.input!==null){byId('input').setRangeText(result.input,byId('input').selectionStart,byId('input').selectionEnd,'end');byId('input').focus();}else for(const c of result.commands||[])api().command(c,false,s);return;}}
+ if(e.ctrlKey&&!e.altKey&&!e.metaKey){const key=e.key.toLowerCase(),action=key==='l'&&!e.shiftKey?'ui:logging-toggle':e.shiftKey?{'t':'ui:options-triggers','m':'ui:options-macros','a':'ui:options-aliases'}[key]:null;if(action){e.preventDefault();window.BeipDesktopShell?.handle(action);return;}}
  if(e.ctrlKey&&e.key.toLowerCase()==='f'){e.preventDefault();byId('findBar').hidden=false;byId('findText').focus();}
  else if(e.ctrlKey&&e.key==='F4'){e.preventDefault();if(s)api().closeSession(s.id);}
- else if(e.ctrlKey&&e.key.toLowerCase()==='l'){e.preventDefault();byId('logging').checked=!s?.logWanted;byId('logging').dispatchEvent(new Event('change'));}
  else if(e.ctrlKey&&e.key.toLowerCase()==='u'){e.preventDefault();byId('input').value='';}
  else if(e.ctrlKey&&e.key==='['){e.preventDefault();byId('profilesButton').click();}
  else if(e.ctrlKey&&e.key===']'){e.preventDefault();if(s)send('disconnect|'+s.id);}

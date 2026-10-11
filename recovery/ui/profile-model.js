@@ -7,7 +7,7 @@
  if(root)root.BeipProfiles=api;
 })(typeof globalThis==='object'?globalThis:this,function(macros,mapper){
  'use strict';
- const DEFAULTS=Object.freeze({fontSize:15,fontFamily:'monospace',theme:'dark',scrollback:5000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false});
+ const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40});
  const ID=/^[A-Za-z0-9_-]{1,64}$/;
  function text(value,max){return typeof value==='string'?value.slice(0,max):'';}
  function number(value,defaultValue,min,max){const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):defaultValue;}
@@ -52,7 +52,8 @@
    scrollback:number(source.scrollback,DEFAULTS.scrollback,100,20000),
    inlineImages:source.inlineImages===undefined?DEFAULTS.inlineImages:bool(source.inlineImages),
    localEcho:bool(source.localEcho),
-   defaultLogging:bool(source.defaultLogging),mediaEnabled:bool(source.mediaEnabled)
+   defaultLogging:bool(source.defaultLogging),mediaEnabled:bool(source.mediaEnabled),
+   inputHeight:number(source.inputHeight,DEFAULTS.inputHeight,40,300)
   };
   function rules(input,kind){
    return unique(array(input,128).map(item=>{
@@ -60,6 +61,7 @@
     const scope=scopeOf(item.scope,worldIds,characterIds),match=text(item.match,128);
     if(!scope||!match)return null;
     const result={id:item.id,enabled:item.enabled!==false,scope,match,matchType:['simple','exact','wildcard','regex'].includes(item.matchType)?item.matchType:'simple',matchCase:bool(item.matchCase),stopProcessing:bool(item.stopProcessing)};
+    result.description=text(item.description,80);
     if(kind==='alias')result.replacement=text(item.replacement,65536);
     else{
      result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);

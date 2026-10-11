@@ -1,0 +1,64 @@
+/* Compact Windows dialogs shaped after BeipMU 4.335. */
+#settingsDialog.classic-settings{
+ width:min(590px,calc(100vw - 24px));height:min(483px,calc(100vh - 24px));
+ max-height:none;box-sizing:border-box;padding:0;overflow:hidden;background:#f0f0f0;
+ border:1px solid #666;border-radius:0;color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+#settingsDialog.classic-settings #settingsForm{display:flex;flex-direction:column;gap:0;height:100%;margin:0;padding:0}
+.classic-settings-caption,.classic-logging-caption{
+ display:flex;align-items:center;justify-content:space-between;flex:none;height:28px;
+ box-sizing:border-box;padding:0 7px 0 10px;background:#f0f0f0;border-bottom:1px solid #b8b8b8;
+}
+.classic-settings-caption h2,.classic-logging-caption h2{font:600 12px "Segoe UI",Tahoma,sans-serif;margin:0;color:#111}
+.classic-settings-caption .close,.classic-logging-caption button{
+ min-width:24px;height:22px;border:0;background:transparent;color:#111;font:17px/1 "Segoe UI",sans-serif;padding:0;
+}
+.classic-settings-caption .close:hover,.classic-logging-caption button:hover{background:#ddd}
+.classic-settings-body{display:grid;grid-template-columns:116px minmax(0,1fr);flex:1;min-height:0}
+.classic-settings-categories{display:flex;flex-direction:column;gap:0;padding:7px 3px;background:#fff;border-right:1px solid #aaa;overflow-y:auto}
+.classic-settings-categories button{
+ display:block;width:100%;min-height:23px;padding:3px 6px;border:1px solid transparent;border-radius:0;
+ background:transparent;color:#111;text-align:left;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-categories button[aria-current=page]{background:#cce8ff;border-color:#99c9ec}
+.classic-settings-categories button:hover:not([aria-current=page]){background:#eef5fb}
+.classic-settings-content{min-width:0;padding:10px 13px;overflow:auto;background:#f0f0f0}
+.classic-settings-panel[hidden]{display:none}
+.classic-settings-panel h3{font:600 13px "Segoe UI",Tahoma,sans-serif;margin:0 0 12px;color:#111}
+.classic-settings-group{display:flex;flex-direction:column;gap:10px;min-width:0;margin:0 0 14px;padding:10px 9px 11px;border:1px solid #bbb}
+.classic-settings-group legend{padding:0 5px;font-weight:600;color:#222}
+.classic-settings-group label{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-height:23px;color:#111;font-size:12px}
+.classic-settings-group label:has(input[type=checkbox]){justify-content:flex-start}
+.classic-settings-group input[type=checkbox]{width:14px;height:14px;margin:0}
+.classic-settings-group input[type=number],.classic-settings-group select{
+ width:105px;height:23px;box-sizing:border-box;padding:2px 4px;border:1px solid #888;border-radius:0;
+ background:#fff;color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-group .classic-settings-number,.classic-settings-group label:has(input[type=number]),.classic-settings-group label:has(select){justify-content:space-between}
+.classic-settings-note{max-width:330px;margin:1px 0 0!important;color:#555!important;font-size:11px;line-height:1.45}
+.classic-settings-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex:none;height:43px;box-sizing:border-box;padding:6px 10px;border-top:1px solid #b8b8b8;background:#f0f0f0}
+.classic-settings-actions button,.classic-logging button:not(.classic-logging-row){
+ min-width:76px;height:25px;padding:2px 10px;border:1px solid #888;border-radius:0;background:#f6f6f6;
+ color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-actions button:hover,.classic-logging button:not(.classic-logging-row):hover:not(:disabled){background:#e5f2fb;border-color:#579bd3}
+.classic-settings-actions button[type=submit]{border-color:#3277b3}
+dialog.classic-logging{
+ width:min(512px,calc(100vw - 24px));height:min(280px,calc(100vh - 24px));max-height:none;
+ box-sizing:border-box;padding:0;overflow:hidden;background:#f0f0f0;border:1px solid #666;border-radius:0;
+ color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-logging-caption{height:28px}
+.classic-logging-section{display:flex;align-items:center;gap:8px;height:21px;padding:0 10px;color:#111}
+.classic-logging-section strong{font-weight:600}
+.classic-logging-rule{flex:1;height:1px;background:#aaa}
+.classic-logging-list{height:126px;box-sizing:border-box;margin:0 9px;background:#fff;border:1px solid #888;overflow:auto}
+.classic-logging-row{display:block;width:100%;min-height:21px;padding:3px 5px;border:0;background:#fff;color:#111;text-align:left;font:12px "Segoe UI",Tahoma,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.classic-logging-row[aria-selected=true]{background:#cce8ff}
+.classic-logging-empty{padding:6px;color:#666}
+.classic-logging-current-actions{display:flex;justify-content:flex-end;gap:7px;height:30px;padding:3px 9px;box-sizing:border-box}
+.classic-logging-new-actions{display:flex;align-items:center;gap:7px;padding:1px 9px 6px}
+.classic-logging-new-actions [data-action=export]{min-width:140px}
+.classic-logging-new-actions [data-action=close-bottom]{margin-left:auto}
+.classic-logging button:disabled{color:#888;background:#eee}
+@media(max-width:480px){.classic-settings-body{grid-template-columns:104px minmax(0,1fr)}.classic-settings-content{padding:7px}.classic-settings-group{padding:8px 6px}.classic-logging-new-actions [data-action=export]{min-width:0}}

@@ -6,12 +6,16 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src http: https:; media-src http: https:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>BeipMU</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="classic-dialogs.css">
+<link rel="stylesheet" href="classic-settings.css">
 </head>
 <body>
-<header class="app-header">
-  <div class="brand"><strong>BeipMU</strong><span>Worlds, conversations, and connections</span></div>
+<header class="app-header" hidden>
+  <div class="brand"><strong>BeipMU</strong></div>
   <div class="header-actions"><span id="protocol">Plain text</span><button id="mapperButton" type="button">Map</button><button id="macrosButton" type="button">Macros</button><button id="scriptsButton" type="button">Scripts</button><button id="findButton" type="button">Find</button><button id="exportButton" type="button">Export</button><button id="rulesButton" type="button">Rules</button><button id="settingsButton" type="button">Preferences</button></div>
 </header>
+<dialog id="connectDialog" aria-labelledby="connectTitle">
+<div class="dialog-head"><h2 id="connectTitle">Connect</h2><button class="close" type="button" data-close="connectDialog" aria-label="Close connect dialog">×</button></div>
 <form id="connection" aria-label="Connection controls">
   <label>World <select id="world" aria-label="Saved world"><option value="">Quick connect</option></select></label>
   <label>Character <select id="character" aria-label="Character profile"><option value="">No character label</option></select></label>
@@ -24,26 +28,30 @@
   <button id="connectAll" type="button">Connect all</button>
   <button id="disconnectAll" type="button">Disconnect all</button>
 </form>
-<div id="sessionTabs" class="session-tabs" role="tablist" aria-label="Open sessions"></div>
-<div id="status" role="status">Ready. Choose a world or enter a server.</div>
+</dialog>
 <div id="findBar" hidden><form id="findForm"><label>Find <input id="findText" autocomplete="off"></label><button>Next</button><span id="findCount" role="status"></span></form></div>
 <main id="output" tabindex="0" aria-label="World output"></main>
+<span id="pauseBadge" hidden>Paused</span>
 <div id="menu" hidden role="menu"></div>
-<form id="command" aria-label="Send a command"><label for="input">Command</label><input id="input" autocomplete="off" spellcheck="false" placeholder="Type a command…"><button class="primary">Send</button></form>
-<footer><span id="counts">0 images</span><label><input id="autoscroll" type="checkbox" checked> Follow output</label><label><input id="logging" type="checkbox"> Log session</label><button id="clear" type="button">Clear display</button></footer>
+<div id="inputSplitter" role="separator" aria-label="Resize command input" aria-orientation="horizontal" tabindex="0" aria-valuemin="40" aria-valuemax="300" aria-valuenow="40"></div>
+<form id="command" aria-label="Send a command"><label class="visually-hidden" for="input">Command</label><textarea id="input" autocomplete="off" spellcheck="false" aria-label="Command input"></textarea><button class="visually-hidden" type="submit">Send</button></form>
+<footer><div class="footer-tools"><button id="menuShortcut" type="button" title="BeipMU menu" aria-label="BeipMU menu"><span class="hamburger-icon" aria-hidden="true"></span></button><button id="profilesShortcut" type="button" title="Characters and worlds" aria-label="Characters and worlds"><span class="person-icon" aria-hidden="true"></span></button><button id="connectShortcut" type="button" title="Connect to a world" aria-label="Connect to a world"><span class="globe-icon" aria-hidden="true"></span></button></div><div id="sessionTabs" class="session-tabs" role="tablist" aria-label="Open sessions"></div><span id="status" role="status">Ready.</span><span id="counts" title="Images in this session">0 images</span><label class="footer-option"><input id="autoscroll" type="checkbox" checked> Follow output</label><label class="footer-option"><input id="logging" type="checkbox"> Log session</label><button id="clear" class="footer-option" type="button">Clear display</button><span id="activityCounts" aria-label="Session activity">Typed 0&nbsp; Online 0s&nbsp; Idle 0s</span></footer>
+
+<dialog id="aboutDialog" aria-labelledby="aboutTitle"><div class="dialog-head"><h2 id="aboutTitle">About BeipMU Recovery</h2><button class="close" type="button" data-close="aboutDialog" aria-label="Close about dialog">×</button></div><p>BeipMU Recovery 0.4</p><p class="hint">An independent MIT-licensed recovery build. Some original BeipMU features and compatibility details remain unrecovered.</p><div class="dialog-actions"><button type="button" data-close="aboutDialog">OK</button></div></dialog>
 
 <dialog id="profilesDialog" aria-labelledby="profilesTitle">
-  <div class="dialog-head"><div><h2 id="profilesTitle">Profiles</h2><p>Save worlds and characters. Passwords can be kept in this computer's secure vault.</p></div><button class="close" type="button" data-close="profilesDialog" aria-label="Close profiles">×</button></div>
-  <div class="profiles-layout">
-    <section><div class="section-head"><h3>Worlds</h3><button id="newWorld" type="button">New world</button></div><div id="worldList" class="profile-list"></div></section>
-    <section><div class="section-head"><h3>Characters</h3><button id="newCharacter" type="button">New character</button></div><p class="hint">Each character can have a separate login name and optional saved password.</p><div id="characterList" class="profile-list"></div></section>
+  <div class="dialog-head"><h2 id="profilesTitle">Worlds</h2><button class="close" type="button" data-close="profilesDialog" aria-label="Close worlds">×</button></div>
+  <div class="classic-profile-workspace">
+    <div class="profile-tree-column"><section class="profile-tree-main"><h3>Worlds</h3><div id="worldList" class="profile-list"></div><h3>Characters</h3><div id="characterList" class="profile-list"></div></section><section class="profile-samples"><h3>Sample Worlds</h3><p class="empty">No sample worlds are bundled with this recovery build.</p></section></div>
+    <div id="profileEditorMount" class="profile-editor-mount"></div>
   </div>
+  <div class="classic-profile-actions"><div><button id="newWorld" type="button">New world</button><button id="newCharacter" type="button">New character</button><button id="profileCopySelected" type="button">Copy</button><button id="profileDeleteSelected" type="button">Delete</button></div><div><button id="profileQuickConnect" type="button">Quick connect</button><button id="profileConnectSelected" type="button">Connect</button><button type="button" data-close="profilesDialog">Close</button></div></div>
 </dialog>
 <dialog id="profileEditor" aria-labelledby="profileEditorTitle">
   <form id="profileForm" method="dialog"><div class="dialog-head"><h2 id="profileEditorTitle">World</h2><button class="close" type="button" data-close="profileEditor" aria-label="Close editor">×</button></div>
     <input id="profileKind" type="hidden"><input id="profileId" type="hidden">
     <label>Display name <input id="profileName" required maxlength="80" autocomplete="off"></label>
-    <div id="worldFields"><label>Server address <input id="profileHost" maxlength="253" spellcheck="false" autocomplete="off"></label><label>Port <input id="profilePort" inputmode="numeric" autocomplete="off"></label><label class="check"><input id="profileTLS" type="checkbox"> Use TLS</label><label class="check"><input id="profileAuto" type="checkbox"> Connect when BeipMU opens</label></div>
+    <div id="worldFields"><label>Info <textarea id="profileInfo" rows="4" maxlength="16384" spellcheck="false"></textarea></label><fieldset><legend>Server</legend><label>Host <input id="profileHost" maxlength="253" spellcheck="false" autocomplete="off"></label><label>Port <input id="profilePort" inputmode="numeric" autocomplete="off"></label><label class="check"><input id="profileTLS" type="checkbox"> Use TLS</label><label class="check"><input id="profileAuto" type="checkbox"> Connect when BeipMU opens</label></fieldset></div>
     <div id="characterFields" hidden><label>World <select id="profileWorld"></select></label><label>Login name <input id="profileLoginName" maxlength="128" autocomplete="off" spellcheck="false"></label><label class="check"><input id="characterOpen" type="checkbox"> Open a tab on startup</label><label class="check"><input id="characterAuto" type="checkbox"> Connect automatically on startup</label><label class="check"><input id="profileAutoLogin" type="checkbox"> Log in automatically after connecting</label><label class="check"><input id="profileAllowPlainLogin" type="checkbox"> Allow saved password on connections without TLS</label><label>Password <input id="profilePassword" type="password" maxlength="2048" autocomplete="new-password" spellcheck="false"></label><label class="check"><input id="profileRememberSecret" type="checkbox"> Remember this password in the Windows credential vault</label><div class="dialog-actions"><span id="profileSecretStatus" role="status"></span><button id="profileForgetSecret" type="button" disabled>Forget saved password</button></div></div>
     <p class="hint" id="profileError" role="alert"></p><div class="dialog-actions"><button type="button" data-close="profileEditor">Cancel</button><button class="primary" type="submit">Save profile</button></div>
   </form>
@@ -56,7 +64,7 @@
   </form>
 </dialog>
 <dialog id="rulesDialog" aria-labelledby="rulesTitle">
-  <div class="dialog-head"><div><h2 id="rulesTitle">Aliases and triggers</h2><p>Automate commands and respond to matching text.</p></div><button class="close" type="button" data-close="rulesDialog" aria-label="Close rules">×</button></div>
+  <div class="dialog-head"><h2 id="rulesTitle">Triggers</h2><button class="close" type="button" data-close="rulesDialog" aria-label="Close triggers">×</button></div>
   <div class="profiles-layout">
     <section><div class="section-head"><h3>Aliases</h3><button id="newAlias" type="button">New alias</button></div><div id="aliasList" class="profile-list"></div></section>
     <section><div class="section-head"><h3>Triggers</h3><button id="newTrigger" type="button">New trigger</button></div><div id="triggerList" class="profile-list"></div></section>
@@ -66,6 +74,7 @@
   <form id="ruleForm" method="dialog"><div class="dialog-head"><h2 id="ruleEditorTitle">Rule</h2><button class="close" type="button" data-close="ruleEditor" aria-label="Close rule editor">×</button></div>
     <input id="ruleKind" type="hidden"><input id="ruleId" type="hidden">
     <div class="settings-grid">
+      <label>Description <input id="ruleDescription" maxlength="80" autocomplete="off"></label>
       <label>Match <input id="ruleMatch" maxlength="128" required autocomplete="off"></label>
       <label>Type <select id="ruleMatchType"><option value="simple">Simple text</option><option value="regex">Regular expression</option><option value="wildcard">Wildcard *</option></select></label>
       <label>Scope <select id="ruleScope"><option value="global">All worlds</option><option value="server">One world</option><option value="character">One character</option></select></label>
@@ -87,6 +96,6 @@
   </form>
 </dialog>
 <dialog id="scriptsDialog" aria-labelledby="scriptsTitle"><form id="scriptForm"><div class="dialog-head"><h2 id="scriptsTitle">JavaScript</h2><button class="close" type="button" data-close="scriptsDialog" aria-label="Close scripts">×</button></div><p>Scripts run separately for each session. Use window.connection.send, window.output.write, SetOnReceive, and SetOnGMCP. Scripts stop if they exceed their execution limit.</p><label>Startup script <textarea id="scriptSource" rows="14" maxlength="65536" spellcheck="false"></textarea></label><label class="check"><input id="scriptEnabled" type="checkbox"> Run this script when a session connects</label><div class="dialog-actions"><button id="scriptStop" type="button">Stop scripts</button><button id="scriptRun" type="button">Run in current session</button><button type="submit">Save</button></div></form></dialog>
-<script src="media.js"></script><script src="tilemap.js"></script><script src="regex-rules.js"></script><script src="mapper.js"></script><script src="scripts.js"></script><script src="macros.js"></script><script src="profile-model.js"></script><script src="parser.js"></script><script src="rules.js"></script><script src="gmcp.js"></script><script src="app.js"></script><script src="features.js"></script><script src="core-test.js"></script><script src="macros-ui.js"></script><script src="mapper-ui.js"></script>
+<script src="media.js"></script><script src="tilemap.js"></script><script src="regex-rules.js"></script><script src="mapper.js"></script><script src="scripts.js"></script><script src="macros.js"></script><script src="profile-model.js"></script><script src="parser.js"></script><script src="rules.js"></script><script src="gmcp.js"></script><script src="app.js"></script><script src="features.js"></script><script src="core-test.js"></script><script src="macros-ui.js"></script><script src="mapper-ui.js"></script><script src="desktop-shell.js"></script><script src="classic-dialogs.js"></script><script src="classic-settings.js"></script>
 </body>
 </html>

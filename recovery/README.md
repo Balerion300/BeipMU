@@ -1,4 +1,4 @@
-# BeipMU recovery preview 0.3
+# BeipMU recovery preview 0.4
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
@@ -6,7 +6,17 @@ several implementations, generated properties and Visual Studio project are
 absent. This runtime builds without those components or a downloaded upstream
 executable. Its code is distributed under the repository MIT license.
 
-Version 0.3 adds concurrent sessions, saved world/character profiles, startup
+Version 0.4 follows the original 4.335 client inspected directly on Windows:
+a bottom-left native popup menu, black output and command input, and connection
+tabs and activity counters on one compact bottom row. Worlds, Triggers, Aliases,
+Keyboard Macros, Settings and Logging use compact light dialogs with trees or
+category lists and inline editors. The supported controls retain their existing
+behavior; unsupported original controls are omitted. See the
+[direct UI comparison notes](UI-REFERENCE.md). Full original docking and every
+original feature are still incomplete. Enter sends input; Shift+Enter inserts a newline,
+and Ctrl+Up/Down recalls input history.
+
+Version 0.3 added concurrent sessions, saved world/character profiles, startup
 choices, TLS, scoped aliases and triggers, keyboard macros, named output panes,
 logging, transcript export, search, preferences and opt-in JavaScript. GMCP
 supports stats, IDs/avatars, tilemaps and an opt-in Client.Media subset. A local
@@ -32,7 +42,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.3-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.4-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -63,7 +73,7 @@ after user interaction.
 
 ## Verification
 
-The build runs 386 parser and feature-module checks plus native telnet tests.
+The build runs 387 parser and feature-module checks plus native telnet tests.
 With Python installed, run these compiled-app fixtures:
 
 ```powershell

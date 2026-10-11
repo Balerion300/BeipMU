@@ -11,7 +11,7 @@ import time
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.3" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.4" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -111,7 +111,7 @@ class Fixture:
 def run(phase):
     assets = Assets()
     fixtures = [Fixture("CORE A COMPLETE", assets), Fixture("CORE B COMPLETE", assets)]
-    for name in ("result.json", "preview.png", "timeout.txt"):
+    for name in ("result.json", "preview.png", "timeout.txt", "menu.json", "window.bmp", "window-capture-error.txt"):
         (OUT / name).unlink(missing_ok=True)
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -133,11 +133,18 @@ def run(phase):
     assert (OUT / "result.json").exists(), f"{phase}: no result.json"
     result = json.loads((OUT / "result.json").read_text(encoding="utf-8"))
     assert result.get("phase") == phase, result
+    assert result.get("classicLayout") is True, result
+    assert result.get("connectionDialog") is True and result.get("quickConnect") is True, result
+    assert result.get("nativeDialogs") is True and result.get("settingsUI") is True, result
+    assert result.get("loggingDialog") is True and result.get("loggingControls") is True, result
+    assert result.get("aliasEditor") is True and result.get("triggerEditor") is True and result.get("macroEditor") is True, result
+    assert result.get("inputResize") is True and result.get("typingUI") is True, result
+    menu = json.loads((OUT / "menu.json").read_text(encoding="utf-8"))
+    assert menu == {"count": 6, "itemCount": 7, "labels": ["&Windows", "&Tools", "&Logging...\tCtrl+L", "&Settings...", "&Help", "Close all Windows and E&xit"]}, menu
     assert result.get("isolated") is True, result
     assert result.get("commandsSent") is True, result
     assert result.get("logging") is True, result
     assert result.get("scripts") is True and result.get("scriptTimeout") is True, result
-    assert result.get("credentialSaved") is True, result
     assert result.get("credentialSaved") is True, result
     assert result.get("avatarLoaded") is True and result.get("tilemapRendered") is True, result
     assert result.get("mediaDisabled") is True, result
@@ -163,6 +170,8 @@ def run(phase):
     assert b'Core.Supports.Set ["Beip.Stats 1","Beip.Tilemap 1","Beip.Id 1","Client.Media 1"]' in a,(phase,a)
     assert b"core-alpha\r\n" in a and b"core-beta\r\n" not in a, (phase, a)
     assert b"core-beta\r\n" in b and b"core-alpha\r\n" not in b, (phase, b)
+    assert b"core-line-one\r\n" in a and b"core-line-two\r\n" in a, (phase, a)
+    assert b"core-line-one\r\n" not in b and b"core-line-two\r\n" not in b, (phase, b)
     assert b"connect SampleUser sample-pass\r\n" in a, (phase, a)
     assert b"sample-pass" not in b, (phase, b)
     assert b"core-macro-alpha\r\n" in a and b"core-macro-alpha\r\n" not in b, (phase,a,b)

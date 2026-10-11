@@ -32,7 +32,12 @@ check('Invalid hosts, IDs, ports, duplicates, and orphaned characters are droppe
 });
 check('Preferences are clamped and unknown fields are excluded',()=>{
  const result=normalizeSettings({preferences:{fontSize:300,scrollback:1,theme:'sunset',fontFamily:'Comic Sans',inlineImages:false,localEcho:true,defaultLogging:true,secret:'discard'}});
- assert.deepEqual(result.preferences,{fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false});
+ assert.deepEqual(result.preferences,{fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false,inputHeight:40});
+});
+check('Input pane height persists within usable limits',()=>{
+ assert.equal(serializeSettings({preferences:{inputHeight:125}}).preferences.inputHeight,125);
+ assert.equal(normalizeSettings({preferences:{inputHeight:1000}}).preferences.inputHeight,300);
+ assert.equal(normalizeSettings({preferences:{inputHeight:0}}).preferences.inputHeight,40);
 });
 check('Scoped rules and macros retain only supported bounded fields',()=>{
  const raw={worlds:[world('w1')],characters:[character('c1','w1')],
