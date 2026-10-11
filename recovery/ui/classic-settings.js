@@ -72,7 +72,7 @@ logging.innerHTML=`<div class="classic-logging-caption"><h2 id="classicLoggingTi
  <div class="classic-logging-list" role="listbox" aria-label="Current logs"></div>
  <div class="classic-logging-current-actions"><button type="button" data-action="stop">Stop</button><button type="button" data-action="stop-all">Stop All</button></div>
  <div class="classic-logging-section"><strong>New</strong><div class="classic-logging-rule"></div></div>
- <div class="classic-logging-new-actions"><button type="button" data-action="start">Start...</button><button type="button" data-action="export">Export active transcript...</button><button type="button" data-action="close-bottom">Close</button></div>`;
+ <div class="classic-logging-new-actions"><button type="button" data-action="start">Start...</button><label>Starting from <select data-action="starting-point"><option value="now">Now</option><option value="beginning">Beginning of scrollback</option></select></label><button type="button" data-action="close-bottom">Close</button></div><button type="button" data-action="export" class="classic-log-export">Export active transcript...</button>`;
 document.body.append(logging);
 const list=logging.querySelector('.classic-logging-list');
 const stop=logging.querySelector('[data-action=stop]'),stopAll=logging.querySelector('[data-action=stop-all]');
@@ -110,7 +110,7 @@ start.onclick=()=>{
  const session=app().current;if(!session||session.kind!=='world'||!session.connected)return;
  session.logWanted=true;
  byId('logging').checked=true;
- if(!session.logging)window.chrome?.webview?.postMessage('logstart|'+session.id);
+ if(!session.logging){if(app().startLogging)app().startLogging(session,logging.querySelector('[data-action=starting-point]').value==='beginning');else window.chrome?.webview?.postMessage('logstart|'+session.id);}
  selectedId=session.id;refreshLogging();
 };
 logging.querySelector('[data-action=export]').onclick=()=>byId('exportButton').click();

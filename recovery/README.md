@@ -1,4 +1,4 @@
-# BeipMU recovery preview 0.4
+# BeipMU recovery preview 0.5
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
@@ -13,8 +13,24 @@ Keyboard Macros, Settings and Logging use compact light dialogs with trees or
 category lists and inline editors. The supported controls retain their existing
 behavior; unsupported original controls are omitted. See the
 [direct UI comparison notes](UI-REFERENCE.md). Full original docking and every
-original feature are still incomplete. Enter sends input; Shift+Enter inserts a newline,
-and Ctrl+Up/Down recalls input history.
+original feature are still incomplete. Enter sends input; Shift+Enter inserts a newline.
+
+Version 0.5 adds a resizable right dock for maps, input history, images, notes,
+split output and grouped spawn capture. Notes and selected panel layouts persist
+for saved profiles. Triggers can capture output until a regex, copy or move it
+to spawn panes, filter text and use additional appearance controls. Ctrl+Up
+recalls history; Ctrl+Down saves an unfinished command to history without sending.
+Smart Paste accepts pasted text or a text file, adds per-line prefixes/suffixes,
+paces sends and can be stopped. Logging can include the retained scrollback.
+
+Use `/delay 2s "WHO"` for a delayed command, `/delay every 30s "status"` for a
+repeating command, and `/delay list`, `/delay kill ID` or `/delay killall` to
+inspect or stop timers in the current session. Timers stop when their owning
+session disconnects or closes. Other added commands include `/setinput`,
+`/recall`, `/chars`, `/connectioninfo`, `/reconnect`, `/new`, `/close`,
+`/ansireset`, `/echo on|off`, `/naws width height`, `/switchtab`, `/smartpaste`,
+and `/logall` (the latter uses the recovery Logs folder). Named worlds and
+characters with spaces work as `/connect "world name" "character name"`.
 
 Version 0.3 added concurrent sessions, saved world/character profiles, startup
 choices, TLS, scoped aliases and triggers, keyboard macros, named output panes,
@@ -42,7 +58,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.4-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.5-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -73,7 +89,7 @@ after user interaction.
 
 ## Verification
 
-The build runs 387 parser and feature-module checks plus native telnet tests.
+The build runs 417 parser and feature-module checks plus native telnet tests.
 With Python installed, run these compiled-app fixtures:
 
 ```powershell
@@ -82,6 +98,13 @@ python recovery/tests/session_test.py
 python recovery/tests/tls_loopback_test.py
 python recovery/tests/tls_preview_test.py
 ```
+
+For 0.5, the packaged Pueblo/MXP fixtures, two-launch session/panel/settings
+fixture and three native TLS cases passed. The session fixture checks grouped
+capture and cancellation, image/history/map/notes/split panes, logging from
+scrollback, timer ownership and cancellation, and paced Smart Paste routing.
+The full-app TLS fixture was last verified in 0.3; its 0.4 rerun stopped at the
+Windows certificate-install prompt. It has not been rerun for 0.5.
 
 Pueblo/MXP fixtures check three loaded images, a failed-image fallback, command
 clicks and consecutive WHO rows. Session fixtures check separate connections,

@@ -55,6 +55,15 @@ check('Scoped rules and macros retain only supported bounded fields',()=>{
  assert.equal(json.includes('password'),false);
  assert.equal(json.includes('url(evil)'),false);
 });
+check('Spawn capture settings persist with bounds and without arbitrary fields',()=>{
+ const result=serializeSettings({triggers:[{id:'report',scope:{level:'global'},match:'START',spawnTitle:'Report',
+  spawnGroup:'Lists',spawnCopy:true,spawnGagLog:true,captureUntil:'E'.repeat(300),unexpectedCommand:'secret'}]});
+ const trigger=result.triggers[0];
+ assert.equal(trigger.spawnTitle,'Report');assert.equal(trigger.spawnGroup,'Lists');
+ assert.equal(trigger.spawnCopy,true);assert.equal(trigger.spawnGagLog,true);
+ assert.equal(trigger.captureUntil.length,256);
+ assert.equal(JSON.stringify(result).includes('unexpectedCommand'),false);
+});
 check('Character startup choices take precedence over world fallback',()=>{
  const settings={worlds:[world('w1',{autoConnect:true}),world('w2',{autoConnect:true}),world('w3',{openAtStartup:true})],
   characters:[character('c1','w1',{openAtStartup:true,autoConnect:false}),character('c2','w1',{autoConnect:true}),character('c3','w2')]};

@@ -47,7 +47,7 @@ function copySelection(){
  if(document.activeElement===input&&input.selectionStart!==input.selectionEnd)value=input.value.slice(input.selectionStart,input.selectionEnd);
  else value=window.getSelection()?.toString()||'';
  if(!value)return;
- const bytes=new TextEncoder().encode(value);let raw='';
+ const bytes=new TextEncoder().encode(value);if(bytes.length>1024*1024)return;let raw='';
  for(let at=0;at<bytes.length;at+=8192)raw+=String.fromCharCode(...bytes.subarray(at,at+8192));
  window.chrome?.webview?.postMessage('clipboard|'+btoa(raw));
 }
@@ -77,10 +77,16 @@ const actions={
  'ui:connection-profiles':()=>click('profilesButton'),
  'ui:logging-toggle':()=>{if(window.BeipClassicSettings?.openLogging)BeipClassicSettings.openLogging();else toggleLogging();},
  'ui:options-aliases':()=>{if(window.BeipClassicDialogs)BeipClassicDialogs.openAliases();else click('rulesButton');},
- 'ui:options-triggers':()=>click('rulesButton'),
+ 'ui:options-triggers':()=>{if(window.BeipClassicDialogs?.openTriggers)BeipClassicDialogs.openTriggers();else click('rulesButton');},
  'ui:options-macros':()=>{if(window.BeipClassicDialogs)BeipClassicDialogs.openMacros();else click('macrosButton');},
  'ui:options-scripts':()=>click('scriptsButton'),
- 'ui:options-map':()=>click('mapperButton'),
+ 'ui:options-map':()=>window.BeipDockPanels?.toggle('map'),
+ 'ui:window-input-history':()=>window.BeipDockPanels?.toggle('history'),
+ 'ui:window-image':()=>window.BeipDockPanels?.toggle('image'),
+ 'ui:window-character-notes':()=>window.BeipDockPanels?.toggle('notes'),
+ 'ui:window-split':()=>window.BeipDockPanels?.toggle('split'),
+ 'ui:window-spawn':()=>window.BeipDockPanels?.toggle('spawn'),
+ 'ui:edit-smart-paste':()=>window.BeipClientCommands?.smartPaste?.(),
  'ui:options-preferences':()=>{if(window.BeipClassicSettings?.open)BeipClassicSettings.open();else click('settingsButton');},
  'ui:help-about':()=>openDialog('aboutDialog'),
  'ui:clipboard-saved':()=>setStatus('Copied to clipboard.'),
@@ -99,6 +105,7 @@ function refreshActivity(){
 byId('connectShortcut').addEventListener('click',()=>click('profilesButton'));
 byId('profilesShortcut').addEventListener('click',()=>{click('profilesButton');const row=byId('characterList').querySelector('.profile-row');row?.click();});
 byId('menuShortcut').addEventListener('click',()=>window.chrome?.webview?.postMessage('menu:open'));
+document.addEventListener('mouseup',event=>{if(api().current?.paused)return;const node=event.target;if(!(node instanceof Element)||!node.closest('#output,.dock-output-copy,.dock-list'))return;if(!window.getSelection()?.toString())return;copySelection();});
 byId('output').addEventListener('contextmenu',event=>{
  if(event.target instanceof Element&&event.target.closest('a'))return;
  event.preventDefault();
@@ -106,6 +113,7 @@ byId('output').addEventListener('contextmenu',event=>{
  const add=(label,action)=>{const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=()=>{menu.hidden=true;action();};menu.append(button);};
  add('Find…',()=>handle('ui:edit-find'));
  add(api().current?.paused?'Resume output':'Pause output',()=>handle('ui:edit-pause-output'));
+ add('Split',()=>handle('ui:window-split'));
  add('Copy screen to clipboard',()=>{selectOutput();copySelection();});
  add('Clear',()=>handle('ui:edit-clear'));
  add('Settings…',()=>handle('ui:options-preferences'));

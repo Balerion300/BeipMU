@@ -9,6 +9,8 @@ and inline images. Build it with `recovery/build.ps1`.
 Preview 0.3 also restores multiple sessions, profiles, TLS, rules, macros, logs,
 GMCP features, mapping and a bounded scripting API. Preview 0.4 restores the
 familiar Windows menus, multiline input pane and bottom connection tabs.
+Preview 0.5 adds docked panels, grouped spawn capture, deeper trigger editing,
+Smart Paste, delayed commands and logging from retained scrollback.
 It is a replacement runtime; the complete original client still needs
 its missing shared libraries and application components restored.
 

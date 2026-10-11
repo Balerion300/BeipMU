@@ -56,6 +56,16 @@ test('case, whole word, line anchor, and wildcard capture', () => {
   assert.equal(hit.actions[0].title, 'public');
   assert.deepEqual(hit.matches[0].captures, ['[public] hello', 'public', 'hello']);
 });
+test('spawn moves filtered text by default and copy keeps the main line', () => {
+  const moved = createEngine({ triggers: [{ match: 'hello', spawnTitle: 'Pages', spawnGroup: 'Chat', filterText: 'wave' }] })
+    .processLine('A hello B', scope);
+  assert.equal(moved.gagged, true);
+  assert.deepEqual(moved.actions.filter(a => a.type === 'spawn').map(a => [a.title, a.group, a.text]),
+    [['Pages', 'Chat', 'A wave B']]);
+  const copied = createEngine({ triggers: [{ match: 'hello', spawnTitle: 'Pages', spawnCopy: true }] })
+    .processLine('hello', scope);
+  assert.equal(copied.gagged, false);
+});
 test('cooldown and once per engine instance', () => {
   const engine = createEngine({ triggers: [
     { id: 'cool', match: 'hit', notify: true, cooldownMs: 1000 },

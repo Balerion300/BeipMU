@@ -8,6 +8,7 @@
  const DEADLINE_MS=500,MAX_QUEUE=64;
  function fallback(job,reason){
   const diagnostics=[reason];
+   if(job.type==='cancel-capture')return {cancelled:false,diagnostics};
   if(job.type==='expand')return {commands:[],matched:false,diagnostics};
   return {text:job.value,actions:[],matches:[],gagged:false,logGagged:false,diagnostics};
  }
@@ -48,7 +49,8 @@
    if(!job||data?.id!==job.id)return;
    clearTimeout(this.timer);this.timer=null;this.current=null;
    if(data.error||!data.result){this.shutdown('Rules worker failed: '+String(data.error||'invalid result'),true);job.resolve(fallback(job,this.disabledReason));return;}
-   if(Array.isArray(data.result.diagnostics))for(const diagnostic of data.result.diagnostics)if(typeof diagnostic==='string'&&diagnostic.startsWith('Invalid regex'))this.report(diagnostic);
+   if(Array.isArray(data.result.diagnostics))for(const diagnostic of data.result.diagnostics)
+    if(typeof diagnostic==='string'&&(diagnostic.startsWith('Invalid regex')||diagnostic.startsWith('Invalid capture-until regex')))this.report(diagnostic);
    job.resolve(data.result);this.next();
   }
   next(){
@@ -61,13 +63,14 @@
   enqueue(type,value,scope,nowMs){
    if(!this.worker)return Promise.resolve(fallback({type,value},this.disabledReason));
    if(this.queue.length+(this.current?1:0)>=MAX_QUEUE){
-    this.report('Rules queue is full; the newest event was skipped.');
-    return Promise.resolve(fallback({type,value},'Rules queue is full.'));
+    this.shutdown('Rules stopped: pending work limit reached.',true);
+    return Promise.resolve(fallback({type,value},this.disabledReason));
    }
    return new Promise(resolve=>{this.queue.push({id:++this.serial,type,value,scope:scope||{},nowMs,resolve});this.next();});
   }
   expandCommand(input,scope){return this.enqueue('expand',input,scope);}
   processLine(text,scope,nowMs){return this.enqueue('line',text,scope,nowMs);}
+  cancelCapture(scope){return this.enqueue('cancel-capture','',scope);}
  }
  return {Runtime,DEADLINE_MS,MAX_QUEUE};
 });

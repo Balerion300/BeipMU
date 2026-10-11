@@ -18,10 +18,22 @@ reference, not a dependency of the recovery build.
 | Settings | Narrow white category list at left; gray settings panel; OK/Cancel bottom right | Supported preferences grouped by category in the same arrangement |
 | Output settings | Black text sample; Courier New 10 pt; History Lines 10000; paragraph spacing and margins zero | Courier New at approximately the same screen size; default history 10000; zero paragraph spacing |
 | Input settings | Courier New 10 pt on black; resize-to-content options; Local Echo | Black input, resizable height and supported Local Echo setting |
-| Logging | White Current list; Stop/Stop All below; New section with Start and starting-point controls | Current logging state with functional start/stop and export controls |
-| Output context menu | Find, Pause, Split, Copy screen, Clear, global settings and Settings | Supported output actions retained; original split/docking behavior remains incomplete |
-| Windows / Map | Window menu offers additional input, edit, history, image, map and character-notes panes; Map docks at the right with its own caption and toolbar | Supported map editor remains a dialog; original docked-pane system is not yet reproduced |
+| Logging | White Current list; Stop/Stop All below; New section with Start and starting-point controls | Current logging state with start/stop, export and beginning-of-scrollback; the 0.5 packaged fixture verified the restarted log includes earlier output |
+| Output context menu | Find, Pause, Split, Copy screen, Clear, global settings and Settings | Supported output actions retained; 0.5 adds a session-scoped split pane, while the original context menu and flexible split behavior remain incomplete |
+| Windows / Map | Window menu offers additional input, edit, history, image, map and character-notes panes; Map docks at the right with its own caption and toolbar | The 0.5 packaged fixture verified a keyboard-resizable right dock with a two-room map, session history, a loaded image, character notes, split output and grouped spawned streams |
 
 The original has additional controls and features that the recovery runtime does
 not implement. Visual similarity does not imply full feature parity. Native
 dialogs and WebView-rendered recovery dialogs also differ in control rendering.
+
+The original source and documentation describe more than the directly inspected
+screens. Its history pane stores sent commands and supports recall/search;
+character notes are attached to a profile; output can split for scrollback;
+and the image window is a separate dockable pane. See
+[`Wnd_Main.cpp`](../src/Wnd_Main.cpp),
+[`GettingStarted.md`](../Documentation/GettingStarted.md), and
+[`Shortcuts.md`](../Documentation/Shortcuts.md). The 0.5 integration fixture
+verified those supported behaviors as session-scoped actions in two launches.
+The original saves flexible docking layouts;
+the recovery worktree stores open pane types per profile and dock width, but
+cannot yet reproduce the original arrangement.

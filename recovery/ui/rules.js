@@ -8,7 +8,8 @@
 
   const DEFAULT_LIMITS = Object.freeze({
     maxRules: 128, maxPattern: 128, maxLine: 4096, maxCommand: 4096,
-    maxActions: 32, maxReplacements: 32, maxCommands: 16
+    maxActions: 32, maxReplacements: 32, maxCommands: 16,
+    maxCapturePattern: 256, maxCaptureLines: 200, maxCaptureMs: 5000
   });
   const LEVELS = ['global', 'server', 'character'];
 
@@ -143,7 +144,8 @@
     // Regex is only available to the bounded worker entry point. The default
     // synchronous engine intentionally ignores regex rules.
     const allowRegex = config.allowRegex === true && config.workerEngine === true;
-    const lastFire = new Map(), firedOnce = new Set();
+    const lastFire = new Map(), firedOnce = new Set(), captures = new Map();
+    function contextKey(context) { return [context.serverId || '', context.characterId || ''].join('\u0000'); }
 
     function expandCommand(input, scope) {
       const diagnostics = [];
@@ -184,6 +186,22 @@
       const context = scope || {};
       const now = Number.isFinite(nowMs) ? nowMs : Date.now();
       let text = input, gagged = false, logGagged = false;
+      const captureKey = contextKey(context);
+      let activeCapture = captures.get(captureKey);
+      if (activeCapture && (now - activeCapture.startedAt >= limits.maxCaptureMs ||
+          activeCapture.lines >= limits.maxCaptureLines)) {
+        captures.delete(captureKey);
+        activeCapture = null;
+        diagnostics.push('Spawn capture limit reached; output returned to the main window.');
+      }
+      if (activeCapture) {
+        actions.push({ type: 'spawn', title: activeCapture.title, group: activeCapture.group, text });
+        if (!activeCapture.copy) gagged = true;
+        if (activeCapture.gagLog) logGagged = true;
+        activeCapture.lines++;
+        if (activeCapture.until.test(input)) captures.delete(captureKey);
+      }
+      let spawnedThisLine = !!activeCapture;
       for (let index = 0, list = ordered(triggers, context, limits.maxRules); index < list.length; index++) {
         if (actions.length >= limits.maxActions) { diagnostics.push('Trigger action limit reached.'); break; }
         const rule = list[index], id = makeId(rule, index, 'trigger-');
@@ -210,9 +228,25 @@
             actions.push({ type: 'command', text: command, ...detail });
           else diagnostics.push('Trigger command exceeds one-line limit.');
         }
-        if (rule.spawnTitle) {
+        if (rule.spawnTitle && !spawnedThisLine && actions.length < limits.maxActions) {
+          spawnedThisLine = true;
           const title = interpolate(String(rule.spawnTitle), hit.captures).slice(0, 80);
-          actions.push({ type: 'spawn', title, text, ...detail });
+          const group = interpolate(String(rule.spawnGroup || ''), hit.captures).slice(0, 80);
+          actions.push({ type: 'spawn', title, group, text, ...detail });
+          if (!rule.spawnCopy) gagged = true;
+          if (rule.spawnGagLog) logGagged = true;
+          if (rule.captureUntil) {
+            if (!allowRegex) diagnostics.push('Spawn capture-until requires the rules worker.');
+            else if (typeof rule.captureUntil !== 'string' || rule.captureUntil.length > limits.maxCapturePattern)
+              diagnostics.push('Spawn capture-until pattern is too long.');
+            else {
+              try {
+                captures.set(captureKey, { title, group, copy: !!rule.spawnCopy,
+                  gagLog: !!rule.spawnGagLog, until: new RegExp(rule.captureUntil),
+                  startedAt: now, lines: 0 });
+              } catch { diagnostics.push('Invalid capture-until regex in rule ' + id + '.'); }
+            }
+          }
         }
         if (rule.notify) actions.push({ type: 'notification', text, ...detail });
         if (typeof rule.filterText === 'string') {
@@ -225,9 +259,13 @@
         if (cooldown) lastFire.set(key, now);
         if (rule.stopProcessing) break;
       }
+      for (const action of actions) if (action.type === 'spawn') action.text = text;
       return { text, actions: actions.slice(0, limits.maxActions), matches, gagged, logGagged, diagnostics };
     }
-    return { expandCommand, processLine };
+    function cancelCapture(scope) {
+      return { cancelled: captures.delete(contextKey(scope || {})) };
+    }
+    return { expandCommand, processLine, cancelCapture };
   }
   return { createEngine, interpolate, DEFAULT_LIMITS };
 });

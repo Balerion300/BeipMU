@@ -38,7 +38,7 @@ enum MenuCommand : UINT {
     ConnectionConnect,ConnectionDisconnect,ConnectionConnectAll,ConnectionDisconnectAll,ConnectionProfiles,
     LoggingToggle,
     OptionsAliases,OptionsTriggers,OptionsMacros,OptionsScripts,OptionsMap,OptionsPreferences,
-    HelpAbout,EditFollowOutput
+    HelpAbout,EditFollowOutput,WindowHistory,WindowImage,WindowNotes,WindowSplit,WindowSpawn,EditSmartPaste
 };
 HMENU createMainPopup(){
     HMENU root=CreatePopupMenu();if(!root)return nullptr;
@@ -47,7 +47,7 @@ HMENU createMainPopup(){
         for(auto [id,label]:items)AppendMenuW(popup,id?MF_STRING:MF_SEPARATOR,id,label);
         if(!AppendMenuW(root,MF_POPUP,reinterpret_cast<UINT_PTR>(popup),title))DestroyMenu(popup);
     };
-    section(L"&Windows",{{FileNew,L"New &Tab"},{OptionsMap,L"Toggle &Map Window"},{0,nullptr},{FileClose,L"&Close Tab"}});
+    section(L"&Windows",{{FileNew,L"New &Tab"},{WindowHistory,L"Toggle &History Window"},{WindowImage,L"Toggle &Image Window"},{OptionsMap,L"Toggle &Map Window"},{WindowNotes,L"Toggle Character &Notes"},{WindowSplit,L"Toggle &Split Output"},{WindowSpawn,L"Show &Spawn Windows"},{0,nullptr},{FileClose,L"&Close Tab"}});
     HMENU tools=CreatePopupMenu();
     if(tools){
         AppendMenuW(tools,MF_STRING,OptionsTriggers,L"&Triggers...\tCtrl+Shift+T");
@@ -61,6 +61,7 @@ HMENU createMainPopup(){
         if(edit){
             AppendMenuW(edit,MF_STRING,EditCopy,L"&Copy");
             AppendMenuW(edit,MF_STRING,EditSelectAll,L"Select &All");
+            AppendMenuW(edit,MF_STRING,EditSmartPaste,L"&Smart Paste...");
             AppendMenuW(edit,MF_STRING,EditClear,L"C&lear Output");
             AppendMenuW(edit,MF_STRING,EditFollowOutput,L"Follow &Output");
             if(!AppendMenuW(tools,MF_POPUP,reinterpret_cast<UINT_PTR>(edit),L"&Edit Output"))DestroyMenu(edit);
@@ -79,6 +80,9 @@ const char* menuAction(UINT command){
         case FileNew:return "ui:file-new";case FileClose:return "ui:file-close";case FileExport:return "ui:file-export";
         case EditCopy:return "ui:edit-copy";case EditSelectAll:return "ui:edit-select-all";case EditFind:return "ui:edit-find";case EditClear:return "ui:edit-clear";
         case EditFollowOutput:return "ui:edit-follow-output";
+        case EditSmartPaste:return "ui:edit-smart-paste";
+        case WindowHistory:return "ui:window-input-history";case WindowImage:return "ui:window-image";
+        case WindowNotes:return "ui:window-character-notes";case WindowSplit:return "ui:window-split";case WindowSpawn:return "ui:window-spawn";
         case ConnectionConnect:return "ui:connection-connect";case ConnectionDisconnect:return "ui:connection-disconnect";
         case ConnectionConnectAll:return "ui:connection-connect-all";case ConnectionDisconnectAll:return "ui:connection-disconnect-all";case ConnectionProfiles:return "ui:connection-profiles";
         case LoggingToggle:return "ui:logging-toggle";
@@ -624,7 +628,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.4",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.5",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

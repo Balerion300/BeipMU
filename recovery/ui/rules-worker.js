@@ -17,6 +17,8 @@ self.onmessage=event=>{
    ?engine.expandCommand(job.value,job.scope)
    :job.type==='line'
     ?engine.processLine(job.value,job.scope,job.nowMs)
+    :job.type==='cancel-capture'
+     ?engine.cancelCapture(job.scope)
     :null;
   if(result)self.postMessage({id:job.id,result});
  }catch(error){self.postMessage({id:job.id,error:String(error?.message||error).slice(0,512)});}

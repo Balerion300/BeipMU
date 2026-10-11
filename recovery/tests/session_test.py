@@ -11,7 +11,7 @@ import time
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.4" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.5" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -72,7 +72,7 @@ class Fixture:
         try:
             conn, _ = self.listener.accept()
             with conn:
-                conn.settimeout(15)
+                conn.settimeout(30)
                 if self.marker.startswith("CORE A"):
                     def gmcp(name, payload):
                         message = name + " " + json.dumps(payload, separators=(",", ":"))
@@ -149,6 +149,9 @@ def run(phase):
     assert result.get("avatarLoaded") is True and result.get("tilemapRendered") is True, result
     assert result.get("mediaDisabled") is True, result
     assert result.get("mapperUI") is True, result
+    for check in ("dockMap", "dockResize", "dockIsolation", "groupedCapture", "captureCancel", "splitIsolated",
+                  "imageDock", "notesIsolated", "historyIsolated", "delayRouting", "smartPasteRouting"):
+        assert result.get(check) is True, (check, result)
     assert result.get("draftsIsolated") is True and result.get("closedIsolation") is True, result
     assert result.get("spawn") is True, result
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
@@ -163,6 +166,8 @@ def run(phase):
     for path, marker in zip(paths, ("LOG alpha", "LOG beta")):
         assert path.resolve().is_relative_to(OUT.resolve()) and path.is_file(), path
         assert marker in path.read_text(encoding="utf-8"), path
+    assert "CORE LOG BACKLOG" in paths[0].read_text(encoding="utf-8"), paths[0]
+    assert all(marker not in paths[0].read_text(encoding="utf-8") for marker in ("WHO START", "WHO BEGIN", "WHO body", "WHO END")), paths[0]
     assert (OUT / "preview.png").stat().st_size > 1000, f"{phase}: no screenshot"
     for fixture in fixtures:
         fixture.finish()
@@ -172,6 +177,11 @@ def run(phase):
     assert b"core-beta\r\n" in b and b"core-alpha\r\n" not in b, (phase, b)
     assert b"core-line-one\r\n" in a and b"core-line-two\r\n" in a, (phase, a)
     assert b"core-line-one\r\n" not in b and b"core-line-two\r\n" not in b, (phase, b)
+    assert b"core-delayed-alpha\r\n" in a and b"core-delayed-alpha\r\n" not in b, (phase, a, b)
+    assert b"core-cancelled-alpha\r\n" not in a + b, (phase, a, b)
+    for pasted in (b"pre-core-paste-one-post\r\n", b"pre-core-paste-two-post\r\n"):
+        assert pasted in a and pasted not in b, (phase, pasted, a, b)
+    assert b"saved unsent draft\r\n" not in a + b, (phase, a, b)
     assert b"connect SampleUser sample-pass\r\n" in a, (phase, a)
     assert b"sample-pass" not in b, (phase, b)
     assert b"core-macro-alpha\r\n" in a and b"core-macro-alpha\r\n" not in b, (phase,a,b)

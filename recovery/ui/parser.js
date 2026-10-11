@@ -62,7 +62,7 @@ class Parser{
   if(close){const index=this.stack.map(x=>x.name).lastIndexOf(name);if(index>=0){const saved=this.stack[index];this.style=saved.style;this.link=saved.link;this.stack.length=index;}return;}
   if(name==='br'||name==='p'){this.text('\n');/* PennMUSH pairs BR with a transport newline inside PRE. */this.brNewline=name==='br'&&this.pre>0;return;}
   if(name==='support'){const supported=['b','i','u','color','font','a','send','img','image','br','p','version','support'];const attrs={a:['href','hint'],send:['href','hint','prompt'],img:['src','height','alt'],image:['url','fname','height','alt'],color:['fore'],font:['color']};const queries=pos.length?pos:supported;this.send('\x1b[1z<SUPPORTS '+queries.map(q=>{const [tag,attr]=q.toLowerCase().split('.');return (supported.includes(tag)&&(!attr||attrs[tag]?.includes(attr))?'+':'-')+q;}).join(' ')+'>');return;}
-  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.4">');return;}
+  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.5">');return;}
   if(name==='img'||name==='image'){
    let src=a.src;if(!src){const fname=a.fname||pos[0]||'';try{src=a.url?new URL(fname,a.url).href:fname;}catch{src='';}}
    const url=webURL(src||'');if(url)this.emit({type:'image',url,alt:a.alt||'Image',height:Math.max(48,Math.min(600,Number(a.height)||220)),link:this.link?{...this.link}:null});else this.emit({type:'warning',text:'Image has an unsupported or incomplete URL.'});return;

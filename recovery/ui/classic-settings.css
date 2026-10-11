@@ -52,7 +52,7 @@ dialog.classic-logging{
 .classic-logging-section{display:flex;align-items:center;gap:8px;height:21px;padding:0 10px;color:#111}
 .classic-logging-section strong{font-weight:600}
 .classic-logging-rule{flex:1;height:1px;background:#aaa}
-.classic-logging-list{height:126px;box-sizing:border-box;margin:0 9px;background:#fff;border:1px solid #888;overflow:auto}
+.classic-logging-list{height:104px;box-sizing:border-box;margin:0 9px;background:#fff;border:1px solid #888;overflow:auto}
 .classic-logging-row{display:block;width:100%;min-height:21px;padding:3px 5px;border:0;background:#fff;color:#111;text-align:left;font:12px "Segoe UI",Tahoma,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .classic-logging-row[aria-selected=true]{background:#cce8ff}
 .classic-logging-empty{padding:6px;color:#666}
@@ -60,5 +60,19 @@ dialog.classic-logging{
 .classic-logging-new-actions{display:flex;align-items:center;gap:7px;padding:1px 9px 6px}
 .classic-logging-new-actions [data-action=export]{min-width:140px}
 .classic-logging-new-actions [data-action=close-bottom]{margin-left:auto}
+.classic-logging-new-actions label{display:flex;align-items:center;gap:5px;font:12px "Segoe UI",sans-serif;color:#111}
+.classic-logging-new-actions select{height:24px;width:154px;border:1px solid #888;background:#fff;color:#111;font:12px "Segoe UI",sans-serif}
+.classic-log-export{position:absolute;left:9px;bottom:5px;height:23px!important}
 .classic-logging button:disabled{color:#888;background:#eee}
 @media(max-width:480px){.classic-settings-body{grid-template-columns:104px minmax(0,1fr)}.classic-settings-content{padding:7px}.classic-settings-group{padding:8px 6px}.classic-logging-new-actions [data-action=export]{min-width:0}}
+#smartPasteDialog{border:1px solid #666;border-radius:0;background:#f0f0f0;color:#111;padding:8px;font:12px "Segoe UI",Tahoma,sans-serif}
+#smartPasteDialog form{display:flex;flex-direction:column;gap:8px}
+#smartPasteDialog .dialog-head{margin:0;padding:2px 0 7px;border-bottom:1px solid #aaa}
+#smartPasteDialog h2{font:600 12px "Segoe UI",sans-serif}
+#smartPasteDialog label{display:flex;flex-direction:column;gap:4px;color:#111}
+#smartPasteDialog .check{flex-direction:row;justify-content:flex-start}
+#smartPasteDialog input,#smartPasteDialog textarea{border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:3px;font:12px "Segoe UI",sans-serif}
+#smartPasteDialog textarea{font:13px/1.2 "Courier New",monospace;resize:vertical;min-height:110px}
+#smartPasteDialog button{border:1px solid #888;border-radius:0;background:#f6f6f6;color:#111;min-width:76px;height:25px;padding:2px 8px;font:12px "Segoe UI",sans-serif}
+#smartPasteDialog .dialog-actions{border-color:#aaa;padding-top:7px}
+#smartPasteDialog #smartPasteStatus{color:#444;font-size:12px}

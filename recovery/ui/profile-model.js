@@ -66,7 +66,9 @@
     else{
      result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);
      result.sendText=text(item.sendText,4096);result.gag=bool(item.gag);result.logGag=bool(item.logGag);
-     result.spawnTitle=text(item.spawnTitle,80);result.notify=bool(item.notify);
+     result.spawnTitle=text(item.spawnTitle,80);result.spawnGroup=text(item.spawnGroup,80);
+     result.spawnCopy=bool(item.spawnCopy);result.spawnGagLog=bool(item.spawnGagLog);
+     result.captureUntil=text(item.captureUntil,256);result.notify=bool(item.notify);
      if(typeof item.filterText==='string')result.filterText=text(item.filterText,4096);
      result.cooldownMs=number(item.cooldownMs,0,0,86400000);result.once=bool(item.once);
      if(item.highlight&&typeof item.highlight==='object'){
