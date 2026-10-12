@@ -5,12 +5,14 @@
  const shortcuts=typeof module==='object'&&module.exports?require('./shortcut-model.js'):root.BeipShortcuts;
  const preferences=typeof module==='object'&&module.exports?require('./profile-preferences.js'):root.BeipProfilePreferences;
  const rules=typeof module==='object'&&module.exports?require('./rules.js'):root.BeipRules;
- const api=factory(macros,mapper,shortcuts,preferences,rules);
+ const dock=typeof module==='object'&&module.exports?require('./dock-layout.js'):root.BeipDockLayout;
+ const templates=typeof module==='object'&&module.exports?require('./connect-template.js'):root.BeipConnectTemplate;
+ const api=factory(macros,mapper,shortcuts,preferences,rules,dock,templates);
  if(typeof module==='object'&&module.exports)module.exports=api;
  if(root)root.BeipProfiles=api;
-})(typeof globalThis==='object'?globalThis:this,function(macros,mapper,shortcuts,profilePreferences,ruleModel){
+})(typeof globalThis==='object'?globalThis:this,function(macros,mapper,shortcuts,profilePreferences,ruleModel,dock,templates){
  'use strict';
- const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40});
+ const DEFAULTS=profilePreferences.DEFAULTS;
  const ID=/^[A-Za-z0-9_-]{1,64}$/;
  function text(value,max){return typeof value==='string'?value.slice(0,max):'';}
  function number(value,defaultValue,min,max){const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):defaultValue;}
@@ -36,29 +38,19 @@
    if(!item||typeof item!=='object'||!ID.test(item.id))return null;
    const name=text(item.name,80).trim(),host=text(item.host,253).trim(),port=String(item.port??'').trim();
    if(!name||!host||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return null;
-   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384),preferences:profilePreferences.normalizeOverrides(item.preferences)};
+   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const worldIds=new Set(worlds.map(x=>x.id));
   const characters=unique(array(raw.characters,512).map(item=>{
    if(!item||typeof item!=='object'||!ID.test(item.id)||!worldIds.has(item.worldId))return null;
    const name=text(item.name,80).trim();if(!name)return null;
    const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
-   return {id:item.id,worldId:item.worldId,name,loginName,autoLogin:bool(item.autoLogin)&&!!loginName,
-    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),preferences:profilePreferences.normalizeOverrides(item.preferences)};
+   return {id:item.id,worldId:item.worldId,name,loginName,...templates.normalize(item),autoLogin:bool(item.autoLogin)&&!!loginName,
+    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const characterIds=new Map(characters.map(x=>[x.id,x]));
   const source=raw.preferences&&typeof raw.preferences==='object'?raw.preferences:{};
-  const preferences={
-   fontSize:number(source.fontSize,DEFAULTS.fontSize,10,30),
-   fontFamily:source.fontFamily==='system'?'system':'monospace',
-   theme:source.theme==='light'?'light':'dark',
-   scrollback:number(source.scrollback,DEFAULTS.scrollback,100,20000),
-   inlineImages:source.inlineImages===undefined?DEFAULTS.inlineImages:bool(source.inlineImages),
-   localEcho:bool(source.localEcho),
-   defaultLogging:bool(source.defaultLogging),mediaEnabled:bool(source.mediaEnabled),
-   shortcuts:shortcuts?.normalizeOverrides(source.shortcuts)||{},
-   inputHeight:number(source.inputHeight,DEFAULTS.inputHeight,40,300)
-  };
+  const preferences={...profilePreferences.normalizeGlobal(source),shortcuts:shortcuts?.normalizeOverrides(source.shortcuts)||{}};
   function rules(input,kind){
    const sanitized=unique(ruleModel.normalizeHierarchy(array(input,128)).items.map(item=>{
     if(!item||typeof item!=='object'||!ID.test(item.id))return null;

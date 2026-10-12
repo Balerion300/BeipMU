@@ -17,7 +17,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.9" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.10" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -184,6 +184,11 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
+    for section in ("scriptObjects", "settings", "layouts", "everyday"):
+        checks = result.get(section)
+        assert isinstance(checks, dict) and checks, (section, result)
+        assert not checks.get("error"), (section, checks)
+        assert all(value is True for key, value in checks.items() if key != "error"), (section, checks)
     exported = (OUT / "exported-map.atlas").read_bytes()
     assert exported == base64.b64decode(result.get("atlasBytes") or ""), f"{phase}: native Atlas bytes differ from reviewed export"
     with zipfile.ZipFile(io.BytesIO(exported)) as archive:
@@ -205,6 +210,10 @@ def run(phase):
     for fixture in fixtures:
         fixture.finish()
     a, b = [bytes(f.received) for f in fixtures]
+    assert b"script-objects-owner-alpha\r\n" in a and b"script-objects-owner-alpha\r\n" not in b, (phase, a, b)
+    assert b"template-check SampleUser sample-pass\r\n" in a and b"template-check" not in b, (phase, a, b)
+    assert b"template-delayed SampleUser\r\n" in a and b"template-delayed" not in b, (phase, a, b)
+    assert b"template-canceled" not in a + b, (phase, a, b)
     assert b'Core.Supports.Set ["Beip.Stats 1","Beip.Tilemap 1","Beip.Id 1","Client.Media 1"]' in a,(phase,a)
     for command in (b"automation-alias-friend\r\n", b"automation-variable-updated\r\n", b"automation-away-once\r\n"):
         assert a.count(command) == 1 and command not in b, (phase, command, a, b)

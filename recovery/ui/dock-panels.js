@@ -16,12 +16,25 @@ for(const edge of ['left','top','bottom']){
  sideSplitter.id='dockSplitter'+cap;sideSplitter.className='dock-splitter';sideSplitter.dataset.edge=edge;sideSplitter.setAttribute('role','separator');sideSplitter.setAttribute('aria-label','Resize '+edge+' docked windows');sideSplitter.setAttribute('aria-orientation',edge==='left'||edge==='right'?'vertical':'horizontal');sideSplitter.setAttribute('aria-valuemin',String(edge==='left'?180:edge==='bottom'?50:90));sideSplitter.setAttribute('aria-valuemax',String(edge==='left'?700:edge==='bottom'?400:500));sideSplitter.tabIndex=0;sideSplitter.hidden=true;
  sideTabs.id='dockTabs'+cap;sideTabs.className='dock-tabs';sideTabs.setAttribute('role','tablist');sideTabs.setAttribute('aria-label',cap+' docked windows');sideContent.id='dockContent'+cap;sideContent.className='dock-content';sideHost.append(sideTabs,sideContent);if(edge==='bottom')document.querySelector('footer').before(sideSplitter,sideHost);else workspace.append(sideHost,sideSplitter);edgeNodes[edge]={host:sideHost,splitter:sideSplitter,tabs:sideTabs,content:sideContent};
 }
+function layoutState(model){return {order:model.order,edges:model.edges,sizes:model.sizes,activeByEdge:model.activeByEdge,trees:model.trees,floating:Object.fromEntries(model.floating)};}
+function useLayout(model,value){model.order=value.order;model.edges=value.edges;model.sizes=value.sizes;model.activeByEdge=value.activeByEdge;model.trees=value.trees;}
+function normalizeModel(model){useLayout(model,layout.normalize(layoutState(model),{includeSpawn:true}));}
+function activate(model,type){useLayout(model,layout.select(layoutState(model),type));model.active=type;}
 let windowSettingsClipboard=null;
 let paneDrag=null;
 const dropOverlay=document.createElement('div');dropOverlay.className='dock-drop-overlay';dropOverlay.hidden=true;dropOverlay.setAttribute('aria-hidden','true');
 const dropTargets={};for(const edge of layout.EDGES){const target=document.createElement('div');target.className='dock-drop-target';target.dataset.edge=edge;target.textContent='Dock '+edge;dropOverlay.append(target);dropTargets[edge]=target;}
 document.body.append(dropOverlay);
-function cancelPaneDrag(){const drag=paneDrag;paneDrag=null;dropOverlay.hidden=true;document.body.classList.remove('dock-dragging');for(const target of Object.values(dropTargets))target.classList.remove('is-target');if(drag?.source.hasPointerCapture(drag.pointerId))drag.source.releasePointerCapture(drag.pointerId);}
+const paneDropOverlay=document.createElement('div');paneDropOverlay.className='dock-pane-drop';paneDropOverlay.hidden=true;const paneDropTargets={};for(const side of ['left','right','top','bottom','tabs']){const target=document.createElement('div');target.className='dock-pane-drop-target';target.dataset.side=side;target.textContent={left:'←',right:'→',top:'↑',bottom:'↓',tabs:'Tabs'}[side];paneDropTargets[side]=target;paneDropOverlay.append(target);}document.body.append(paneDropOverlay);
+function cancelPaneDrag(){const drag=paneDrag;paneDrag=null;dropOverlay.hidden=true;paneDropOverlay.hidden=true;document.body.classList.remove('dock-dragging');for(const target of [...Object.values(dropTargets),...Object.values(paneDropTargets)])target.classList.remove('is-target');if(drag?.source?.hasPointerCapture(drag.pointerId))drag.source.releasePointerCapture(drag.pointerId);}
+function paneDropAt(x,y){for(const side of ['left','right','top','bottom','tabs']){const r=paneDropTargets[side].getBoundingClientRect();if(!paneDropOverlay.hidden&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return side;}return '';}
+function updatePaneDrop(drag,x,y){
+ if(drag.group){paneDropOverlay.hidden=true;return;}
+ const group=document.elementsFromPoint(x,y).map(node=>node.closest?.('.dock-tree-group')).find(Boolean),type=group?.querySelector('.dock-pane')?.dataset.dock;
+ if(type&&type!==drag.type){const rect=group.getBoundingClientRect();drag.target=type;Object.assign(paneDropOverlay.style,{left:(rect.left+rect.width/2-57)+'px',top:(rect.top+rect.height/2-42)+'px'});paneDropOverlay.hidden=false;}
+ else{paneDropOverlay.hidden=true;drag.target='';}
+ drag.side=paneDropAt(x,y);for(const side of Object.keys(paneDropTargets))paneDropTargets[side].classList.toggle('is-target',side===drag.side);
+}
 function startPaneDrag(event,type,session,group){
  if(event.button!==0||event.isPrimary===false||current()?.id!==session.id)return;
  cancelPaneDrag();paneDrag={session,profileKey:profileKey(session),type,group,source:event.currentTarget,pointerId:event.pointerId,x:event.clientX,y:event.clientY,started:false,edge:''};event.currentTarget.setPointerCapture(event.pointerId);event.preventDefault();
@@ -33,46 +46,47 @@ window.addEventListener('pointermove',event=>{
  drag.started=true;const rect=workspace.getBoundingClientRect(),bottom=document.querySelector('footer').getBoundingClientRect().top;
  Object.assign(dropOverlay.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:Math.max(0,bottom-rect.top)+'px'});dropOverlay.hidden=false;document.body.classList.add('dock-dragging');
  const rects=Object.fromEntries(layout.EDGES.map(edge=>[edge,dropTargets[edge].getBoundingClientRect()]));drag.edge=event.ctrlKey?'':layout.dropEdge(event.clientX,event.clientY,rects);
+ updatePaneDrop(drag,event.clientX,event.clientY);if(event.ctrlKey){drag.side='';paneDropOverlay.hidden=true;}if(drag.edge){drag.side='';paneDropOverlay.hidden=true;}
  for(const edge of layout.EDGES)dropTargets[edge].classList.toggle('is-target',edge===drag.edge);event.preventDefault();
 },true);
-window.addEventListener('pointerup',event=>{const drag=paneDrag;if(!drag||event.pointerId!==drag.pointerId)return;const edge=event.ctrlKey?'':layout.dropEdge(event.clientX,event.clientY,Object.fromEntries(layout.EDGES.map(edge=>[edge,dropTargets[edge].getBoundingClientRect()])));const commit=drag.started&&edge&&dragStillOwned(drag);cancelPaneDrag();if(commit){if(drag.group)moveGroup(drag.type,edge,drag.session);else movePane(drag.type,edge,drag.session);}},true);
+window.addEventListener('pointerup',event=>{const drag=paneDrag;if(!drag||event.pointerId!==drag.pointerId)return;const edge=event.ctrlKey?'':layout.dropEdge(event.clientX,event.clientY,Object.fromEntries(layout.EDGES.map(edge=>[edge,dropTargets[edge].getBoundingClientRect()]))),side=!event.ctrlKey&&paneDropAt(event.clientX,event.clientY);const commit=drag.started&&dragStillOwned(drag);cancelPaneDrag();if(commit){if(edge){if(drag.group)moveGroup(drag.type,edge,drag.session);else movePane(drag.type,edge,drag.session);}else if(side&&drag.target)arrangePane(drag.type,drag.target,side,drag.session);}},true);
 window.addEventListener('pointercancel',cancelPaneDrag,true);
 window.addEventListener('lostpointercapture',event=>{if(paneDrag?.pointerId===event.pointerId)cancelPaneDrag();},true);
 window.addEventListener('blur',cancelPaneDrag);
 window.addEventListener('keydown',event=>{if(paneDrag&&event.key==='Escape'){event.preventDefault();event.stopPropagation();cancelPaneDrag();}},true);
 function moveGroup(type,edge,session=current()){
  if(!session||!kinds[type]||!layout.EDGES.includes(edge))return false;const model=ensure(session);if(!model.order.includes(type)||model.floating.has(type))return false;
- const moved=layout.move({order:model.order,edges:model.edges,sizes:model.sizes,activeByEdge:model.activeByEdge,floating:Object.fromEntries(model.floating)},type,edge,{group:true});
- model.edges=moved.edges;model.activeByEdge=moved.activeByEdge;model.active=moved.activeByEdge[edge];remember(session);if(current()?.id===session.id)render();return true;
+ const moved=layout.move(layoutState(model),type,edge,{group:true});
+ useLayout(model,moved);model.active=moved.activeByEdge[edge];remember(session);if(current()?.id===session.id)render();return true;
 }
 function profileKey(session){return 'beipmu:dock:'+String(session?.characterId||session?.worldId||'unassigned').slice(0,80);}
 function remember(session){
  if(!session||session.kind!=='world')return;
  const model=ensure(session);
- const floating=Object.fromEntries(model.floating);
- try{localStorage.setItem(profileKey(session),JSON.stringify(layout.copyable({order:model.order,edges:model.edges,sizes:model.sizes,activeByEdge:model.activeByEdge,floating})));}catch{}
+ normalizeModel(model);
+ try{localStorage.setItem(profileKey(session),JSON.stringify(layout.copyable(layoutState(model))));}catch{}
 }
-function savedLayout(key){
- let value={};try{value=JSON.parse(localStorage.getItem(key)||'{}');}catch{}
+function savedLayout(key,session){
+ const profile=api()?.state.characters.find(item=>item.id===session?.characterId)||api()?.state.worlds.find(item=>item.id===session?.worldId);let value=profile?.dockLayout||{};try{const stored=localStorage.getItem(key);if(stored!==null)value=JSON.parse(stored);}catch{}
  const result=layout.normalize(value,{rightWidth:legacyRightWidth});if(!window.chrome?.webview?.postMessage)result.floating={};return result;
 }
 function ensure(session){
  let model=sessionPanels.get(session.id);const key=profileKey(session);
  if(!model){
-  const saved=savedLayout(key);
-  model={profileKey:key,order:saved.order,edges:saved.edges,sizes:saved.sizes,activeByEdge:saved.activeByEdge,active:Object.values(saved.activeByEdge).find(Boolean)||'',floating:new Map(Object.entries(saved.floating)),floatIds:new Map(),images:[],imageIndex:-1,history:[],spawn:new Map(),spawnSelected:'',splitLines:[],splitScroll:null,notesDrafts:new Map()};
+  const saved=savedLayout(key,session);
+  model={profileKey:key,order:saved.order,edges:saved.edges,sizes:saved.sizes,activeByEdge:saved.activeByEdge,trees:saved.trees,active:Object.values(saved.activeByEdge).find(Boolean)||'',floating:new Map(Object.entries(saved.floating)),floatIds:new Map(),images:[],imageIndex:-1,history:[],spawn:new Map(),spawnSelected:'',splitLines:[],splitScroll:null,notesDrafts:new Map()};
   sessionPanels.set(session.id,model);
  }else if(model.profileKey!==key){
   for(const id of model.floatIds.values()){nativePost('float:close|'+id);floatOwners.delete(id);}
-  const saved=savedLayout(key);
-  model.profileKey=key;model.order=saved.order;model.edges=saved.edges;model.sizes=saved.sizes;model.activeByEdge=saved.activeByEdge;model.active=Object.values(saved.activeByEdge).find(Boolean)||'';model.floating=new Map(Object.entries(saved.floating));model.floatIds.clear();
+  const saved=savedLayout(key,session);
+  model.profileKey=key;model.order=saved.order;model.edges=saved.edges;model.sizes=saved.sizes;model.activeByEdge=saved.activeByEdge;model.trees=saved.trees;model.active=Object.values(saved.activeByEdge).find(Boolean)||'';model.floating=new Map(Object.entries(saved.floating));model.floatIds.clear();
  }
  return model;
 }
 function edgeFor(model,type){return layout.EDGES.includes(model.edges[type])?model.edges[type]:layout.DEFAULT_EDGE[type];}
 function activeOn(model,edge){const available=model.order.filter(type=>edgeFor(model,type)===edge&&!model.floating.has(type));if(!available.includes(model.activeByEdge[edge]))model.activeByEdge[edge]=available[0]||'';return model.activeByEdge[edge];}
-function paneVisible(model,type){return !model.floating.has(type)&&activeOn(model,edgeFor(model,type))===type;}
-function pane(type,title,session){const section=document.createElement('section');section.className='dock-pane';section.dataset.dock=type;const header=document.createElement('div');header.className='dock-pane-head';const heading=document.createElement('span');heading.textContent=title||kinds[type];heading.className='dock-caption';heading.title='Drag to dock on another edge';heading.addEventListener('pointerdown',event=>startPaneDrag(event,type,session,false));const grip=document.createElement('button');grip.type='button';grip.className='dock-group-grip';grip.textContent='⠿';grip.title='Drag this pane group; arrow keys move the group';grip.setAttribute('aria-label','Move '+edgeFor(ensure(session),type)+' pane group; use arrow keys or drag');grip.addEventListener('pointerdown',event=>startPaneDrag(event,type,session,true));grip.addEventListener('keydown',event=>{const edge={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'top',ArrowDown:'bottom'}[event.key];if(edge){event.preventDefault();event.stopPropagation();moveGroup(type,edge,session);edgeNodes[edge].content.querySelector('.dock-group-grip')?.focus();}});const controls=document.createElement('span');controls.className='dock-head-controls';const position=document.createElement('select');position.className='dock-position';position.setAttribute('aria-label','Dock '+(title||kinds[type])+' on');position.title='Dock position';for(const edge of layout.EDGES){const option=document.createElement('option');option.value=edge;option.textContent=edge[0].toUpperCase()+edge.slice(1);position.append(option);}position.value=edgeFor(ensure(session),type);position.onchange=()=>movePane(type,position.value,session);const floatButton=document.createElement('button');floatButton.type='button';floatButton.title='Float '+(title||kinds[type]);floatButton.setAttribute('aria-label',floatButton.title);floatButton.textContent='↗';floatButton.onclick=()=>floatPane(type,session);const close=document.createElement('button');close.type='button';close.className='dock-close';close.title='Close '+(title||kinds[type]);close.setAttribute('aria-label',close.title);close.textContent='×';close.onclick=()=>closePane(type,session);controls.append(position,floatButton,close);header.append(grip,heading,controls);const body=document.createElement('div');body.className='dock-pane-body';section.append(header,body);return {section,header,body};}
+function paneVisible(model,type){normalizeModel(model);return !model.floating.has(type)&&layout.groupFor(model.trees[edgeFor(model,type)],type)?.active===type;}
+function pane(type,title,session){const section=document.createElement('section');section.className='dock-pane';section.dataset.dock=type;const header=document.createElement('div');header.className='dock-pane-head';const heading=document.createElement('span');heading.textContent=title||kinds[type];heading.className='dock-caption';heading.title='Drag to dock on another edge';heading.addEventListener('pointerdown',event=>startPaneDrag(event,type,session,false));const grip=document.createElement('button');grip.type='button';grip.className='dock-group-grip';grip.textContent='⠿';grip.title='Drag this pane group; arrow keys move the group';grip.setAttribute('aria-label','Move '+edgeFor(ensure(session),type)+' pane group; use arrow keys or drag');grip.addEventListener('pointerdown',event=>startPaneDrag(event,type,session,true));grip.addEventListener('keydown',event=>{const edge={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'top',ArrowDown:'bottom'}[event.key];if(edge){event.preventDefault();event.stopPropagation();moveGroup(type,edge,session);edgeNodes[edge].content.querySelector('.dock-group-grip')?.focus();}});const controls=document.createElement('span');controls.className='dock-head-controls';const position=document.createElement('select');position.className='dock-position';position.setAttribute('aria-label','Dock '+(title||kinds[type])+' on');position.title='Dock position';for(const edge of layout.EDGES){const option=document.createElement('option');option.value=edge;option.textContent=edge[0].toUpperCase()+edge.slice(1);position.append(option);}position.value=edgeFor(ensure(session),type);position.onchange=()=>movePane(type,position.value,session);const floatButton=document.createElement('button');floatButton.type='button';floatButton.title='Float '+(title||kinds[type]);floatButton.setAttribute('aria-label',floatButton.title);floatButton.textContent='↗';floatButton.onclick=()=>floatPane(type,session);const close=document.createElement('button');close.type='button';close.className='dock-close';close.title='Close '+(title||kinds[type]);close.setAttribute('aria-label',close.title);close.textContent='×';close.onclick=()=>closePane(type,session);controls.append(position,arrangementControl(type,session),floatButton,close);header.append(grip,heading,controls);const body=document.createElement('div');body.className='dock-pane-body';section.append(header,body);return {section,header,body};}
 function button(label,onClick){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=onClick;return b;}
 function status(body,message){const p=document.createElement('p');p.className='dock-hint';p.textContent=message;body.append(p);}
 function current(){return api()?.current;}
@@ -106,7 +120,8 @@ function floatData(session,type,model){
  if(type==='spawn'){const names=[...model.spawn.keys()],selected=model.spawn.has(model.spawnSelected)?model.spawnSelected:names[0]||'';return {names,selected,lines:(model.spawn.get(selected)||[]).slice(-200).map(x=>x.slice(0,2048))};}
  return {};
 }
-function floatSnapshot(session,type,model){const data=floatData(session,type,model),snapshot={sessionId:session.id,type,edge:edgeFor(model,type),title:floatTitle(session,type),data};let serialized=JSON.stringify(snapshot);while(new TextEncoder().encode(serialized).length>245760){const lists=[data.rows,data.lines,data.rooms,data.exits,data.images].filter(x=>Array.isArray(x)&&x.length>1).sort((a,b)=>b.length-a.length),list=lists[0];if(!list){snapshot.data={message:'This pane has too much content to display in a floating window.'};serialized=JSON.stringify(snapshot);break;}list.splice(0,Math.ceil(list.length/2));serialized=JSON.stringify(snapshot);}return serialized;}
+function floatAppearance(session){const prefs=api().preferencesForSession(session);return {font:prefs.outputFontFace||(prefs.fontFamily==='system'?'Segoe UI':'Courier New'),size:prefs.fontSize,foreground:prefs.outputForeground||'#c0c0c0',background:prefs.outputBackground||'#000000',bold:!!prefs.outputFontBold,italic:!!prefs.outputFontItalic,link:prefs.linkColor||'#67adff'};}
+function floatSnapshot(session,type,model){const data=floatData(session,type,model),snapshot={sessionId:session.id,type,edge:edgeFor(model,type),title:floatTitle(session,type),appearance:floatAppearance(session),data};let serialized=JSON.stringify(snapshot);while(new TextEncoder().encode(serialized).length>245760){const lists=[data.rows,data.lines,data.rooms,data.exits,data.images].filter(x=>Array.isArray(x)&&x.length>1).sort((a,b)=>b.length-a.length),list=lists[0];if(!list){snapshot.data={message:'This pane has too much content to display in a floating window.'};serialized=JSON.stringify(snapshot);break;}list.splice(0,Math.ceil(list.length/2));serialized=JSON.stringify(snapshot);}return serialized;}
 function updateFloat(session,type){const model=sessionPanels.get(session?.id),id=model?.floatIds.get(type);if(!id)return;nativePost('float:update|'+id+'|'+encode64(floatSnapshot(session,type,model)));}
 function openFloat(session,type){const model=ensure(session);if(model.floatIds.has(type)){updateFloat(session,type);return;}if(floatOwners.size>=12){session.status='Floating window limit reached (12).';if(current()?.id===session.id)$('status').textContent=session.status;model.floating.delete(type);remember(session);queueMicrotask(()=>{if(current()?.id===session.id)render();});return;}
  const rect=model.floating.get(type)||{x:Math.max(40,innerWidth-500),y:80,width:420,height:400},id='fp'+Date.now().toString(36)+'_'+(nextFloatId++).toString(36);model.floatIds.set(type,id);floatOwners.set(id,{sessionId:session.id,type,profileKey:model.profileKey,ready:false,rendered:false});
@@ -121,17 +136,17 @@ function floatPane(type,session=current()){
  remember(session);if(current()?.id===session.id)render();else openFloat(session,type);return true;
 }
 function dockPane(type,session=current(),edge){
- if(!session||!kinds[type])return false;const model=ensure(session),id=model.floatIds.get(type);if(id){nativePost('float:close|'+id);floatOwners.delete(id);model.floatIds.delete(type);}model.floating.delete(type);if(!model.order.includes(type))model.order.push(type);if(layout.EDGES.includes(edge))model.edges[type]=edge;const next=edgeFor(model,type);model.activeByEdge[next]=type;model.active=type;remember(session);if(current()?.id===session.id)render();return true;
+ if(!session||!kinds[type])return false;const model=ensure(session),id=model.floatIds.get(type);if(id){nativePost('float:close|'+id);floatOwners.delete(id);model.floatIds.delete(type);}model.floating.delete(type);if(!model.order.includes(type))model.order.push(type);if(layout.EDGES.includes(edge))model.edges[type]=edge;const next=edgeFor(model,type);model.activeByEdge[next]=type;activate(model,type);remember(session);if(current()?.id===session.id)render();return true;
 }
 function movePane(type,edge,session=current()){
- if(!session||!kinds[type]||!layout.EDGES.includes(edge))return false;const model=ensure(session);if(model.floating.has(type))return dockPane(type,session,edge);if(!model.order.includes(type))model.order.push(type);const previous=edgeFor(model,type);model.edges[type]=edge;if(previous!==edge&&model.activeByEdge[previous]===type){model.activeByEdge[previous]='';activeOn(model,previous);}model.activeByEdge[edge]=type;model.active=type;remember(session);if(current()?.id===session.id)render();return true;
+ if(!session||!kinds[type]||!layout.EDGES.includes(edge))return false;const model=ensure(session);if(model.floating.has(type))return dockPane(type,session,edge);if(!model.order.includes(type))model.order.push(type);useLayout(model,layout.move(layoutState(model),type,edge));activate(model,type);remember(session);if(current()?.id===session.id)render();return true;
 }
 function open(type,session=current()){
  if(!session||!kinds[type])return false;
  const model=ensure(session);
  if(!model.order.includes(type))model.order.push(type);
  if(model.floating.has(type)){openFloat(session,type);return true;}
- const edge=edgeFor(model,type);model.activeByEdge[edge]=type;model.active=type;remember(session);if(current()?.id===session.id)render();return true;
+ const edge=edgeFor(model,type);model.activeByEdge[edge]=type;activate(model,type);remember(session);if(current()?.id===session.id)render();return true;
 }
 function closePane(type,session=current()){
  if(!session)return;
@@ -141,26 +156,30 @@ function closePane(type,session=current()){
  remember(session);if(current()?.id===session.id)render();
 }
 function toggle(type,session=current()){if(!session)return false;const model=ensure(session);return model.order.includes(type)?(closePane(type,session),false):open(type,session);}
-function copyAllWindowSettings(session=current()){if(!session)return false;const model=ensure(session);windowSettingsClipboard=layout.copyable({order:model.order,edges:model.edges,sizes:model.sizes,activeByEdge:model.activeByEdge,floating:Object.fromEntries(model.floating)});session.status='Window pane settings copied.';if(current()?.id===session.id)$('status').textContent=session.status;return true;}
+function copyAllWindowSettings(session=current()){
+ if(!session)return false;const model=ensure(session),effective=api().preferencesForSession(session),prefs=window.BeipProfilePreferences;
+ const preferences=prefs.normalizeOverrides({output:{useParent:false,values:Object.fromEntries(prefs.OUTPUT_KEYS.map(key=>[key,effective[key]]))},input:{useParent:false,values:Object.fromEntries(prefs.INPUT_KEYS.map(key=>[key,effective[key]]))}});
+ windowSettingsClipboard={layout:layout.copyable(layoutState(model)),preferences};session.status='Window layout and output/input settings copied.';if(current()?.id===session.id)$('status').textContent=session.status;return true;
+}
 function pasteAllWindowSettings(session=current()){
  if(!session)return false;if(!session.worldId){session.status='Choose a saved world before pasting window settings.';if(current()?.id===session.id)$('status').textContent=session.status;return false;}
  if(!windowSettingsClipboard){session.status='Copy window settings first.';if(current()?.id===session.id)$('status').textContent=session.status;return false;}
- const model=ensure(session);for(const id of model.floatIds.values()){nativePost('float:close|'+id);floatOwners.delete(id);}const copy=layout.copyable(windowSettingsClipboard);model.order=copy.order;model.edges=copy.edges;model.sizes=copy.sizes;model.activeByEdge=copy.activeByEdge;model.active=Object.values(copy.activeByEdge).find(Boolean)||'';model.floating=new Map(Object.entries(window.chrome?.webview?.postMessage?copy.floating:{}));model.floatIds.clear();remember(session);if(current()?.id===session.id)render();session.status='Window pane settings pasted.';if(current()?.id===session.id)$('status').textContent=session.status;return true;
+ const model=ensure(session);for(const id of model.floatIds.values()){nativePost('float:close|'+id);floatOwners.delete(id);}const copy=layout.copyable(windowSettingsClipboard.layout);model.order=copy.order;model.edges=copy.edges;model.sizes=copy.sizes;model.activeByEdge=copy.activeByEdge;model.trees=copy.trees;model.active=Object.values(copy.activeByEdge).find(Boolean)||'';model.floating=new Map(Object.entries(window.chrome?.webview?.postMessage?copy.floating:{}));model.floatIds.clear();const profile=api().state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId)||api().state.worlds.find(item=>item.id===session.worldId);if(profile&&windowSettingsClipboard.preferences){profile.preferences=window.BeipProfilePreferences.normalizeOverrides(windowSettingsClipboard.preferences);api().applyPreferences();api().saveSettings();}remember(session);if(current()?.id===session.id)render();session.status='Window layout and output/input settings pasted.';if(current()?.id===session.id)$('status').textContent=session.status;return true;
 }
 function selected(session=current()){cancelPaneDrag();if(session)ensure(session);render();}
 function closed(session){if(paneDrag?.session===session)cancelPaneDrag();const model=sessionPanels.get(session.id);if(model)for(const id of model.floatIds.values()){nativePost('float:close|'+id);floatOwners.delete(id);}sessionPanels.delete(session.id);}
-function clear(session){const model=session&&sessionPanels.get(session.id);if(!model)return;model.splitLines=[];model.images=[];for(const type of ['split','image'])updateFloat(session,type);if(current()?.id===session.id){for(const type of ['split','image'])if(paneVisible(model,type))renderEdge(edgeFor(model,type),session,model);}}
-function addHistory(session,text){const model=ensure(session);model.history.push(text);if(model.history.length>500)model.history.shift();updateFloat(session,'history');if(current()?.id===session.id&&paneVisible(model,'history'))renderEdge(edgeFor(model,'history'),session,model);}
-function addImage(session,event){if(!event?.url)return;const model=ensure(session),wasLatest=model.imageIndex<0||model.imageIndex===model.images.length-1;model.images.push({url:event.url,alt:String(event.alt||'Image').slice(0,160)});if(model.images.length>100){model.images.shift();if(!wasLatest)model.imageIndex=Math.max(0,model.imageIndex-1);}if(wasLatest)model.imageIndex=model.images.length-1;updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))renderEdge(edgeFor(model,'image'),session,model);}
-function recordLine(session,line){const model=ensure(session);model.splitLines.push(line);if(model.splitLines.length>500)model.splitLines.shift();updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))renderEdge(edgeFor(model,'split'),session,model);}
-function refreshLine(session){const model=sessionPanels.get(session?.id);if(!model)return;updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))renderEdge(edgeFor(model,'split'),session,model);}
+function clear(session){const model=session&&sessionPanels.get(session.id);if(!model)return;model.splitLines=[];model.images=[];for(const type of ['split','image'])updateFloat(session,type);if(current()?.id===session.id){for(const type of ['split','image'])if(paneVisible(model,type))refreshPane(type,session,model);}}
+function addHistory(session,text){const model=ensure(session);model.history.push(text);if(model.history.length>500)model.history.shift();updateFloat(session,'history');if(current()?.id===session.id&&paneVisible(model,'history'))refreshPane('history',session,model);}
+function addImage(session,event){if(!event?.url)return;const model=ensure(session),wasLatest=model.imageIndex<0||model.imageIndex===model.images.length-1;model.images.push({url:event.url,alt:String(event.alt||'Image').slice(0,160)});if(model.images.length>100){model.images.shift();if(!wasLatest)model.imageIndex=Math.max(0,model.imageIndex-1);}if(wasLatest)model.imageIndex=model.images.length-1;updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))refreshPane('image',session,model);}
+function recordLine(session,line){const model=ensure(session);model.splitLines.push(line);if(model.splitLines.length>500)model.splitLines.shift();updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
+function refreshLine(session){const model=sessionPanels.get(session?.id);if(!model)return;updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
 function routeSpawn(session,title,text,{group=''}={}){
  const model=ensure(session),name=String(title||'Window').slice(0,80),groupName=String(group||'').slice(0,80),key=groupName?groupName+' / '+name:name,rows=model.spawn.get(key)||[];
  if(!model.spawn.has(key)&&model.spawn.size>=32){session.status='Spawn window limit reached (32 per session).';if(current()?.id===session.id)$('status').textContent=session.status;return true;}
  rows.push(String(text||'').slice(0,8192));while(rows.length>200||rows.reduce((total,line)=>total+line.length,0)>262144)rows.shift();model.spawn.set(key,rows);if(!model.spawnSelected)model.spawnSelected=key;
  const first=!model.order.includes('spawn');if(first){model.order.push('spawn');model.edges.spawn=layout.DEFAULT_EDGE.spawn;model.activeByEdge.right='spawn';model.active='spawn';}
  updateFloat(session,'spawn');
- if(current()?.id===session.id){if(first)render();else if(paneVisible(model,'spawn'))renderEdge(edgeFor(model,'spawn'),session,model);}return true;
+ if(current()?.id===session.id){if(first)render();else if(paneVisible(model,'spawn'))refreshPane('spawn',session,model);}return true;
 }
 function renderMap(body,session){
  if(!session.worldId){status(body,'Choose a saved world to use its map.');return;}
@@ -216,25 +235,49 @@ function renderSpawn(body,model){
  const listing=document.createElement('div');listing.className='dock-output-copy';listing.tabIndex=0;const show=()=>{model.spawnSelected=selector.value;listing.replaceChildren();for(const line of model.spawn.get(selector.value)||[]){const row=document.createElement('div');row.className='line';row.textContent=line;listing.append(row);}listing.scrollTop=listing.scrollHeight;};
  selector.addEventListener('change',show);body.append(selector,listing);show();
 }
+function arrangePane(type,target,side='tabs',session=current()){
+ if(!session||!kinds[type]||!kinds[target]||type===target||!['tabs',...layout.EDGES].includes(side))return false;
+ const model=ensure(session);normalizeModel(model);if(!model.order.includes(type)||!model.order.includes(target)||model.floating.has(target))return false;
+ const value=layout.place(layoutState(model),type,target,side),id=model.floatIds.get(type);
+ if(id){nativePost('float:close|'+id);floatOwners.delete(id);model.floatIds.delete(type);}model.floating.delete(type);useLayout(model,value);model.active=type;remember(session);if(current()?.id===session.id)render();return true;
+}
+function arrangementControl(type,session){
+ const control=document.createElement('select');control.className='dock-arrange';control.setAttribute('aria-label','Arrange '+kinds[type]);control.title='Split beside another pane or join its tabs';const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Arrange';control.append(placeholder);
+ const model=ensure(session);for(const target of model.order){if(target===type||model.floating.has(target))continue;const group=document.createElement('optgroup');group.label=kinds[target];for(const [side,label] of [['left','Left of'],['right','Right of'],['top','Above'],['bottom','Below'],['tabs','Tab with']]){const option=document.createElement('option');option.value=target+':'+side;option.textContent=label+' '+kinds[target];group.append(option);}control.append(group);}control.disabled=control.options.length===1;control.onchange=()=>{const [target,side]=control.value.split(':');arrangePane(type,target,side,session);};return control;
+}
+function renderPane(type,parent,session,model){
+ const {section,body}=pane(type,type==='spawn'?(model.spawn.keys().next().value||kinds.spawn):kinds[type],session);parent.append(section);
+ if(type==='map')renderMap(body,session);else if(type==='history')renderHistory(body,session,model);else if(type==='image')renderImages(body,model);else if(type==='notes')renderNotes(body,session,model);else if(type==='split')renderSplit(body,session,model);else if(type==='spawn')renderSpawn(body,model);
+ if(type==='split'&&model.splitScroll){const next=section.querySelector('.dock-output-copy');if(next)next.scrollTop=model.splitScroll.bottom?next.scrollHeight:model.splitScroll.top;}
+}
+function refreshPane(type,session,model){
+ const old=edgeNodes[edgeFor(model,type)].content.querySelector('[data-dock="'+type+'"]');if(!old)return;
+ const focused=old.contains(document.activeElement)?document.activeElement:null,historyFocused=focused?.classList.contains('dock-history-search'),selection=historyFocused?{start:focused.selectionStart,end:focused.selectionEnd}:null;
+ if(type==='split'){const scroll=old.querySelector('.dock-output-copy');if(scroll)model.splitScroll={top:scroll.scrollTop,bottom:scroll.scrollHeight-scroll.clientHeight-scroll.scrollTop<4};}
+ const parent=document.createElement('div');renderPane(type,parent,session,model);const next=parent.firstElementChild;old.replaceWith(next);
+ if(historyFocused){const field=next.querySelector('.dock-history-search');field?.focus();if(field&&selection)try{field.setSelectionRange(selection.start,selection.end);}catch{}}
+}
+function renderTree(node,parent,session,model,edge,path=[]){
+ if(!node)return;
+ if(node.kind==='tabs'){
+  const group=document.createElement('div');group.className='dock-tree-group';group.dataset.panes=node.tabs.join(' ');const bar=document.createElement('div');bar.className='dock-tabs';bar.setAttribute('role','tablist');bar.setAttribute('aria-label','Docked pane group');
+  for(const type of node.tabs){const tab=button(kinds[type],()=>{activate(model,type);remember(session);renderEdge(edge,session,model);});tab.className='dock-tab';tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(node.active===type));tab.addEventListener('pointerdown',event=>startPaneDrag(event,type,session,false));bar.append(tab);}group.append(bar);renderPane(node.active,group,session,model);parent.append(group);return;
+ }
+ const split=document.createElement('div');split.className='dock-tree-split';split.dataset.axis=node.axis;const first=document.createElement('div'),second=document.createElement('div'),divider=document.createElement('div');first.className=second.className='dock-tree-branch';divider.className='dock-tree-divider';divider.tabIndex=0;divider.setAttribute('role','separator');divider.setAttribute('aria-label','Resize split panes');divider.setAttribute('aria-orientation',node.axis==='x'?'vertical':'horizontal');divider.setAttribute('aria-valuemin','10');divider.setAttribute('aria-valuemax','90');
+ const apply=value=>{first.style.flex=value+' 1 0%';second.style.flex=(1-value)+' 1 0%';divider.setAttribute('aria-valuenow',String(Math.round(value*100)));};apply(node.ratio);
+ let resizing=null;
+ divider.addEventListener('pointerdown',event=>{if(event.button!==0)return;resizing={pointer:event.pointerId,profile:model.profileKey};divider.setPointerCapture(event.pointerId);event.preventDefault();});
+ divider.addEventListener('pointermove',event=>{if(!resizing||event.pointerId!==resizing.pointer)return;if(current()?.id!==session.id||model.profileKey!==resizing.profile){resizing=null;return;}const rect=split.getBoundingClientRect(),value=node.axis==='x'?(event.clientX-rect.left)/rect.width:(event.clientY-rect.top)/rect.height;useLayout(model,layout.resize(layoutState(model),edge,path,value));let updated=model.trees[edge];for(const key of path)updated=updated[key];apply(updated.ratio);});
+ const finish=()=>{if(resizing){remember(session);resizing=null;}};divider.addEventListener('pointerup',finish);divider.addEventListener('pointercancel',finish);divider.addEventListener('lostpointercapture',finish);
+ divider.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();let currentNode=model.trees[edge];for(const key of path)currentNode=currentNode[key];const value=event.key==='Home'?.1:event.key==='End'?.9:currentNode.ratio+(['ArrowLeft','ArrowUp'].includes(event.key)?-.05:.05);useLayout(model,layout.resize(layoutState(model),edge,path,value));remember(session);renderEdge(edge,session,model);edgeNodes[edge].content.querySelector('[data-split-path="'+path.join('-')+'"]')?.focus();});divider.dataset.splitPath=path.join('-');
+ renderTree(node.first,first,session,model,edge,[...path,'first']);renderTree(node.second,second,session,model,edge,[...path,'second']);split.append(first,divider,second);parent.append(split);
+}
 function renderEdge(edge,session,model){
- const nodes=edgeNodes[edge],{host:sideHost,splitter:sideSplitter,tabs:sideTabs,content:sideContent}=nodes;
- const docked=model?.order.filter(type=>edgeFor(model,type)===edge&&!model.floating.has(type))||[],visible=!!docked.length;
- const historySearchFocused=document.activeElement?.classList?.contains('dock-history-search')&&sideContent.contains(document.activeElement);
- const previous=sideContent.querySelector('.dock-output-copy'),previousModel=sessionPanels.get(sideContent.dataset.session);
- if(previous&&previousModel&&sideContent.querySelector('.dock-pane')?.dataset.dock==='split')previousModel.splitScroll={top:previous.scrollTop,bottom:previous.scrollHeight-previous.clientHeight-previous.scrollTop<4};
- sideHost.hidden=!visible;sideSplitter.hidden=!visible;sideTabs.replaceChildren();sideContent.replaceChildren();sideContent.dataset.session=session?.id||'';
- if(!visible)return;
- const active=activeOn(model,edge);
- for(const type of docked){const tab=button(kinds[type],()=>{model.activeByEdge[edge]=type;model.active=type;remember(session);renderEdge(edge,session,model);});tab.className='dock-tab';tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(active===type));sideTabs.append(tab);}
- const {section,body}=pane(active,active==='spawn'?(model.spawn.keys().next().value||kinds.spawn):kinds[active],session);sideContent.append(section);
- if(active==='map')renderMap(body,session);
- else if(active==='history')renderHistory(body,session,model);
- else if(active==='image')renderImages(body,model);
- else if(active==='notes')renderNotes(body,session,model);
- else if(active==='split')renderSplit(body,session,model);
- else if(active==='spawn')renderSpawn(body,model);
- if(active==='split'&&model.splitScroll){const next=sideContent.querySelector('.dock-output-copy');if(next)next.scrollTop=model.splitScroll.bottom?next.scrollHeight:model.splitScroll.top;}
- if(active==='history'&&historySearchFocused)sideContent.querySelector('.dock-history-search')?.focus();
+ const {host:sideHost,splitter:sideSplitter,tabs:sideTabs,content:sideContent}=edgeNodes[edge];if(model)normalizeModel(model);
+ const visible=!!model?.trees[edge],historySearchFocused=document.activeElement?.classList?.contains('dock-history-search')&&sideContent.contains(document.activeElement),historySelection=historySearchFocused?{start:document.activeElement.selectionStart,end:document.activeElement.selectionEnd}:null;
+ const previous=sideContent.querySelector('[data-dock="split"] .dock-output-copy'),previousModel=sessionPanels.get(sideContent.dataset.session);if(previous&&previousModel)previousModel.splitScroll={top:previous.scrollTop,bottom:previous.scrollHeight-previous.clientHeight-previous.scrollTop<4};
+ sideHost.hidden=!visible;sideSplitter.hidden=!visible;sideTabs.replaceChildren();sideTabs.hidden=true;sideContent.replaceChildren();sideContent.dataset.session=session?.id||'';if(!visible)return;
+ renderTree(model.trees[edge],sideContent,session,model,edge);if(historySearchFocused){const input=sideContent.querySelector('.dock-history-search');input?.focus();if(input&&historySelection)try{input.setSelectionRange(historySelection.start,historySelection.end);}catch{}}
 }
 function render(){
  const session=current(),model=session&&ensure(session);syncFloats(session,model);
@@ -277,6 +320,19 @@ function handleFloatEvent(id,event){
 }
 function handleNative(message){
  if(typeof message!=='string'||!message.startsWith('float:'))return false;
+ if(message.startsWith('float:drag|')){
+  const parts=message.split('|'),id=parts[1],phase=parts[2],owner=floatOwners.get(id),session=owner&&api().sessions.get(owner.sessionId);
+  if(!session||current()?.id!==session.id||owner.profileKey!==profileKey(session)||!['move','drop','cancel'].includes(phase)){if(paneDrag?.nativeId===id)cancelPaneDrag();return true;}
+  if(phase==='cancel'){if(paneDrag?.nativeId===id)cancelPaneDrag();return true;}
+  const x=Number(parts[3]),y=Number(parts[4]),ctrl=parts[5]==='1';if(parts.length!==6||![x,y].every(Number.isFinite))return true;
+  if(phase==='move'){
+   if(paneDrag?.nativeId!==id){cancelPaneDrag();paneDrag={nativeId:id,session,profileKey:owner.profileKey,type:owner.type,group:false,started:true,source:null,edge:''};}
+   const drag=paneDrag,rect=workspace.getBoundingClientRect(),bottom=document.querySelector('footer').getBoundingClientRect().top;
+   Object.assign(dropOverlay.style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:Math.max(0,bottom-rect.top)+'px'});dropOverlay.hidden=false;
+   drag.edge=ctrl?'':layout.dropEdge(x,y,Object.fromEntries(layout.EDGES.map(edge=>[edge,dropTargets[edge].getBoundingClientRect()])));updatePaneDrop(drag,x,y);if(ctrl||drag.edge){drag.side='';paneDropOverlay.hidden=true;}for(const edge of layout.EDGES)dropTargets[edge].classList.toggle('is-target',edge===drag.edge);
+  }else if(paneDrag?.nativeId===id){const drag=paneDrag,edge=ctrl?'':layout.dropEdge(x,y,Object.fromEntries(layout.EDGES.map(edge=>[edge,dropTargets[edge].getBoundingClientRect()]))),side=ctrl?'':paneDropAt(x,y);cancelPaneDrag();if(dragStillOwned(drag)){if(edge)dockPane(owner.type,session,edge);else if(side&&drag.target)arrangePane(owner.type,drag.target,side,session);}}
+  return true;
+ }
  if(message.startsWith('float:ready|')){const owner=floatOwners.get(message.slice(12));if(owner)owner.ready=true;return true;}
  if(message.startsWith('float:event|')){const at=message.indexOf('|',12);if(at<0)return true;const id=message.slice(12,at);try{handleFloatEvent(id,JSON.parse(decode64(message.slice(at+1))));}catch{}return true;}
  if(message.startsWith('float:bounds|')){const parts=message.split('|');if(parts.length!==6)return true;const id=parts[1],owner=floatOwners.get(id),session=owner&&api().sessions.get(owner.sessionId);if(!session)return true;const model=ensure(session);if(floatOwners.get(id)!==owner||owner.profileKey!==model.profileKey)return true;const nums=parts.slice(2).map(Number);if(nums.some(x=>!Number.isFinite(x)))return true;const [x,y,width,height]=nums;const rect={x:Math.max(-4000,Math.min(4000,Math.round(x))),y:Math.max(-4000,Math.min(4000,Math.round(y))),width:Math.max(240,Math.min(1400,Math.round(width))),height:Math.max(180,Math.min(1000,Math.round(height)))};model.floating.set(owner.type,rect);remember(session);return true;}
@@ -293,7 +349,7 @@ for(const edge of layout.EDGES){
  sideSplitter.addEventListener('keydown',event=>{const grow=edge==='left'?'ArrowRight':edge==='right'?'ArrowLeft':edge==='top'?'ArrowDown':'ArrowUp',shrink=edge==='left'?'ArrowLeft':edge==='right'?'ArrowRight':edge==='top'?'ArrowUp':'ArrowDown';if(![grow,shrink,'Home','End'].includes(event.key))return;const session=current();if(!session)return;event.preventDefault();const model=ensure(session),minimum=edge==='bottom'?50:edge==='top'?90:edge==='right'?220:180,maximum=edge==='bottom'?400:edge==='top'?500:700;model.sizes[edge]=layout.dimension(event.key==='Home'?minimum:event.key==='End'?maximum:model.sizes[edge]+(event.key===grow?10:-10),edge);sideSplitter.setAttribute('aria-valuenow',String(model.sizes[edge]));document.documentElement.style.setProperty('--dock-'+edge+'-size',model.sizes[edge]+'px');remember(session);});
  sideSplitter.setAttribute('aria-valuenow',String(layout.DEFAULT_SIZE[edge]));
 }
-window.addEventListener('beip-map-updated',()=>{const session=current();if(!session)return;const model=ensure(session);if(paneVisible(model,'map'))renderEdge(edgeFor(model,'map'),session,model);updateFloat(session,'map');});
-window.BeipDockPanels={open,toggle,closePane,floatPane,dockPane,movePane,moveGroup,copyAllWindowSettings,pasteAllWindowSettings,selected,closed,clear,addHistory,addImage,recordLine,refreshLine,routeSpawn,handleNative,floatingStatus,render};
+window.addEventListener('beip-map-updated',()=>{const session=current();if(!session)return;const model=ensure(session);if(paneVisible(model,'map'))refreshPane('map',session,model);updateFloat(session,'map');});
+window.BeipDockPanels={open,toggle,closePane,floatPane,dockPane,movePane,moveGroup,arrangePane,copyAllWindowSettings,pasteAllWindowSettings,selected,closed,clear,addHistory,addImage,recordLine,refreshLine,routeSpawn,handleNative,floatingStatus,render};
 selected();
 })();

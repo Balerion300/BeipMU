@@ -32,7 +32,7 @@ check('Invalid hosts, IDs, ports, duplicates, and orphaned characters are droppe
 });
 check('Preferences are clamped and unknown fields are excluded',()=>{
  const result=normalizeSettings({preferences:{fontSize:300,scrollback:1,theme:'sunset',fontFamily:'Comic Sans',inlineImages:false,localEcho:true,defaultLogging:true,secret:'discard'}});
- assert.deepEqual(result.preferences,{fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false,shortcuts:{},inputHeight:40});
+ assert.deepEqual(result.preferences,{...require('../ui/profile-preferences.js').DEFAULTS,inputFontSize:30,fontSize:30,fontFamily:'monospace',theme:'dark',scrollback:100,inlineImages:false,localEcho:true,defaultLogging:true,mediaEnabled:false,shortcuts:{},inputHeight:40});
 });
 check('Input pane height persists within usable limits',()=>{
  assert.equal(serializeSettings({preferences:{inputHeight:125}}).preferences.inputHeight,125);

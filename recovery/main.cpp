@@ -207,6 +207,11 @@ bool validLoginField(std::string_view s,size_t limit){
     for(unsigned char c:s)if(c<32||c==127)return false;
     return true;
 }
+bool readClipboardText(HWND window,std::string& result){
+ if(!OpenClipboard(window))return false;HANDLE block=GetClipboardData(CF_UNICODETEXT);bool ok=false;
+ if(block){const size_t bytes=GlobalSize(block);if(bytes>0&&bytes<=(ClipboardTextLimit+1)*sizeof(wchar_t)){const auto value=static_cast<const wchar_t*>(GlobalLock(block));if(value){size_t length=0,capacity=bytes/sizeof(wchar_t);while(length<capacity&&value[length])++length;if(length<capacity){result=utf8(std::wstring(value,length));ok=result.size()<=ClipboardTextLimit;}GlobalUnlock(block);}}}
+ CloseClipboard();return ok;
+}
 bool validId(std::string_view id) {
     if(id.empty()||id.size()>64)return false;
     for(unsigned char c:id)if(!((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'))return false;
@@ -262,6 +267,10 @@ public:
         std::string wire=escapeTelnet(line);bool sent=transmit(wire);
         SecureZeroMemory(line.data(),line.size());SecureZeroMemory(wire.data(),wire.size());
         if(!sent)post("status:Could not send login command; connection is unavailable.");
+    }
+    void loginTemplate(std::string_view text,std::string_view username,std::string_view password){
+        std::string line;for(size_t at=0;at<text.size();){if(text.substr(at,6)=="%NAME%"){line.append(username);at+=6;}else if(text.substr(at,10)=="%PASSWORD%"){line.append(password);at+=10;}else line+=text[at++];if(line.size()>8192){SecureZeroMemory(line.data(),line.size());post("status:Expanded connect template is too long.");return;}}
+        line+="\r\n";std::string wire=escapeTelnet(line);bool sent=transmit(wire);SecureZeroMemory(line.data(),line.size());SecureZeroMemory(wire.data(),wire.size());if(!sent)post("status:Could not send connect template; connection is unavailable.");
     }
     void gmcpSend(std::string_view encoded){
         std::string payload;if(!unbase64(encoded,payload)||payload.size()>65535){post("status:Invalid GMCP payload.");return;}
@@ -351,7 +360,7 @@ struct Application {
         std::string title;if(floats.size()>=12||!unbase64(a[3],title,160)||!validUtf8(title)||!unbase64(a[8],decoded,256*1024)||!validUtf8(decoded)){reject();return;}
         int geometry[4];try{for(int i=0;i<4;i++){size_t used=0;geometry[i]=std::stoi(a[4+i],&used);if(used!=a[4+i].size())throw 1;}}catch(...){reject();return;}
         geometry[2]=std::clamp(geometry[2],240,1400);geometry[3]=std::clamp(geometry[3],180,1000);
-        auto f=std::make_shared<FloatingWindow>();f->id=id;f->snapshot=a[8];f->notify=[this,live=alive](const std::string& event){if(!*live)return;
+        auto f=std::make_shared<FloatingWindow>();f->id=id;f->snapshot=a[8];if(controller)controller->get_ZoomFactor(&f->ownerZoom);f->notify=[this,live=alive](const std::string& event){if(!*live)return;
             if(event.starts_with("float:ready|"))++floatReady;
             if(event.starts_with("float:closed|"))++floatClosed;
             if(testMode&&!floatCaptured&&event.starts_with("float:event|")){
@@ -361,13 +370,13 @@ struct Application {
                 }
             }
             message(event);
-        };floats[id]=f;
+        };f->zoomFactor=[this,live=alive]{double zoom=1;if(*live&&controller)controller->get_ZoomFactor(&zoom);return zoom;};floats[id]=f;
         if(!f->open(window,environment.Get(),uiRoot,title,geometry[0],geometry[1],geometry[2],geometry[3])){floats.erase(id);reject();}else ++floatCreated;
     }
     HWND window=nullptr;HMENU mainMenu=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
     TriggerAudio triggerAudio;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
-    std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,ready=false;std::vector<std::string> queued;
+    std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,inspectMode=false,ready=false;std::vector<std::string> queued;
     std::unordered_map<std::string,std::string> testSecrets;
     std::filesystem::path dataRoot(){
         if(testMode)return testPath;
@@ -376,7 +385,7 @@ struct Application {
     }
     void trace(std::string_view direction,std::string_view value){
         if(!testMode)return;std::filesystem::create_directories(testPath);
-        if(value.starts_with("secret:")||value.starts_with("login|")||value.starts_with("export|"))return;
+        if(value.starts_with("secret:")||value.starts_with("login|")||value.starts_with("logintemplate|")||value.starts_with("clipboard:")||value.starts_with("export|"))return;
         // Only message names belong in the diagnostic trace; commands and server text may contain secrets.
         auto end=value.find_first_of(":|");auto kind=value.substr(0,end);
         std::ofstream(testPath/"trace.txt",std::ios::app)<<direction<<" "<<kind<<"\n";
@@ -564,8 +573,11 @@ struct Application {
         if(text.starts_with("triggeraudio|"))receiveTriggerAudio(text);
         else if(text.starts_with("float:"))floating(text);
         else if(text=="menu:open")openMainMenu();
+        else if(text=="clipboard:read"){std::string value;if(readClipboardText(window,value))message("clipboard:text:"+base64(value));else message("clipboard:error:Clipboard text is unavailable or exceeds 1 MiB.");}
+        else if(text=="window:minimize")ShowWindow(window,SW_MINIMIZE);
         else if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
+            if(inspectMode)message("inspect:");
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
             else if(testCorePorts.size()==2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
@@ -647,6 +659,15 @@ struct Application {
             auto split=text.find('|',12);if(split!=text.npos)saveSecret(text.substr(12,split-12),std::string_view(text).substr(split+1));
         }else if(text.starts_with("secret:delete|"))deleteSecret(text.substr(14));
         else if(text.starts_with("secret:status|"))secretStatus(text.substr(14));
+        else if(text.starts_with("logintemplate|")){
+            std::vector<std::string> fields;size_t at=14;while(at<=text.size()){auto end=text.find('|',at);fields.push_back(text.substr(at,end==text.npos?text.npos:end-at));if(end==text.npos)break;at=end+1;}
+            if(fields.size()!=5||!validId(fields[0])||!validId(fields[1])||(fields[4]!="tls"&&fields[4]!="allow-plain"))return;
+            auto it=sessions.find(fields[0]);if(it==sessions.end()||!it->second->mayLogin(fields[1],fields[4]=="allow-plain"))return;
+            std::string username,recipe,password;if(!unbase64(fields[2],username,128)||!validLoginField(username,128)||!unbase64(fields[3],recipe,16384)||!validLoginField(recipe,16384)){scoped(fields[0],"status:Invalid connect template or login name.");return;}
+            if(recipe.find("%PASSWORD%")!=recipe.npos&&!readSecret(fields[1],password)){scoped(fields[0],"status:No saved password for this connect template.");return;}
+            if(password.empty()||validLoginField(password,2048))it->second->loginTemplate(recipe,username,password);
+            SecureZeroMemory(password.data(),password.size());
+        }
         else if(text.starts_with("login|")){
             auto split=text.find('|',6),last=split==text.npos?text.npos:text.find('|',split+1);
             if(last!=text.npos){
@@ -744,6 +765,7 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);WSADATA ws{};if(WSAStartup(MAKEWORD(2,2),&ws))return 1;
     Application app;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
+    if(argc==3&&std::wstring(argv[1])==L"--inspect"){app.inspectMode=true;app.testMode=true;app.testPath=argv[2];}
     if(argc==4&&(std::wstring(argv[1])==L"--test"||std::wstring(argv[1])==L"--test-tls")){
         app.testPort=_wtoi(argv[2]);app.testMode=app.testPort>0;app.testTls=std::wstring(argv[1])==L"--test-tls";app.testPath=argv[3];
     }else if(argc==5&&std::wstring(argv[1])==L"--test-core"){
@@ -753,7 +775,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.9",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.10",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

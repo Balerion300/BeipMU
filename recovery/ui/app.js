@@ -12,14 +12,14 @@ function safeId(value){return /^[A-Za-z0-9_-]{1,64}$/.test(value);}
 function newId(prefix){return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function encode64(value){const bytes=new TextEncoder().encode(value);let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);}
 function decode64(value){return new TextDecoder().decode(Uint8Array.from(atob(value),c=>c.charCodeAt(0)));}
-function profileLabel(session){if(session.kind==='spawn')return session.label;const world=state.worlds.find(x=>x.id===session.worldId),character=state.characters.find(x=>x.id===session.characterId);return character?.name||world?.name||session.label;}
+function profileLabel(session){if(session.kind==='spawn')return session.label;const world=state.worlds.find(x=>x.id===session.worldId),character=state.characters.find(x=>x.id===session.characterId);return (session.scriptTitlePrefix||'')+(character?.name||world?.name||session.label);}
 function createSession(id,{worldId='',characterId='',label='New session',kind='world',parentId=''}={}){
  if(!safeId(id)||sessions.has(id))return sessions.get(id);
  closedIds.delete(id);
  const view=document.createElement('div');view.className='session-view';view.dataset.session=id;view.hidden=id!==activeId;output.append(view);if(kind==='world'){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='To connect to a world, click the globe icon in the bottom left';view.append(welcome);}
  const session={id,worldId,characterId,label,kind,parentId,view,line:null,decoder:new TextDecoder(),parser:null,history:[],historyIndex:0,images:0,loaded:0,failed:0,connected:false,connecting:false,connectedAt:0,activityAt:Date.now(),typedCount:0,tls:false,loginAttempted:false,logging:false,logWanted:!!state.preferences.defaultLogging,unread:0,status:'Ready.',protocol:'Plain text',hasOutput:false};
  if(kind==='world'){send('sessionopen|'+id);configureRules(session);session.parser=new BeipProtocol.Parser(event=>renderEvent(session,event),value=>sendRaw(session,value));}
- sessions.set(id,session);const prefs=preferencesForSession(session);view.style.fontSize=prefs.fontSize+'px';view.style.fontFamily=prefs.fontFamily==='system'?'Segoe UI,sans-serif':'Courier New,Consolas,monospace';refreshTabs();return session;
+ sessions.set(id,session);BeipWindowPreferences.applyOutput(view,preferencesForSession(session));refreshTabs();return session;
 }
 function current(){return sessions.get(activeId);}
 function variablesForSession(session){
@@ -66,13 +66,14 @@ function selectSession(id){
  const previous=current();if(previous){previous.draft=$('input').value;previous.draftSelection={start:$('input').selectionStart,end:$('input').selectionEnd};}
  const next=sessions.get(id);if(!next)return;
  for(const session of sessions.values())session.view.hidden=session.id!==id;
- activeId=id;updateAwayStates();applyPreferences();next.unread=0;refreshTabs();renderStatus(next.status);$('protocol').textContent=next.protocol;updateCounts();$('logging').checked=next.logWanted;$('logging').disabled=next.kind!=='world';$('disconnect').disabled=next.kind!=='world';
+ activeId=id;window.BeipSearch?.reset();updateAwayStates();applyPreferences();next.unread=0;refreshTabs();renderStatus(next.status);$('protocol').textContent=next.protocol;updateCounts();$('logging').checked=next.logWanted;$('logging').disabled=next.kind!=='world';$('disconnect').disabled=next.kind!=='world';
  if(next.kind==='world'){$('world').value=next.worldId||'';updateCharacterChoices();$('character').value=next.characterId||'';const world=state.worlds.find(x=>x.id===next.worldId);if(world){$('host').value=world.host;$('port').value=world.port;$('tls').checked=!!world.tls;}}
- $('input').value=next.draft||'';if(next.draftSelection)$('input').setSelectionRange(next.draftSelection.start,next.draftSelection.end);window.BeipFeatures?.selected();window.BeipDockPanels?.selected(next);window.BeipDesktopShell?.refreshPauseBadge();$('input').focus();
+ $('input').value=next.draft||'';if(next.draftSelection)$('input').setSelectionRange(next.draftSelection.start,next.draftSelection.end);resizeInput();window.BeipFeatures?.selected();window.BeipDockPanels?.selected(next);window.BeipDesktopShell?.refreshPauseBadge();$('input').focus();
 }
 function closeSession(id){
  const session=sessions.get(id);if(!session)return;
  if(session.kind==='world'){if(session.logging)send('logstop|'+id);send('close|'+id);}
+ window.BeipConnectTemplates?.cancel(session);
  session.triggerAudio?.close();session.ruleRuntime?.stop();window.BeipFeatures?.closed(session);window.BeipDockPanels?.closed(session);session.view.remove();sessions.delete(id);closedIds.add(id);
  if(!sessions.size)createSession('start'+nextSession++,{label:'(New Tab)'});
  if(activeId===id)selectSession(sessions.keys().next().value);else refreshTabs();
@@ -83,7 +84,7 @@ async function command(value,prompt,session=current()){
  if(!session)return;
  if(value.startsWith('/')&&!value.startsWith('//')){const epoch=session.connectionEpoch;const result=await window.BeipFeatures?.dispatch(session,'command',value);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||result?.handled)return;}
  if(window.BeipFeatures?.handleCommand(value,session))return;
- const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;if(window.BeipClientCommands?.handleVariableCommand(cmd,session))continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(preferencesForSession(session).localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
+ const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;if(window.BeipClientCommands?.handleVariableCommand(cmd,session))continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(preferencesForSession(session).localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',BeipWindowPreferences.echoStyle(preferencesForSession(session)),null);session.suppressAutomation=false;}}};
  const context=ruleContext(session);
  if(session.ruleRuntime){session.ruleRuntime.expandCommand(value,context).then(result=>{if(sessions.get(session.id)===session)transmit(result.commands||[]);});return;}
  let commands=[value];try{commands=(session.ruleEngine||ruleEngine)?.expandCommand(value,context).commands||commands;}catch(e){showStatus(session,'Alias error: '+e.message);return;}transmit(commands);
@@ -104,32 +105,35 @@ function applyHighlight(line,action){
 }
 function finalizeLine(session){
  const line=session.line,lineEpoch=session.connectionEpoch;session.line=null;if(!line)return;
- const finish=result=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;
+ const finish=async result=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;
  if(result?.diagnostics?.length)showStatus(session,result.diagnostics[0]);
  if(result?.text!==undefined&&result.text!==plain)line.textContent=result.text;
  const highlights=[];for(const action of result?.actions||[]){
   if(action.type==='command'&&action.text){if(!window.BeipClientCommands?.handleVariableCommand(action.text,session))sendRaw(session,action.text);}
   else if(action.type==='sound'||action.type==='speech'){if(state.preferences.mediaEnabled&&!triggerAudio(session).handle(action))showStatus(session,'Trigger '+action.type+' could not play: invalid path/text or length limit.');}
-  else if(action.type==='script')window.BeipFeatures?.dispatch(session,'trigger',{name:action.name,text:action.text,ranges:action.ranges});
+  else if(action.type==='script'){const scriptResult=await window.BeipFeatures?.dispatch(session,'trigger',{name:action.name,text:action.text,ranges:action.ranges});if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;if(scriptResult?.line)window.BeipFeatures?.applyLine?.(line,scriptResult.line);}
   else if(action.type==='highlight')highlights.push(action);
   else if(action.type==='notification'){if(session.id!==activeId)session.unread++;if('Notification'in window&&Notification.permission==='granted')new Notification(profileLabel(session),{body:action.text||plain});}
   else if(action.type==='spawn')spawnText(session,action.title||'Window',action.text||plain,action.group||'');
  }
  window.BeipFeatures?.completeLine(session,line,plain);
- if(session.logWanted&&!result?.logGagged){if(session.logging)logLine(session,result?.text??plain);else if(session.logBacklog)session.logBacklog.push(result?.text??plain);}
- if(result?.gagged){line.remove();return;}
+ if(result?.gagged){if(session.logWanted&&!result?.logGagged){if(session.logging)logLine(session,line.textContent);else if(session.logBacklog)session.logBacklog.push(line.textContent);}line.remove();return;}
  const seen=new Set();
  for(const node of [...line.children]){if(node.tagName!=='SPAN')continue;const text=node.textContent,re=/https?:\/\/[^\s<>"']+/g,fragment=document.createDocumentFragment();let at=0,m;
   while((m=re.exec(text))){const url=m[0].replace(/[).,;!?]+$/,'');if(!BeipProtocol.webURL(url))continue;const prefix=document.createElement('span');prefix.style.cssText=node.style.cssText;prefix.textContent=text.slice(at,m.index);fragment.append(prefix);const a=anchor({kind:'url',value:url},session);a.textContent=url;fragment.append(a);at=m.index+url.length;try{if(!seen.has(url)&&/\.(png|jpe?g|gif|webp|bmp)$/i.test(new URL(url).pathname)){seen.add(url);image(session,{url,alt:'Linked image',height:220},line);}}catch{}}
   if(at){const tail=document.createElement('span');tail.style.cssText=node.style.cssText;tail.textContent=text.slice(at);fragment.append(tail);node.replaceWith(fragment);}
  }
  for(const action of highlights)applyHighlight(line,action);
+ const displayGag=!session.suppressAutomation&&session.kind==='world'&&!test?await window.BeipFeatures?.beforeDisplay?.(session,line):false;
+ if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;
+ if(session.logWanted&&!result?.logGagged){if(session.logging)logLine(session,line.textContent);else if(session.logBacklog)session.logBacklog.push(line.textContent);}
+ if(displayGag){line.remove();return;}
  if(session.id!==activeId){session.unread++;refreshTabs();}
  window.BeipDockPanels?.recordLine(session,line);
  };
  const plain=line.textContent;
  if(session.kind!=='world'||test||session.suppressAutomation){finish(null);return;}
- const process=()=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;const context=ruleContext(session);if(session.ruleRuntime)return session.ruleRuntime.processLine(plain,context).then(finish);else{try{finish((session.ruleEngine||ruleEngine)?.processLine(plain,context));}catch(e){showStatus(session,'Trigger error: '+e.message);finish(null);}}};
+ const process=()=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;const context=ruleContext(session);if(session.ruleRuntime)return session.ruleRuntime.processLine(plain,context).then(finish);else{try{return finish((session.ruleEngine||ruleEngine)?.processLine(plain,context));}catch(e){showStatus(session,'Trigger error: '+e.message);return finish(null);}}};
  // Apply each completed line's effects before taking the next line's variable
  // snapshot. Adjacent lines can set and consume a character variable reliably.
  session.pendingLineWork=(session.pendingLineWork||Promise.resolve()).then(()=>{
@@ -165,7 +169,7 @@ function renderEvent(session,event){
  else if(event.type==='warning')appendText(session,'\n'+event.text+'\n',{color:'#e9ab96'},null);
  scroll(session);
 }
-function scroll(session){const pane=session.view;if($('autoscroll').checked&&session.id===activeId)output.scrollTop=output.scrollHeight;const limit=Number(preferencesForSession(session).scrollback)||5000;while(pane.children.length>limit)pane.firstChild.remove();}
+function scroll(session){const pane=session.view,p=preferencesForSession(session);if($('autoscroll').checked&&session.id===activeId&&BeipWindowPreferences.shouldScroll(p))output.scrollTo({top:output.scrollHeight,behavior:p.smoothScrolling?'smooth':'instant'});const limit=Number(p.scrollback)||5000;while(pane.children.length>limit)pane.firstChild.remove();}
 function updateCounts(){const s=current();$('counts').textContent=s?`${s.images} image${s.images===1?'':'s'} · ${s.loaded} loaded${s.failed?' · '+s.failed+' failed':''}`:'0 images';}
 function renderStatus(message){$('status').textContent=message;$('status').dataset.active=String(message!=='Ready.'&&message!=='');}
 function showStatus(session,message){session.status=message;if(session.id===activeId)renderStatus(message);}
@@ -195,10 +199,13 @@ function autoLogin(session){
  if(!character?.autoLogin||!character.loginName)return;
  session.loginAttempted=true;
  if(!session.tls&&!character.allowPlainLogin){showStatus(session,'Automatic login needs TLS or your explicit permission for a plain connection.');return;}
+ if(character.connectTemplateEnabled){try{window.BeipConnectTemplates.start(session,character,send);}catch(error){showStatus(session,error.message);}return;}
  send('login|'+session.id+'|'+character.id+'|'+encode64(character.loginName)+(session.tls?'':'|allow-plain'));
 }
 function incoming(message){
  if(typeof message!=='string')return;
+ if(message==='inspect:'){window.BeipCoreTesting=true;return;}
+ if(window.BeipClientCommands?.globalMessage(message))return;
  if(window.BeipCoreTesting&&message.startsWith('testcaptured:')){(window.BeipTestScreenshots??=new Set()).add(message.slice(13));return;}
  if(message.startsWith('float:')){if(window.BeipCoreTesting&&message.startsWith('float:captured|'))(window.BeipTestCaptures??=new Set()).add(message.slice(15));window.BeipDockPanels?.handleNative(message);return;}
  if(message.startsWith('ui:')){window.BeipDesktopShell?.handle(message);return;}
@@ -212,9 +219,9 @@ function incoming(message){
  if(!session)return;
  if(payload.startsWith('triggeraudio:')){const audio=triggerAudio(session);if(audio.handleEvent(payload.slice(13))){const event=audio.snapshot().events.at(-1);window.dispatchEvent(new CustomEvent('beip-trigger-audio',{detail:{...event,sessionId:session.id}}));if(['invalid-path','file-unavailable','invalid-local-wav','api-failed','unavailable','queue-full','voice-limit','error','rejected'].includes(event.status))showStatus(session,'Audio '+event.status+'.');}return;}
  if(payload==='reset:')session.triggerAudio?.stop();
- if(payload==='reset:')session.connectionEpoch=(session.connectionEpoch||0)+1;
+ if(payload==='reset:'){window.BeipConnectTemplates?.cancel(session);session.connectionEpoch=(session.connectionEpoch||0)+1;}
  if(payload==='connected:on')session.connected=true;
- if(payload==='ended:'){window.BeipDesktopShell?.resume(session);session.parser?.feed(session.decoder.decode());session.parser?.finish();finalizeLine(session);session.connectionEpoch=(session.connectionEpoch||0)+1;session.triggerAudio?.stop();session.connected=false;session.connecting=false;session.connectedAt=0;}
+ if(payload==='ended:'){window.BeipConnectTemplates?.cancel(session);window.BeipDesktopShell?.resume(session);session.parser?.feed(session.decoder.decode());session.parser?.finish();finalizeLine(session);session.connectionEpoch=(session.connectionEpoch||0)+1;session.triggerAudio?.stop();session.connected=false;session.connecting=false;session.connectedAt=0;}
  if(window.BeipFeatures?.incoming(session,payload))return;
  if(payload.startsWith('data:')){if(session.paused){(session.pausedData??=[]).push(payload);session.pausedDataSize=(session.pausedDataSize||0)+payload.length;if(session.pausedDataSize>8*1024*1024){window.BeipDesktopShell?.resume(session);showStatus(session,'Output resumed after reaching the pause buffer limit.');}return;}try{const bytes=Uint8Array.from(atob(payload.slice(5)),c=>c.charCodeAt(0));session.activityAt=Date.now();session.parser?.feed(session.decoder.decode(bytes,{stream:true}));}catch(e){showStatus(session,'Could not decode server data.');}}
  else if(payload.startsWith('status:'))showStatus(session,payload.slice(7));
@@ -255,8 +262,10 @@ function settingsMessage(message){
 function saveSettings(){if(test)return;send('settings:save|'+JSON.stringify(BeipProfiles.serializeSettings(state)));}
 function configureRules(session){session.ruleRuntime?.stop();session.ruleRuntime=null;session.ruleEngine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers});if(([...state.aliases,...state.triggers].some(r=>r.enabled!==false&&r.matchType==='regex')||state.triggers.some(r=>r.enabled!==false&&r.captureUntil))&&window.BeipRegexRules){session.ruleRuntime=new BeipRegexRules.Runtime(message=>showStatus(session,message));session.ruleRuntime.start({aliases:state.aliases,triggers:state.triggers});}}
 function rebuildRules(){ruleEngine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers});for(const s of sessions.values())if(s.kind==='world')configureRules(s);}
+function resizeInput(){const height=BeipWindowPreferences.inputHeight($('input'),preferencesForSession());document.documentElement.style.setProperty('--input-height',height+'px');$('inputSplitter').setAttribute('aria-valuenow',String(height));}
 function applyPreferences(){
- const p=preferencesForSession();for(const session of sessions.values()){session.triggerAudio?.setEnabled(!!state.preferences.mediaEnabled);const own=preferencesForSession(session);session.view.style.fontSize=own.fontSize+'px';session.view.style.fontFamily=own.fontFamily==='system'?'Segoe UI,sans-serif':'Courier New,Consolas,monospace';}document.documentElement.dataset.theme=p.theme==='light'?'light':'dark';document.documentElement.style.setProperty('--output-size',Math.max(10,Math.min(30,Number(p.fontSize)||13))+'px');document.documentElement.style.setProperty('--output-font',p.fontFamily==='system'?'"Segoe UI",sans-serif':'"Courier New",Consolas,monospace');document.documentElement.style.setProperty('--input-height',Math.max(40,Math.min(300,Number(p.inputHeight)||40))+'px');$('inputSplitter').setAttribute('aria-valuenow',String(Math.max(40,Math.min(300,Number(p.inputHeight)||40))));
+ const p=preferencesForSession();for(const session of sessions.values()){session.triggerAudio?.setEnabled(!!state.preferences.mediaEnabled);BeipWindowPreferences.applyOutput(session.view,preferencesForSession(session));}
+ document.documentElement.dataset.theme=p.theme==='light'?'light':'dark';document.documentElement.style.setProperty('--output-size',p.fontSize+'px');document.documentElement.style.setProperty('--output-font',BeipWindowPreferences.font(p,'output'));output.style.backgroundColor=p.outputBackground||'var(--output-bg)';BeipWindowPreferences.applyInput($('input'),p);resizeInput();
 }
 function option(select,value,label){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}
 function renderProfileChoices(){
@@ -281,6 +290,7 @@ function openEditor(kind,profile=null){
  $('profileHost').value=profile?.host||$('host').value;$('profilePort').value=profile?.port||$('port').value;$('profileTLS').checked=profile?.tls??$('tls').checked;$('profileAuto').checked=!!profile?.autoConnect;$('characterOpen').checked=!!profile?.openAtStartup;$('characterAuto').checked=!!profile?.autoConnect;
  $('profileLoginName').value=kind==='character'?profile?.loginName||'':'';$('profileAutoLogin').checked=kind==='character'&&!!profile?.autoLogin;$('profileAllowPlainLogin').checked=kind==='character'&&!!profile?.allowPlainLogin;$('profilePassword').value='';$('profileRememberSecret').checked=false;$('profileSecretStatus').textContent=profile?'Checking saved password…':'Save this character before checking for a password.';$('profileForgetSecret').disabled=true;
  const worlds=$('profileWorld');worlds.replaceChildren();for(const w of state.worlds)option(worlds,w.id,w.name);worlds.value=profile?.worldId||$('world').value||state.worlds[0]?.id||'';
+ window.BeipConnectTemplateEditor?.load(kind==='character'?profile:null);
  if(kind==='character'&&profile){showSecretStatus(profile.id);send('secret:status|'+profile.id);}
  if(!$('profileEditor').open){if($('profilesDialog').open)$('profileEditor').show();else $('profileEditor').showModal();}$('profileName').focus();
 }
@@ -293,7 +303,8 @@ function saveProfile(event){
   if($('profileAutoLogin').checked&&!loginName){$('profileError').textContent='Enter a login name for automatic login.';return;}
   if(password&&!remember){$('profileError').textContent='Check Remember password to save the entered password, or clear the field.';return;}
   if(remember&&(!password||/[\x00-\x1f\x7f]/.test(password)||new TextEncoder().encode(password).length>2048)){$('profileError').textContent='Enter a single-line password of at most 2048 bytes.';return;}
-  const p={...state.characters.find(x=>x.id===id),id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),worldId,loginName,autoLogin:$('profileAutoLogin').checked,allowPlainLogin:$('profileAllowPlainLogin').checked,openAtStartup:$('characterOpen').checked,autoConnect:$('characterAuto').checked};const index=state.characters.findIndex(x=>x.id===id);if(index>=0)state.characters[index]=p;else state.characters.push(p);
+  let templateFields;try{templateFields=window.BeipConnectTemplateEditor?.read()||{};}catch(error){$('profileError').textContent=error.message;return;}
+  const p={...state.characters.find(x=>x.id===id),...templateFields,id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),worldId,loginName,autoLogin:$('profileAutoLogin').checked,allowPlainLogin:$('profileAllowPlainLogin').checked,openAtStartup:$('characterOpen').checked,autoConnect:$('characterAuto').checked};const index=state.characters.findIndex(x=>x.id===id);if(index>=0)state.characters[index]=p;else state.characters.push(p);
   if(remember)send('secret:save|'+id+'|'+encode64(password));$('profilePassword').value='';
  }
  saveSettings();renderProfileChoices();if(kind==='world'){$('world').value=id;updateCharacterChoices();}renderProfileLists();const saved=kind==='world'?state.worlds.find(x=>x.id===id):state.characters.find(x=>x.id===id);if($('profilesDialog').open)openEditor(kind,saved);else $('profileEditor').close();
@@ -324,6 +335,14 @@ function saveRule(event){
 }
 function connectWorld(world,characterId=''){
  $('world').value=world.id;updateCharacterChoices();$('character').value=characterId;$('host').value=world.host;$('port').value=world.port;$('tls').checked=!!world.tls;connectTo(world.host,world.port,world.id,characterId,!!world.tls);
+}
+function reconnectSession(session){
+ if(!session||session.kind!=='world'||sessions.get(session.id)!==session)return false;
+ const world=state.worlds.find(w=>w.id===session.worldId),host=world?.host||session.host,port=String(world?.port||session.port||''),tls=world?!!world.tls:!!session.tls;
+ if(!host||!/^[0-9]{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return false;
+ session.connectionEpoch=(session.connectionEpoch||0)+1;session.connected=false;session.connecting=true;session.host=host;session.port=port;session.tls=tls;session.loginAttempted=false;
+ window.BeipClientCommands?.closed(session);session.triggerAudio?.stop();
+ send('connect|'+session.id+'|'+host+'|'+port+'|'+(tls?'tls':'plain')+(session.characterId?'|'+session.characterId:''));showStatus(session,'Reconnecting to '+host+':'+port+'…');return true;
 }
 function connectTo(host,port,worldId='',characterId='',tls=false){
  if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('status').textContent='Enter a valid server address and port.';return;}
@@ -361,7 +380,8 @@ $('world').onchange=()=>{const w=state.worlds.find(x=>x.id===$('world').value);i
 $('disconnect').onclick=()=>{const s=current();if(s?.kind==='world')send('disconnect|'+s.id);};
 $('connectAll').onclick=()=>{for(const world of state.worlds)connectWorld(world);};
 $('disconnectAll').onclick=()=>{for(const s of sessions.values())if(s.kind==='world'&&(s.connected||s.connecting))send('disconnect|'+s.id);};
-$('command').onsubmit=e=>{e.preventDefault();const s=current(),value=$('input').value;if(!s||!value)return;const lines=value.replace(/\r\n?/g,'\n').split('\n');for(const line of lines){if(!line)continue;s.history.push(line);if(s.history.length>500)s.history.shift();s.historyIndex=s.history.length;s.typedCount++;s.activityAt=Date.now();window.BeipDockPanels?.addHistory(s,line);command(line,false,s);} $('input').value='';window.BeipDesktopShell?.refreshActivity();};
+$('command').onsubmit=e=>{e.preventDefault();const s=current(),value=$('input').value;if(!s||!value)return;const lines=value.replace(/\r\n?/g,'\n').split('\n');for(const line of lines){if(!line)continue;s.history.push(line);if(s.history.length>500)s.history.shift();s.historyIndex=s.history.length;s.typedCount++;s.activityAt=Date.now();window.BeipDockPanels?.addHistory(s,line);command(line,false,s);} if(BeipWindowPreferences.shouldClearInput(preferencesForSession(s)))$('input').value='';else $('input').select();resizeInput();window.BeipDesktopShell?.refreshActivity();};
+$('input').addEventListener('input',resizeInput);
 
 document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.defaultPrevented)return;if(e.altKey&&/^[1-9]$/.test(e.key)){const id=[...sessions.keys()][Number(e.key)-1];if(id){e.preventDefault();selectSession(id);}}});
 $('clear').onclick=()=>{const s=current();if(!s)return;s.view.replaceChildren();s.line=null;s.images=s.loaded=s.failed=0;s.hasOutput=false;window.BeipDockPanels?.clear(s);updateCounts();};
@@ -382,5 +402,5 @@ $('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:s
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,resizeInput,refreshTabs,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});

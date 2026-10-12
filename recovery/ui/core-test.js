@@ -300,6 +300,10 @@ window.BeipCoreTest=async function(config){
   el('scriptDebugDialog').querySelector('[data-action="close"]').click();
   send('logstop|alpha');send('logstop|beta');await wait(()=>!alpha.logging&&!beta.logging,'logs stopped');
   result.automation=await BeipAutomationFixture.run(app,config);
+  result.scriptObjects=await BeipScriptObjectsFixture.run(app);
+  result.settings=await BeipSettingsFixture.run(app);
+  result.layouts=await BeipLayoutFixture.run(app);
+  result.everyday=await BeipEverydayFixture.run(app);
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
   app.selectSession(closed);
   const closingPane=await openDock('ui:window-input-history','Input History','history');

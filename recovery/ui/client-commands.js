@@ -62,6 +62,7 @@
   report:(id,value)=>display(getApi()?.sessions.get(id),value)
  });
  let pasteDialog=null,pasteJob=null;
+ function globalMessage(message){if(typeof message!=='string'||!message.startsWith('clipboard:'))return false;if(!pasteDialog?.open)return true;const status=document.getElementById('smartPasteStatus');if(message.startsWith('clipboard:text:')){try{const text=new TextDecoder().decode(Uint8Array.from(atob(message.slice(15)),c=>c.charCodeAt(0)));if(text.length>262144)throw Error('Clipboard exceeds the 256 KiB paste limit.');document.getElementById('smartPasteText').value=text;status.textContent='Clipboard loaded. Review the text before sending.';}catch(error){status.textContent=error.message;}}else status.textContent=message.slice(16);return true;}
  function cancelPaste(sessionId){if(pasteJob&&(!sessionId||pasteJob.sessionId===sessionId)){clearTimeout(pasteJob.timer);pasteJob=null;}}
  function closed(session){scheduler.cancelSession(session.id);cancelPaste(session.id);}
  function incoming(session,payload){if(payload==='ended:'||payload==='reset:')closed(session);}
@@ -93,11 +94,11 @@
    if(name==='/delay'){
     const args=words(arg),option=(args[0]||'').toLowerCase();
     if(option==='list'){const jobs=scheduler.list(session.id);display(session,jobs.length?jobs.map(job=>job.id+': '+(job.repeat?'every ':'')+Math.max(0,Math.ceil((job.due-Date.now())/1000))+'s '+job.command).join('\n'):'No delayed commands.');}
-    else if(option==='killall'){scheduler.cancelSession(session.id);display(session,'Delayed commands canceled for this session.');}
+    else if(option==='killall'){scheduler.cancelSession(session.id);cancelPaste(session.id);display(session,'Delayed commands and Smart Paste canceled for this session.');}
     else if(option==='kill'){const job=scheduler.list(session.id).find(job=>String(job.id)===args[1]);display(session,job&&scheduler.cancel(job.id)?'Delayed command canceled.':'No such delayed command in this session.');}
     else {const repeat=option==='every',offset=repeat?1:0;if(args.length!==offset+2)throw new Error('Use /delay [every] 2s "command", list, kill ID, or killall.');if(!session.connected)throw new Error('Connect before scheduling commands.');const id=scheduler.add(session.id,args[offset],args[offset+1],repeat);display(session,'Delayed command '+id+' scheduled.');}
    }
-   else if(name==='/setinput'){document.getElementById('input').value=arg.slice(0,8192);document.getElementById('input').focus();}
+   else if(name==='/setinput'){session.draft=arg.slice(0,8192);if(api.current===session){document.getElementById('input').value=session.draft;api.resizeInput();document.getElementById('input').focus();}}
    else if(name==='/recall'){const lines=session.history.filter(line=>!arg||line.toLowerCase().includes(arg.toLowerCase()));display(session,lines.slice(-100).join('\n')||'No matching input history.');}
    else if(name==='/chars'){const names=api.state.characters.filter(c=>c.worldId===session.worldId).map(c=>c.name);display(session,names.join('\n')||'No saved characters in this world.');}
    else if(name==='/connectioninfo'){display(session,(session.connected?'Connected':'Disconnected')+' · '+(session.host||api.state.worlds.find(w=>w.id===session.worldId)?.host||'Unknown host')+':'+(session.port||api.state.worlds.find(w=>w.id===session.worldId)?.port||'?')+' · '+(session.tls?'TLS with system certificate validation':'Plain TCP'));}
@@ -111,7 +112,7 @@
     api.connectSession(world.host,String(world.port),world.id,character?.id||'',world.tls);
    }
    else if(name==='/close')api.closeSession(session.id);
-   else if(name==='/reconnect'){const world=api.state.worlds.find(w=>w.id===session.worldId);if(world)api.connectSession(world.host,String(world.port),world.id,session.characterId,world.tls);else if(session.host&&session.port)api.connectSession(session.host,String(session.port),'','',session.tls);else throw new Error('No previous connection for this tab.');}
+   else if(name==='/reconnect'){const targets=arg.trim().toLowerCase()==='all'?[...api.sessions.values()].filter(s=>s.kind==='world'):[session];for(const target of targets)if(!api.reconnectSession(target)&&target===session)throw Error('No previous connection for this tab.');}
    else if(name==='/ansireset'){session.parser?.sgr('0');}
    else if(name==='/receive'){const old=session.suppressAutomation;try{session.parser?.feed(arg+'\n');}finally{session.suppressAutomation=old;}}
    else if(name==='/disconnect'&&arg.trim().toLowerCase()==='all')document.getElementById('disconnectAll').click();
@@ -138,6 +139,8 @@
    pasteDialog=document.createElement('dialog');pasteDialog.id='smartPasteDialog';pasteDialog.style.width='560px';
    pasteDialog.innerHTML='<form><div class="dialog-head"><h2>Smart Paste</h2></div><label>Text to send<textarea id="smartPasteText" rows="10" spellcheck="false"></textarea></label><label>Load a text file<input id="smartPasteFile" type="file" accept="text/plain,.txt,.mush,.mu"></label><div class="settings-grid"><label>Prefix<input id="smartPastePrefix" maxlength="1024"></label><label>Suffix<input id="smartPasteSuffix" maxlength="1024"></label><label>Delay between lines (ms)<input id="smartPasteDelay" type="number" min="100" max="10000" value="250"></label></div><label class="check"><input id="smartPasteAliases" type="checkbox"> Process aliases and client commands</label><p id="smartPasteStatus" role="status">Paste clipboard text into the box or choose a text file.</p><div class="dialog-actions"><button id="smartPasteStop" type="button">Stop</button><button id="smartPasteClose" type="button">Close</button><button type="submit">Send</button></div></form>';
    document.body.append(pasteDialog);
+   const clipboard=document.createElement('button');clipboard.type='button';clipboard.id='smartPasteClipboard';clipboard.textContent='Load from Clipboard';clipboard.onclick=()=>window.chrome?.webview?.postMessage('clipboard:read');document.getElementById('smartPasteText').parentElement.after(clipboard);
+   document.getElementById('smartPasteDelay').min='0';
    const byId=id=>document.getElementById(id),status=text=>{byId('smartPasteStatus').textContent=text;};
    byId('smartPasteFile').onchange=async()=>{const file=byId('smartPasteFile').files[0];if(!file)return;if(file.size>262144){status('Choose a file no larger than 256 KiB.');return;}try{byId('smartPasteText').value=await file.text();status('File loaded. Review the text before sending.');}catch{status('The file could not be read.');}};
    byId('smartPasteClose').onclick=()=>pasteDialog.close();
@@ -147,14 +150,16 @@
     try{
      if(session?.kind!=='world'||!session.connected)throw new Error('Select a connected world before sending.');
      const lines=pasteLines(byId('smartPasteText').value,byId('smartPastePrefix').value,byId('smartPasteSuffix').value),delay=Number(byId('smartPasteDelay').value);
-     if(!Number.isFinite(delay)||delay<100||delay>10000)throw new Error('Choose a delay from 100 to 10000 milliseconds.');
+     if(!Number.isFinite(delay)||delay<0||delay>10000)throw new Error('Choose a delay from 0 to 10000 milliseconds.');
+     Object.assign(api.state.preferences,{pastePrefix:byId('smartPastePrefix').value,pasteSuffix:byId('smartPasteSuffix').value,pasteDelay:delay});api.saveSettings();
      cancelPaste();const job=pasteJob={sessionId:session.id,timer:null,index:0};const process=byId('smartPasteAliases').checked;
      function next(){if(pasteJob!==job)return;if(api.sessions.get(session.id)!==session||!session.connected){cancelPaste();status('Paste stopped: session disconnected.');return;}const line=lines[job.index++];if(process)api.command(line,false,session);else api.sendRaw(session,line);status('Sent '+job.index+' of '+lines.length+' lines.');if(job.index<lines.length)job.timer=setTimeout(next,delay);else pasteJob=null;}
      next();
     }catch(error){status(error.message);}
    };
   }
+  const preferences=getApi().state.preferences;document.getElementById('smartPastePrefix').value=preferences.pastePrefix||'';document.getElementById('smartPasteSuffix').value=preferences.pasteSuffix||'';document.getElementById('smartPasteDelay').value=preferences.pasteDelay??250;
   if(!pasteDialog.open)pasteDialog.showModal();document.getElementById('smartPasteText').focus();
  }
- return {words,duration,createScheduler,pasteLines,handle,handleVariableCommand,closed,incoming,smartPaste,scheduler};
+ return {words,duration,createScheduler,pasteLines,handle,handleVariableCommand,closed,incoming,globalMessage,smartPaste,scheduler};
 });

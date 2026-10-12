@@ -3,19 +3,29 @@
 #include <algorithm>
 // Owned, independent WebViews. Panels receive semantic snapshots, never the main bridge.
 struct FloatingWindow : std::enable_shared_from_this<FloatingWindow> {
- HWND hwnd=nullptr; std::string id,snapshot; bool ready=false;
+ HWND hwnd=nullptr,ownerWindow=nullptr; std::string id,snapshot; bool ready=false,moving=false,moveCanceled=false; double ownerZoom=1.0;
  ComPtr<ICoreWebView2Controller> controller; ComPtr<ICoreWebView2> view;
  std::function<void(const std::string&)> notify;
+ std::function<double()> zoomFactor;
+ void drag(const char* phase){
+  if(!ownerWindow||!IsWindow(ownerWindow))return;POINT point{};if(!GetCursorPos(&point)||!ScreenToClient(ownerWindow,&point))return;
+  const double zoom=zoomFactor?zoomFactor():ownerZoom;const double scale=double(GetDpiForWindow(ownerWindow))/96.0*(zoom>0?zoom:1.0);
+  notify("float:drag|"+id+"|"+phase+"|"+std::to_string(double(point.x)/scale)+"|"+std::to_string(double(point.y)/scale)+"|"+((GetKeyState(VK_CONTROL)&0x8000)?"1":"0"));
+ }
  static LRESULT CALLBACK proc(HWND h,UINT m,WPARAM w,LPARAM l){
   auto p=reinterpret_cast<FloatingWindow*>(GetWindowLongPtrW(h,GWLP_USERDATA));
   if(m==WM_NCCREATE){p=static_cast<FloatingWindow*>(reinterpret_cast<CREATESTRUCTW*>(l)->lpCreateParams);p->hwnd=h;SetWindowLongPtrW(h,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(p));}
   if(p){if(m==WM_SIZE){if(p->controller){RECT r{};GetClientRect(h,&r);p->controller->put_Bounds(r);}return 0;}
-   if(m==WM_EXITSIZEMOVE){RECT r{};GetWindowRect(h,&r);p->notify("float:bounds|"+p->id+"|"+std::to_string(r.left)+"|"+std::to_string(r.top)+"|"+std::to_string(r.right-r.left)+"|"+std::to_string(r.bottom-r.top));}
+   if(m==WM_ENTERSIZEMOVE){p->moving=false;p->moveCanceled=false;}
+   if(m==WM_MOVING){p->moving=true;p->drag("move");}
+   if(m==WM_CANCELMODE||(m==WM_KEYDOWN&&w==VK_ESCAPE)){p->moveCanceled=true;if(p->moving)p->drag("cancel");}
+   if(m==WM_EXITSIZEMOVE){RECT r{};GetWindowRect(h,&r);p->notify("float:bounds|"+p->id+"|"+std::to_string(r.left)+"|"+std::to_string(r.top)+"|"+std::to_string(r.right-r.left)+"|"+std::to_string(r.bottom-r.top));if(p->moving)p->drag(p->moveCanceled||(GetAsyncKeyState(VK_ESCAPE)&0x8000)?"cancel":"drop");p->moving=false;}
    if(m==WM_DESTROY){p->hwnd=nullptr;if(p->controller)p->controller->Close();p->view.Reset();p->controller.Reset();p->notify(std::string(p->ready?"float:closed|":"float:error|")+p->id);return 0;}}
   return DefWindowProcW(h,m,w,l);
  }
  void update(std::string data){snapshot=std::move(data);if(ready&&view)view->PostWebMessageAsString(wide("float:snapshot|"+snapshot).c_str());}
  bool open(HWND owner,ICoreWebView2Environment* env,const std::filesystem::path& ui,const std::string& title,int x,int y,int width,int height){
+  ownerWindow=owner;
   WNDCLASSW c{};c.lpfnWndProc=proc;c.hInstance=GetModuleHandleW(nullptr);c.lpszClassName=L"BeipMURecoveryFloating";c.hCursor=LoadCursorW(nullptr,IDC_ARROW);RegisterClassW(&c);
   x=std::clamp(x,GetSystemMetrics(SM_XVIRTUALSCREEN),GetSystemMetrics(SM_XVIRTUALSCREEN)+std::max(0,GetSystemMetrics(SM_CXVIRTUALSCREEN)-width));
   y=std::clamp(y,GetSystemMetrics(SM_YVIRTUALSCREEN),GetSystemMetrics(SM_YVIRTUALSCREEN)+std::max(0,GetSystemMetrics(SM_CYVIRTUALSCREEN)-height));

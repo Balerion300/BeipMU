@@ -13,6 +13,16 @@
 .dock-tab{flex:none;border:1px solid #888;border-bottom:0;background:#bdbdbd;color:#161616;font:11px "Segoe UI",sans-serif;padding:2px 7px;min-height:22px;white-space:nowrap;cursor:pointer}
 .dock-tab[aria-selected="true"]{background:#ecf2fa;border-color:#7398b4}
 .dock-content{flex:1;min-height:0;display:flex}
+.dock-tabs[hidden]{display:none}
+.dock-tree-group,.dock-tree-branch{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;flex:1}
+.dock-tree-split{display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}
+.dock-tree-split[data-axis="y"]{flex-direction:column}
+.dock-tree-divider{flex:0 0 5px;background:#b9b9b9;touch-action:none;cursor:col-resize;border:1px outset #ddd}
+.dock-tree-split[data-axis="y"]>.dock-tree-divider{cursor:row-resize}
+.dock-tree-divider:hover,.dock-tree-divider:focus-visible{background:#8eb4d5}
+.dock-arrange{width:66px;min-width:40px;height:19px;border:1px solid #888;border-radius:0;background:#e7e7e7;color:#111;padding:0;font:11px "Segoe UI",sans-serif}
+.dock-tree-group .dock-pane-head{flex-wrap:wrap;gap:2px}
+.dock-tree-group .dock-head-controls{margin-left:auto;max-width:100%}
 .dock-pane{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
 .dock-pane-head{flex:none;display:flex;align-items:center;justify-content:space-between;background:#d4d0c8;color:#111;border-bottom:1px solid #777;font:12px "Segoe UI",sans-serif;padding:2px 4px;min-height:24px}
 .dock-pane-head button{border:1px solid #888;background:#e7e7e7;color:#111;padding:0 5px;font:14px "Segoe UI",sans-serif;line-height:17px;min-width:21px}
@@ -29,6 +39,11 @@
 .dock-drop-target[data-edge="top"]{top:8px;left:40%;width:20%;height:45px}
 .dock-drop-target[data-edge="bottom"]{bottom:8px;left:40%;width:20%;height:45px}
 .dock-drop-target.is-target{background:rgba(76,142,193,.95);border-color:#fff;box-shadow:0 0 0 3px #73b5e5}
+.dock-pane-drop{position:fixed;z-index:9001;width:114px;height:84px;pointer-events:none;display:grid;grid-template-columns:38px 38px 38px;grid-template-rows:28px 28px 28px}
+.dock-pane-drop[hidden]{display:none}
+.dock-pane-drop-target{display:flex;align-items:center;justify-content:center;background:#184362;border:1px solid #83b7df;color:white;font:12px "Segoe UI",sans-serif}
+.dock-pane-drop-target[data-side="left"]{grid-area:2/1}.dock-pane-drop-target[data-side="right"]{grid-area:2/3}.dock-pane-drop-target[data-side="top"]{grid-area:1/2}.dock-pane-drop-target[data-side="bottom"]{grid-area:3/2}.dock-pane-drop-target[data-side="tabs"]{grid-area:2/2}
+.dock-pane-drop-target.is-target{background:#4c8ec1;outline:2px solid white}
 .dock-pane-body{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0;overflow:auto;padding:5px;background:#000;color:#c0c0c0}
 .dock-pane-body button,.dock-pane-body select{font:11px "Segoe UI",sans-serif;border:1px solid #888;border-radius:0;background:#d4d0c8;color:#111;padding:2px 5px}
 .dock-pane-body button:hover{background:#e5e5e5}

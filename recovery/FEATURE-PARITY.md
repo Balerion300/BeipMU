@@ -1,5 +1,13 @@
 # BeipMU recovery feature inventory
 
+For the current consolidated original-feature audit, use
+[COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md). Historical milestone tables
+below describe the state at those milestones; later implementations supersede
+their gap lists. The 0.10 settings, nested layout, search and script-object
+extensions have focused module coverage and a packaged acceptance fixture.
+Full original parity remains open. Exact scripting membership is listed in
+[SCRIPT-PARITY.md](SCRIPT-PARITY.md).
+
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
 from the 0.9 recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.

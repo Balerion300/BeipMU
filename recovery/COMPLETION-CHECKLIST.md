@@ -1,0 +1,98 @@
+# Original BeipMU completion checklist
+
+Current audit: October 12, 2026. Target: original 4.335, compared against its
+isolated executable, `src/`, and every topic in `Documentation/`. This is the
+current checklist; historical milestone sections in FEATURE-PARITY are evidence
+for individual slices, not current lists of missing features. No percentage is
+assigned. A row closes only with source/reference comparison and real behavior.
+
+Status: **partial** means useful behavior exists but original parity remains;
+**open** means not implemented; **in progress** is not a verified release claim.
+The independent recovery implementation and missing upstream dependencies remain
+as described in README. The original source stays intact.
+
+| Area and original evidence | Current coverage | Completion work |
+| --- | --- | --- |
+| Shell/Windows menu (`Wnd_Main`, direct menu) | Partial: tabs, named panes, four edges, native floating, internal layout copy | Nested splits in progress; native drag between windows; multiple input/edit windows; multiple main windows; hidden captions; original saved arrangements |
+| Worlds (`Dlg_Connect`, `Root.prp`) | Partial: worlds/characters, startup, TLS, credential vault, notes | Connect templates in progress; complete import/export and per-character flags; puppets and transfer behavior; world samples |
+| General settings (`Dlg_Settings`, direct dialog) | Partial: inline images, sound enable | Voice/markup; inline height, avatar geometry, animated image pause; activate-on-disconnect; close alerts; Ctrl-to-change-layout |
+| UI Theme settings | Partial: dark/light | Original theme elements, presets and all customizable colors |
+| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial; expanded fonts/colors, sticky and autosize in progress | All cursor/history/selection rules; extra panes/prefixes; spell checking; tab completion; command prefix/unrecognized-command settings |
+| Output Windows/settings (`Dlg_TextWindow`, `Wnd_Text`) | Partial; expanded fonts/colors/margins/fanfold/fixed width in progress | Exact selection/scrolling options; timestamps/line metadata; complete split behavior and preservation across every pane |
+| Logging/settings (`Logging`, `OM_Logging`) | Partial: manual/default logs, scrollback start, export | Original filename/date substitutions, paths, sent/typed prefixes, wrapping, double spacing, startup/resume and per-character lifecycle |
+| Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP | Original encoding choices, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
+| Taskbar/settings (`Wnd_Taskbar`, `Dlg_Settings`) | Partial: activity, connection and unread indicators | Original tab colors, grouping, notification and taskbar options |
+| Keyboard Shortcuts (`Shortcuts.md`, `Dlg_Settings`) | Partial: remappable supported actions | New main window/minimize/input pane/paste; context-sensitive history and output navigation; all original actions |
+| Auto Emoji (`Emoji.md`, assets and settings) | Open | Original editable translation file, ignore sections, append/replace behavior, enable/import/reload |
+| Scripting (`ScriptingAPI.md`, `OM.idl`, `*_OM`) | Partial; API expansion in progress | See SCRIPT-PARITY for exact object/member list; controlled native filesystem/COM, existing-script compatibility and script languages |
+| Restore Logs/settings (`Logging`, `Dlg_Settings`) | Open | Per-character restore buffers, startup recovery and controls |
+| ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: ANSI styles | Custom 16-color palette, bold policy, invisible-color policy, beep, flash, parse toggle and reset-on-newline |
+| AI/settings (`Dlg_Settings`, `Wnd_Input`) | Open | Original local-model integration, model configuration and input actions; no credentials or live service use in tests |
+| User Data/settings (`Dlg_Settings`) | Open | Original paths, backup/import/export/move behavior and dialogs |
+| Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order | Full internal-command ordering, echo/processing flags, debugger and exact compatibility limits |
+| Triggers (`Triggers.md`, `Connection`, `Dlg_Triggers`) | Partial: scoped/nested/repeated matches, conditions, appearance, send, spawn, sound, script | Multiline child activation windows, remaining conditions/actions, advanced appearance and debugger |
+| Find/history/editing (`Dlg_Find`, `Wnd_Input`) | Partial; case/word/regex/direction and command replace in progress | Full history search/recall selection and editing semantics; editor windows |
+| Smart Paste (`Dlg_SmartPaste`) | Partial: text/file/affixes, pacing/cancel | Native clipboard preview, zero delay, saved affixes and exact scheduling/alias behavior |
+| Client commands (`CommandLine.md`, `Commands.cpp`) | Partial | Audit every command below; original source also has commands absent from the Markdown index |
+| Map/Atlas (`Mapping.md`, assets, original schema) | Partial: rooms/exits/routes and reviewed single-layer import/export | Layers, drawings/images, cross-layer links, tracking, all metadata and toolbar actions |
+| Spawn windows (`SpawnWindows.md`) | Partial: grouping/capture/move/copy/log gag | Multiple independently positioned streams, formatting in all floating modes, original capture semantics |
+| Stats (`Stat Windows.md`, `GMCP`) | Partial: text/range/progress | Full GMCP styles/layout, window ownership/docking and script objects |
+| Tilemap (`TileMap.md`) | Partial: real rendered tiles, encodings and partial updates | Original size limits, windows and complete format behavior |
+| Images/avatars (`ImagePane`, `ImageBanner`) | Partial: inline/load/fallback/linked images, separate image pane | Original zoom/pan/save/copy/animation controls and geometry |
+| Client.Media (`GMCP.md`) | Partial: default/load/play/stop module | Actual audible playback and remaining formats/options |
+| Pueblo/MXP (`TextToLine`, parser evidence) | Partial: links/images/styles and WHO spacing protected | Full elements/entities/definitions, secure modes, sound/frames/image maps; conformance evidence |
+| Web views (`WebViews.md`, `WebView`) | Open | Original named views/navigation/script surface with isolated web content |
+| MCP editing (`MCP_*`, `MCMP`) | Open | Negotiate, simpleedit, status, ping, userlist packages and editor integration |
+| Help/menu/documentation | Partial: About and subset command help | Complete local command help, original help actions and accurate shipped documentation |
+| Distribution (`Wineskin.md`, build/resources) | Partial: Windows x64 preview | Full upstream-equivalent packaging/update behavior; platform claims require platform evidence |
+
+## Command acceptance ledger
+
+Already implemented subsets: `/@`, `/ansireset`, `/capturecancel`, `/chars`,
+`/clear`, `/close`, `/connect`, `/connectioninfo`, `/delay`, `/disconnect`,
+`/echo`, `/log`, `/logall`, `/naws`, `/new`, `/printenv`, `/recall`, `/receive`,
+`/reconnect`, `/set`, `/setinput`, `/switchtab`, `/unset`. Existing names do not
+imply every argument matches: `/new` currently opens a tab, `/recall` and `/log`
+have recovery semantics, and named log files and automatic NAWS remain gaps.
+
+Open original commands/options from documentation/source: `/autolog`,
+`/debugnetwork`, `/debugtriggers`, `/exit`, `/gag`, `/gmcp`, `/grab`, full `/help`,
+`/idle`, `/map_addroom`, `/map_addexit`, `/newtab`, `/newedit`, `/newinput`,
+`/opendialog`, `/ping`, `/puppet`, `/puppets`, `/quit`, `/resetscript`, `/roll`,
+`/script`, `/silence`, `/slist`, `/tabcolor`, `/ttype`, `/wall`, `/webview`.
+Source-only commands and historical version differences must be reconciled
+before this ledger can be called exhaustive.
+
+## Release evidence
+
+The last published starting point is preview 0.9, commit
+`5865904eca618cb8fb6c098554ec158521237b5a`. Its evidence is recorded in README.
+Preview 0.10 closes the in-progress **subsets** above: independent window
+appearance/input behavior and import, reviewed connect templates, nested edge
+splits/tabs and supported original docking import, expanded script APIs,
+direction/case/word/regex find and input replacement. Fresh/persisted packaged
+acceptance passed in `sessions-20261012-074009`; source/module checks passed;
+Pueblo/MXP image/link/WHO checks passed. All remaining work in each row stays open.
+Native titlebar drag emission and ownership-aware receiver are implemented and
+compiled, but a manual cross-window pointer/drop acceptance is still outstanding;
+this preview does not claim native drag parity. Original floating Config geometry
+is supported from the source schema but awaits a real saved-original fixture.
+Clipboard preview handling was app-tested; reading the real Windows clipboard
+was not part of the automated fixture.
+Stress testing is deferred by user instruction; focused meaningful regression
+checks cover each milestone, including session ownership and Pueblo/MXP
+clickable links, images and WHO spacing. No full fresh TLS or subjective audio
+claim is inherited from an earlier preview.
+
+### Source-only command reconciliation
+
+The `IEquals(command, ...)` branches in original `Commands.cpp` additionally
+include `/shelp`, `/makali`, `/lizards`, `/ai`, `/repeat`, `/debugtimers`,
+`/stoplogs`, `/logtop`, `/stats`, `/world`, `/map_look`, `/map_guesslocation`,
+`/mucknet`, `/restoreinfo`, `/removelast`, `/receivegmcp`, `/resetconfig`,
+`/debugaliases`, `/rolltest`, `/test`, `/tilemap`, and the `/?` alias. The help
+table also documents the `/silent/` prefix. These are open unless covered by a
+later ledger entry; diagnostic commands are identified separately from daily
+user actions. Their presence is not a request to reset user settings or contact
+any server. `/quit` appears in the Markdown index but has no matching source
+branch in this version and needs version-specific reconciliation.

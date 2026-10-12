@@ -82,3 +82,13 @@ dialog.classic-logging{
 #smartPasteDialog button{border:1px solid #888;border-radius:0;background:#f6f6f6;color:#111;min-width:76px;height:25px;padding:2px 8px;font:12px "Segoe UI",sans-serif}
 #smartPasteDialog .dialog-actions{border-color:#aaa;padding-top:7px}
 #smartPasteDialog #smartPasteStatus{color:#444;font-size:12px}
+
+.classic-settings-group input[type=text]{width:155px;max-width:55%;height:23px;padding:2px 4px;border:1px solid #888;border-radius:0;background:#fff;color:#111;font:12px "Segoe UI",sans-serif}
+.classic-settings-group label:has(input[type=text]){justify-content:space-between;white-space:normal}
+.classic-settings-sample{min-height:62px;max-height:140px;overflow:auto;white-space:pre-wrap;border:1px inset #aaa;line-height:1.2}
+.classic-settings-copy{display:flex;gap:8px;padding-bottom:10px}
+.classic-settings-copy button{border:1px solid #888;border-radius:0;padding:4px 8px;background:#f6f6f6;color:#111;font:12px "Segoe UI",sans-serif}
+
+.connect-template-editor{margin:4px 0;padding:7px;border:1px solid #bbb;min-width:0}
+.connect-template-editor textarea{width:100%;min-height:54px;font:12px Consolas,monospace;border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:4px}
+.connect-template-editor p{font:11px/1.3 "Segoe UI",sans-serif;color:#555;white-space:normal;margin:4px 0}

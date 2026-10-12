@@ -1,0 +1,1 @@
+#findForm{flex-wrap:wrap;gap:6px;padding:5px} .find-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.find-options label{display:inline-flex;align-items:center;gap:3px}.find-options input[type=checkbox]{width:auto}.find-current{outline:1px solid #eac74f;outline-offset:-1px}#findReplaceControls:not([hidden]){display:inline-flex;align-items:center;gap:6px}

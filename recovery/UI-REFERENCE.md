@@ -81,3 +81,19 @@ selector. Recovery mirrors the supported Sound controls and conditions, with
 plain-text/default-voice limits stated in the dialog and feature inventory.
 `src/Connection.cpp`, `src/FindString.cpp`, `src/PropFuncs.cpp` and `src/Root.prp`
 provide the companion evidence for traversal, variables and away-once semantics.
+
+## 0.10 comparison
+
+On October 12 the exact original reference hash above was checked again. Its
+live Settings dialog lists General, UI Theme, Input Windows, Output Windows,
+Logging, Network, Taskbar, Keyboard Shortcuts, Auto Emoji, Scripting, Restore
+Logs, Ansi Colors, AI and User Data. Restore Logs describes refilling windows
+from Restore.dat, an Enabled control and a per-character KiB buffer size.
+The live Tools submenu includes separate Trigger, Alias and Network debuggers.
+These additional categories/actions are retained as open in the current checklist.
+
+The packaged 0.10 Output settings screenshot shows the scoped font face/size,
+sample and inheritance controls in the compact category dialog. The sample now
+updates when reopened and when controls change. Runtime font/color/margins and
+input sticky/autosize were verified in the actual WebView. Original display
+options not represented by the recovery controls remain listed explicitly.

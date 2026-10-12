@@ -44,9 +44,24 @@ group('general','Windows',fields.mediaEnabled,note('Sound and speech playback is
 group('theme','Display',fields.theme,note('The selected theme applies to output and command windows.'));
 const heightLabel=document.createElement('label');heightLabel.className='classic-settings-number';heightLabel.textContent='Command window height';
 const height=document.createElement('input');height.type='number';height.min='40';height.max='300';height.step='1';height.id='classicInputHeight';height.setAttribute('aria-label','Command window height in pixels');heightLabel.append(height);
-group('input','Input Window',heightLabel,fields.localEcho,note('Enter sends a command. Shift+Enter inserts a new line; Ctrl+Up and Ctrl+Down recall command history.'));
-group('output','Output Settings',fields.fontFamily,fields.fontSize,fields.scrollback,fields.inlineImages,
- note('The text sample in the main window updates when you save these settings.'));
+const extraControls={},samples={};
+function setting(key,title,type='number',min=0,max=100){
+ const label=document.createElement('label');label.textContent=title;
+ const control=document.createElement('input');control.id='pref_'+key;control.type=type;control.setAttribute('aria-label',title);
+ if(type==='number'){control.min=String(min);control.max=String(max);control.step='1';}
+ if(type==='text'){control.maxLength=80;if(/Color|Foreground|Background/.test(key)){control.placeholder='Theme default';control.pattern='#[0-9a-fA-F]{6}|';control.title='Use #RRGGBB or leave blank for the theme default';}else{control.placeholder='Courier New';control.setAttribute('list','classicFontFaces');}}
+ if(type==='checkbox'){label.textContent='';label.append(control,document.createTextNode(title));}else label.append(control);
+ extraControls[key]=control;return label;
+}
+const fonts=document.createElement('datalist');fonts.id='classicFontFaces';for(const face of ['Courier New','Consolas','Cascadia Mono','Lucida Console','Segoe UI','Arial','Times New Roman']){const option=document.createElement('option');option.value=face;fonts.append(option);}settings.append(fonts);
+function sample(category){const sample=document.createElement('div');sample.className='classic-settings-sample';sample.textContent='AaBbCc — The quick brown fox\n0123456789  Sample text';samples[category]=sample;return sample;}
+function fontStyles(prefix){return ['Bold','Italic','Underline','Strikeout'].map(style=>setting(prefix+'Font'+style,style,'checkbox'));}
+function margins(prefix){return ['Left','Top','Right','Bottom'].map(side=>setting(prefix+'Margin'+side,side+' margin (pixels)'));}
+group('input','Text',sample('input'),setting('inputFontFace','Font face','text'),setting('inputFontSize','Font size (pixels)','number',8,72),...fontStyles('input'),setting('inputForeground','Foreground','text'),setting('inputBackground','Background','text'));
+group('input','Input Window',heightLabel,setting('inputAutoSize','Resize to fit contents','checkbox'),setting('inputMinLines','Minimum height (lines)','number',1,30),setting('inputMaxLines','Maximum height (lines)','number',1,30),setting('inputSticky',"Don't clear input on enter",'checkbox'),fields.localEcho,setting('localEchoColor','Local echo color','text'),...margins('input'));
+group('output','Text',sample('output'),fields.fontFamily,setting('outputFontFace','Font face override','text'),fields.fontSize,...fontStyles('output'),setting('outputForeground','Foreground','text'),setting('outputBackground','Background','text'),setting('linkColor','Link color','text'));
+group('output','Output Settings',fields.scrollback,fields.inlineImages,setting('paragraphSpacing','Paragraph spacing (pixels)'),setting('wrappedIndent','Wrapped line indent (pixels)','number',0,500),setting('fixedWidth','Fixed width','checkbox'),setting('fixedWidthChars','Width (characters)','number',2,500),...margins('output'));
+group('output','Appearance and scrolling',setting('fanFold','Alternating line backgrounds','checkbox'),setting('fanFoldColor1','First background','text'),setting('fanFoldColor2','Second background','text'),setting('scrollToBottom','Scroll to bottom on new output','checkbox'),setting('smoothScrolling','Smooth scrolling','checkbox'),setting('splitOnPageUp','Split on Page Up','checkbox'));
 group('logging','New Sessions',fields.defaultLogging,
  note('When enabled, each new connected session starts a separate log file. Use Logging to start or stop a session manually.'));
 form.replaceChildren(caption,scopeBar,body,actions);
@@ -69,7 +84,7 @@ for(const category of ['input','output']){
  inheritance[category]={label,check,text,explanation};
  check.onchange=()=>{captureDraft();renderScope();};
 }
-const controls={fontSize:byId('fontSize'),fontFamily:byId('fontFamily'),scrollback:byId('scrollback'),inlineImages:byId('inlineImages'),localEcho:byId('localEcho'),inputHeight:height};
+const controls={fontSize:byId('fontSize'),fontFamily:byId('fontFamily'),scrollback:byId('scrollback'),inlineImages:byId('inlineImages'),localEcho:byId('localEcho'),inputHeight:height,...extraControls};
 let draft=new Map(),selected='global';
 function model(){return window.BeipProfilePreferences;}
 function profileFor(key){const [level,id]=key.split(':');return level==='world'?app().state.worlds.find(x=>x.id===id):level==='character'?app().state.characters.find(x=>x.id===id):null;}
@@ -96,6 +111,23 @@ function captureDraft(){
   }
  }
 }
+function updateSamples(){
+ if(!model())return;
+ const p=model().normalizeGlobal({...effective(selected),...Object.fromEntries(Object.entries(controls).map(([key,c])=>[key,readControl(c)]))});
+ for(const [category,target] of Object.entries(samples)){
+  if(window.BeipWindowPreferences){if(category==='output')window.BeipWindowPreferences.applyOutput(target,p);else window.BeipWindowPreferences.applyInput(target,p);}
+  target.style.color=p[category+'Foreground']||(p.theme==='light'?'#111':'#c0c0c0');target.style.backgroundColor=p[category+'Background']||(p.theme==='light'?'#fff':'#000');
+ }
+}
+for(const control of Object.values(controls))control.addEventListener('input',updateSamples);
+const settingClipboard={};
+for(const category of ['input','output']){
+ const row=document.createElement('div');row.className='classic-settings-copy';
+ const copy=document.createElement('button'),paste=document.createElement('button');copy.type=paste.type='button';copy.textContent='Copy settings';paste.textContent='Paste settings';paste.disabled=true;
+ copy.onclick=()=>{settingClipboard[category]=Object.fromEntries(model()[category==='input'?'INPUT_KEYS':'OUTPUT_KEYS'].map(key=>[key,readControl(controls[key])]));paste.disabled=false;};
+ paste.onclick=()=>{if(!settingClipboard[category])return;captureDraft();const target=currentDraft(selected);if(selected==='global')Object.assign(target,settingClipboard[category]);else{target[category].useParent=false;target[category].values={...settingClipboard[category]};}renderScope();};
+ row.append(copy,paste);panels.get(category).append(row);
+}
 function renderScope(){
  const isGlobal=selected==='global',p=effective(selected),target=currentDraft(selected);
  for(const [key,control] of Object.entries(controls))writeControl(control,p[key]);
@@ -108,6 +140,7 @@ function renderScope(){
  }
  for(const key of ['theme','mediaEnabled','defaultLogging']){writeControl(byId(key),currentDraft('global')[key]);byId(key).disabled=!isGlobal;}
  caption.querySelector('h2').textContent=isGlobal?'Settings':'Settings — '+(profileFor(selected)?.name||'Profile');
+ updateSamples();
 }
 function initializeScopes(requested='global'){
  draft=new Map();scopeChoice.replaceChildren();
@@ -123,7 +156,7 @@ form.addEventListener('submit',event=>{
  if(!model()){app().state.preferences.inputHeight=Math.max(40,Math.min(300,Number(height.value)||40));return;}
  // This dialog owns scoped saves; the legacy form handler writes only global fields.
  event.preventDefault();event.stopImmediatePropagation();captureDraft();
- app().state.preferences={...app().state.preferences,...currentDraft('global')};
+ app().state.preferences={...app().state.preferences,...model().normalizeGlobal(currentDraft('global'))};
  for(const [key,value] of draft)if(key!=='global'){const profile=profileFor(key);if(profile)profile.preferences=model().normalizeOverrides(value);}
  app().applyPreferences();for(const session of app().sessions.values())session.media?.setEnabled(app().state.preferences.mediaEnabled);
  app().saveSettings();settings.close();
