@@ -1,10 +1,20 @@
-# BeipMU recovery preview 0.7
+# BeipMU recovery preview 0.8
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
 several implementations, generated properties and Visual Studio project are
 absent. This runtime builds without those components or a downloaded upstream
 executable. Its code is distributed under the repository MIT license.
+
+Version 0.8 adds caption dragging into four dock edges and group grips that move
+all docked panes on an edge. The edge chooser and keyboard controls remain available.
+Aliases and triggers now support bounded nested folders and children, inherited
+scope/enablement, subtree copy/delete, and sibling ordering. Children run before a
+parent stops further processing; trigger children receive the processed whole line.
+Settings provides Global/World/Character selectors and separate output/input
+inheritance controls. Supported original character settings import with Config.txt.
+World inheritance, retained dormant overrides, sparse field fallback, and grouping
+input height with input preferences are recovery adaptations.
 
 Version 0.7 adds resizable docks on all four edges. Input History defaults to
 bottom and Image Window to top; pane captions let you choose another edge or
@@ -69,7 +79,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.7-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.8-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -184,3 +194,11 @@ floating-pane cleanup, reviewed Atlas save with byte-for-byte ZIP verification
 and reimport, original script Input controls, command callbacks and a timer that
 reads an updated inactive-session draft. Source UI files matched the packaged files.
 TLS implementation is unchanged; no complete fresh TLS run is claimed for 0.7.
+
+For 0.8, the Windows build and complete native/module suite passed. Packaged
+fresh and persisted session tests (`sessions-20261012-063705`) verified nested
+alias/trigger editors, isolated regex children, scope inheritance and settings
+save/reopen/cancel, alongside existing native floating, script and Atlas checks.
+Focused browser pointer checks verified caption/group drag, cancellation and
+preserved floating identity. Packaged Pueblo/MXP image/link and WHO-spacing tests
+passed. TLS code is unchanged; no new full TLS run is claimed for 0.8.

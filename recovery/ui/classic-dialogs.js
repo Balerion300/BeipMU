@@ -10,7 +10,7 @@ function scopeChoices(){
  const state=app().state;
  return [{value:'global',label:'Global'},
   ...state.worlds.map(world=>({value:'w:'+world.id,label:world.name})),
-  ...state.characters.map(character=>({value:'c:'+character.id,label:character.name+' · '+(state.worlds.find(world=>world.id===character.worldId)?.name||'World')}))];
+  ...state.characters.map(character=>({value:'c:'+character.id,label:character.name+' Â· '+(state.worlds.find(world=>world.id===character.worldId)?.name||'World')}))];
 }
 function scopeValue(scope){
  if(scope?.level==='character')return 'c:'+scope.characterId;
@@ -30,7 +30,7 @@ function editor(kind){
  dialog.id=alias?'classicAliasesDialog':'classicMacrosDialog';
  dialog.className='classic-dialog '+(alias?'classic-aliases':'classic-macros');
  dialog.setAttribute('aria-labelledby',dialog.id+'Title');
- dialog.innerHTML=`<div class="classic-title"><h2 id="${dialog.id}Title">${alias?'Aliases':'Keyboard Macros'}</h2><button class="classic-close" type="button" aria-label="Close">×</button></div>
+ dialog.innerHTML=`<div class="classic-title"><h2 id="${dialog.id}Title">${alias?'Aliases':'Keyboard Macros'}</h2><button class="classic-close" type="button" aria-label="Close">Ã—</button></div>
   <div class="classic-workspace"><div class="classic-tree" role="tree" aria-label="Saved ${alias?'aliases':'keyboard macros'}"></div>
   <div class="classic-editor"><div class="classic-edit-head"><label><input class="classic-enabled" type="checkbox"> ${alias?'Process this alias':'Process this keyboard macro'}</label></div>
   <label class="classic-field">Description<input class="classic-description" maxlength="80" autocomplete="off"></label>
@@ -42,13 +42,14 @@ function editor(kind){
    <label class="classic-check"><input class="classic-type" type="checkbox"> Type into Input Window</label>
    <fieldset class="classic-key"><legend>Key</legend><label>Press key combination here<input class="classic-combo" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Macro key combination"></label></fieldset>
    <label class="classic-check"><input class="classic-override" type="checkbox"> Override a built-in shortcut</label>
-   <p class="classic-note">Letters A–Z need Alt or Control to avoid ordinary typing.</p>`}
+   <p class="classic-note">Letters Aâ€“Z need Alt or Control to avoid ordinary typing.</p>`}
   <label class="classic-field">Scope<select class="classic-scope"></select></label><p class="classic-error" role="alert"></p></div></div>
   <div class="classic-footer"><div class="classic-list-actions"><button type="button" data-action="new">New</button><button type="button" data-action="copy">Copy</button><button type="button" data-action="delete">Delete</button></div>
   <div class="classic-save-actions"><button type="button" data-action="apply">Apply</button><button type="button" data-action="ok">OK</button><button type="button" data-action="cancel">Cancel</button></div></div>`;
  document.body.append(dialog);
  const one=selector=>dialog.querySelector(selector);
  let draft=[],selected=-1;
+ const treeEditor=alias?BeipRuleTreeEditor.create({dialog,getItems:()=>draft,setItems:items=>{draft=items;},getSelected:()=>selected,setSelected:index=>{selected=index;},flush,renderEditor,choices:scopeChoices,scopeValue,scopeFrom,error:setError,prefix:'a'}):null;
  function field(name){return one('.classic-'+name);}
  function setError(message){field('error').textContent=message;}
  function fillScope(){
@@ -59,12 +60,13 @@ function editor(kind){
  }
  function flush(){
   if(selected<0||!draft[selected])return;
-  const item=draft[selected];item.enabled=field('enabled').checked;item.description=field('description').value.trim().slice(0,80);
-  item.scope=scopeFrom(field('scope').value);
+  const item=draft[selected];treeEditor?.flush();item.enabled=field('enabled').checked;item.description=field('description').value.trim().slice(0,80);
+  if(!item.parentId)item.scope=scopeFrom(field('scope').value);
   if(alias){item.match=field('match').value.trim();item.matchType=field('match-type').value;item.matchCase=field('case').checked;item.stopProcessing=field('stop').checked;item.replacement=field('replacement').value;}
   else{item.key=field('combo').value.trim();item.text=field('text').value;item.mode=field('type').checked?'type':'send';item.overrideBuiltins=field('override').checked;}
  }
  function renderTree(){
+  if(treeEditor){treeEditor.render();return;}
   const tree=field('tree');tree.replaceChildren();
   const choices=scopeChoices(),known=new Set(choices.map(choice=>choice.value));
   for(const choice of choices){
@@ -92,9 +94,10 @@ function editor(kind){
   field('scope').value=scopeValue(item.scope);
   if(alias){field('match').value=item.match||'';field('match-type').value=item.matchType||'simple';field('case').checked=!!item.matchCase;field('stop').checked=!!item.stopProcessing;field('replacement').value=item.replacement||'';}
   else{field('combo').value=item.key||'';field('text').value=item.text||'';field('type').checked=item.mode==='type';field('override').checked=!!item.overrideBuiltins;}
-  setError('');
+  treeEditor?.fill();if(alias&&item.folder)for(const name of ['match','match-type','case','stop','replacement'])field(name).disabled=true;setError('');
  }
  function makeNew(copy){
+  if(treeEditor){treeEditor.makeNew(copy);return;}
   flush();
   if(draft.length>=(alias?128:BeipMacros.MAX_MACROS)){setError('Maximum number of '+(alias?'aliases':'macros')+' reached.');return;}
   const source=copy&&draft[selected]?clone(draft[selected]):null;
@@ -103,9 +106,9 @@ function editor(kind){
   draft.push(item);selected=draft.length-1;renderTree();renderEditor();field(alias?'match':'combo').focus();
  }
  function validate(){
-  flush();
+  flush();if(alias){const hierarchy=BeipRules.hierarchy(draft);if(hierarchy.errors.length){setError(hierarchy.errors[0]);return false;}draft=BeipRules.normalizeHierarchy(draft).items;}
   for(const item of draft){
-   if(alias){if(!item.match||item.match.length>128){setError('Enter a match for each alias.');return false;}}
+   if(alias){if(item.folder)continue;if(!item.match||item.match.length>128){setError('Enter a match for each alias.');return false;}}
    else{
     const key=BeipMacros.normalizeCombo(item.key);
     if(!key){setError('Enter a valid key combination for each macro.');return false;}
@@ -131,7 +134,7 @@ function editor(kind){
  one('[data-action="cancel"]').onclick=()=>dialog.close();
  one('[data-action="new"]').onclick=()=>makeNew(false);
  one('[data-action="copy"]').onclick=()=>makeNew(true);
- one('[data-action="delete"]').onclick=()=>{if(selected<0)return;draft.splice(selected,1);selected=Math.min(selected,draft.length-1);renderTree();renderEditor();};
+ one('[data-action="delete"]').onclick=()=>{if(treeEditor){treeEditor.remove();return;}if(selected<0)return;draft.splice(selected,1);selected=Math.min(selected,draft.length-1);renderTree();renderEditor();};
  one('[data-action="apply"]').onclick=()=>apply();
  one('[data-action="ok"]').onclick=()=>{if(apply())dialog.close();};
  field('description').addEventListener('input',()=>{if(selected<0)return;flush();renderTree();});

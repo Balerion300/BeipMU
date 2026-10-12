@@ -18,6 +18,17 @@
 .dock-pane-head button{border:1px solid #888;background:#e7e7e7;color:#111;padding:0 5px;font:14px "Segoe UI",sans-serif;line-height:17px;min-width:21px}
 .dock-position{width:66px;min-width:66px;height:19px;border:1px solid #888;border-radius:0;background:#e7e7e7;color:#111;padding:0 1px;font:11px "Segoe UI",sans-serif}
 .dock-head-controls{display:flex;gap:2px}
+.dock-caption{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:grab;touch-action:none;user-select:none}
+.dock-pane-head .dock-group-grip{flex:none;margin-right:4px;cursor:grab;touch-action:none}
+.dock-dragging,.dock-dragging *{cursor:grabbing!important;user-select:none!important}
+.dock-drop-overlay{position:fixed;z-index:9000;pointer-events:none}
+.dock-drop-overlay[hidden]{display:none}
+.dock-drop-target{position:absolute;display:flex;align-items:center;justify-content:center;border:2px solid #83b7df;background:rgba(24,67,98,.84);color:#fff;font:12px "Segoe UI",sans-serif;box-shadow:0 1px 5px #000;padding:6px}
+.dock-drop-target[data-edge="left"]{left:8px;top:40%;width:80px;height:20%}
+.dock-drop-target[data-edge="right"]{right:8px;top:40%;width:80px;height:20%}
+.dock-drop-target[data-edge="top"]{top:8px;left:40%;width:20%;height:45px}
+.dock-drop-target[data-edge="bottom"]{bottom:8px;left:40%;width:20%;height:45px}
+.dock-drop-target.is-target{background:rgba(76,142,193,.95);border-color:#fff;box-shadow:0 0 0 3px #73b5e5}
 .dock-pane-body{display:flex;flex-direction:column;gap:5px;flex:1;min-height:0;overflow:auto;padding:5px;background:#000;color:#c0c0c0}
 .dock-pane-body button,.dock-pane-body select{font:11px "Segoe UI",sans-serif;border:1px solid #888;border-radius:0;background:#d4d0c8;color:#111;padding:2px 5px}
 .dock-pane-body button:hover{background:#e5e5e5}

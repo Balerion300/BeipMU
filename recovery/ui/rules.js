@@ -7,7 +7,7 @@
   'use strict';
 
   const DEFAULT_LIMITS = Object.freeze({
-    maxRules: 128, maxPattern: 128, maxLine: 4096, maxCommand: 4096,
+    maxRules: 128, maxDepth: 8, maxPattern: 128, maxLine: 4096, maxCommand: 4096,
     maxActions: 32, maxReplacements: 32, maxCommands: 16,
     maxCapturePattern: 256, maxCaptureLines: 200, maxCaptureMs: 5000
   });
@@ -44,6 +44,60 @@
       }
     }
     return list;
+  }
+  // Flat persistence keeps old profiles compatible. Parent identity supplies the
+  // hierarchy; scope belongs to the root and enablement gates each whole subtree.
+  function hierarchy(rules, limit = DEFAULT_LIMITS.maxRules, maxDepth = DEFAULT_LIMITS.maxDepth) {
+    const entries = [], roots = [], errors = [], ids = new Map();
+    for (const [index, rule] of (Array.isArray(rules) ? rules : []).slice(0, limit).entries()) {
+      if (!rule || typeof rule !== 'object') continue;
+      const entry = { rule, index, children: [], parent: null, depth: 0, root: null };
+      entries.push(entry);
+      if (rule.id != null) {
+        const id = String(rule.id);
+        if (ids.has(id)) errors.push('Duplicate rule identity: ' + id + '.');
+        else ids.set(id, entry);
+      }
+    }
+    if (Array.isArray(rules) && rules.length > limit) errors.push('Rule count limit reached.');
+    for (const entry of entries) {
+      if (entry.rule.parentId) {
+        entry.parent = ids.get(String(entry.rule.parentId));
+        if (!entry.parent) errors.push('Missing rule parent: ' + entry.rule.parentId + '.');
+      }
+      if (entry.parent) entry.parent.children.push(entry); else if (!entry.rule.parentId) roots.push(entry);
+      const seen = new Set([entry]); let cursor = entry;
+      while (cursor.parent) {
+        cursor = cursor.parent;
+        if (seen.has(cursor)) { errors.push('Rule hierarchy contains a cycle.'); break; }
+        seen.add(cursor);
+      }
+    }
+    // Resolve ancestry only after all parent links have been assigned.
+    for (const entry of entries) {
+      const seen = new Set([entry]); let cursor = entry, depth = 0;
+      while (cursor.parent && !seen.has(cursor.parent)) { cursor = cursor.parent; seen.add(cursor); depth++; }
+      if (cursor.parent) errors.push('Rule hierarchy contains a cycle.');
+      if (depth >= maxDepth) errors.push('Rule hierarchy exceeds ' + maxDepth + ' levels.');
+      entry.depth = depth; entry.root = cursor;
+    }
+    return { entries, roots, errors: [...new Set(errors)] };
+  }
+  function normalizeHierarchy(items) {
+    const tree = hierarchy(items);
+    if (tree.errors.some(error => error.startsWith('Duplicate'))) return { items: [], diagnostics: tree.errors };
+    const valid = tree.entries.filter(entry => {
+      const seen = new Set(); let cursor = entry, depth = 0;
+      while (cursor) {
+        if (seen.has(cursor) || ++depth > DEFAULT_LIMITS.maxDepth || cursor.rule.parentId && !cursor.parent) return false;
+        seen.add(cursor); cursor = cursor.parent;
+      }
+      return true;
+    });
+    return { items: valid.map(entry => {
+      const scope = entry.root.rule.scope;
+      return { ...entry.rule, scope: typeof scope === 'string' ? { level: scope } : { ...(scope || { level: 'global' }) } };
+    }), diagnostics: tree.errors };
   }
   function wordChar(char) { return !!char && /[\p{L}\p{N}_]/u.test(char); }
   function wholeWordAt(text, start, end) {
@@ -142,6 +196,14 @@
     const aliases = Array.isArray(config.aliases) ? config.aliases.slice() : [];
     const triggers = Array.isArray(config.triggers) ? config.triggers.slice() : [];
     const limits = limitsFrom(config.limits);
+    const aliasTree = hierarchy(aliases, limits.maxRules, limits.maxDepth);
+    const triggerTree = hierarchy(triggers, limits.maxRules, limits.maxDepth);
+    function rootsFor(tree, context, diagnostics) {
+      const structural = tree.errors.filter(error => error !== 'Rule count limit reached.');
+      diagnostics.push(...tree.errors);
+      if (structural.length) return [];
+      return LEVELS.flatMap(level => tree.roots.filter(entry => levelOf(entry.rule) === level && inScope(entry.rule, context)));
+    }
     // Regex is only available to the bounded worker entry point. The default
     // synchronous engine intentionally ignores regex rules.
     const allowRegex = config.allowRegex === true && config.workerEngine === true;
@@ -153,10 +215,15 @@
       if (typeof input !== 'string' || input.length > limits.maxCommand)
         return { commands: [], matched: false, diagnostics: ['Command exceeds length limit.'] };
       let text = input, matched = false, replacements = 0;
-      for (const rule of ordered(aliases, scope || {}, limits.maxRules)) {
+      let stopped = false;
+      function visit(list) { for (const entry of list) {
+        const rule = entry.rule;
+        if (stopped) break;
+        if (rule.enabled === false) continue;
         if (replacements >= limits.maxReplacements) { diagnostics.push('Alias replacement limit reached.'); break; }
+        if (rule.folder) { if (rule.processChildren !== false) visit(entry.children); continue; }
         const replacement = typeof rule.replacement === 'string' ? rule.replacement : '';
-        if (!rule.match || !replacement) continue;
+        if (!rule.match) continue;
         let from = 0, hit, thisRuleMatched = false;
         while ((hit = findMatch(text, rule, from, limits, allowRegex, diagnostics))) {
           const inserted = interpolate(replacement, hit.captures);
@@ -172,8 +239,10 @@
           if (rule.matchType === 'wildcard' || rule.matchType === 'exact' ||
               replacements >= limits.maxReplacements) break;
         }
-        if (thisRuleMatched && rule.stopProcessing) break;
-      }
+        if (thisRuleMatched && rule.processChildren !== false) visit(entry.children);
+        if (thisRuleMatched && rule.stopProcessing) stopped = true;
+      } }
+      visit(rootsFor(aliasTree, scope || {}, diagnostics));
       const commands = splitCommands(text, limits);
       if (!commands) return { commands: [input], matched: false, diagnostics: diagnostics.concat('Alias command limit reached.') };
       return { commands, matched, diagnostics };
@@ -203,9 +272,13 @@
         if (activeCapture.until.test(input)) captures.delete(captureKey);
       }
       let spawnedThisLine = !!activeCapture;
-      for (let index = 0, list = ordered(triggers, context, limits.maxRules); index < list.length; index++) {
+      let stopped = false;
+      function visit(list) { for (const entry of list) {
+        if (stopped) break;
         if (actions.length >= limits.maxActions) { diagnostics.push('Trigger action limit reached.'); break; }
-        const rule = list[index], id = makeId(rule, index, 'trigger-');
+        const rule = entry.rule, id = makeId(rule, entry.index, 'trigger-');
+        if (rule.enabled === false) continue;
+        if (rule.folder) { if (rule.processChildren !== false) visit(entry.children); continue; }
         const key = [id, context.serverId || '', context.characterId || ''].join('\u0000');
         if (rule.once && firedOnce.has(key)) continue;
         const cooldown = Math.max(0, Math.min(Number(rule.cooldownMs) || 0, 86400000));
@@ -263,8 +336,10 @@
         }
         if (rule.once) firedOnce.add(key);
         if (cooldown) lastFire.set(key, now);
-        if (rule.stopProcessing) break;
-      }
+        if (rule.processChildren !== false) visit(entry.children);
+        if (rule.stopProcessing) stopped = true;
+      } }
+      visit(rootsFor(triggerTree, context, diagnostics));
       for (const action of actions) if (action.type === 'spawn') action.text = text;
       return { text, actions: actions.slice(0, limits.maxActions), matches, gagged, logGagged, diagnostics };
     }
@@ -273,5 +348,5 @@
     }
     return { expandCommand, processLine, cancelCapture };
   }
-  return { createEngine, interpolate, DEFAULT_LIMITS };
+  return { createEngine, interpolate, hierarchy, normalizeHierarchy, DEFAULT_LIMITS };
 });

@@ -19,5 +19,20 @@
   return {order,edges,sizes,activeByEdge,floating};
  }
  function copyable(raw){return normalize(raw);}
- return {TYPES,EDGES,DEFAULT_EDGE,DEFAULT_SIZE,dimension,normalize,copyable};
+ // Moving a group leaves native floating panes and their saved rectangles alone.
+ function move(raw,type,edge,{group=false}={}){
+  const result=normalize(raw,{includeSpawn:true});
+  if(!TYPE_SET.has(type)||!EDGE_SET.has(edge)||!result.order.includes(type)||result.floating[type])return result;
+  const previous=result.edges[type],moving=group?result.order.filter(item=>result.edges[item]===previous&&!result.floating[item]):[type];
+  const active=group?result.activeByEdge[previous]||type:type;
+  for(const item of moving)result.edges[item]=edge;
+  result.activeByEdge[edge]=active;
+  return normalize(result,{includeSpawn:true});
+ }
+ function dropEdge(x,y,rects){
+  if(!Number.isFinite(x)||!Number.isFinite(y))return '';
+  for(const edge of EDGES){const rect=rects?.[edge];if(rect&&[rect.left,rect.right,rect.top,rect.bottom].every(Number.isFinite)&&x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom)return edge;}
+  return '';
+ }
+ return {TYPES,EDGES,DEFAULT_EDGE,DEFAULT_SIZE,dimension,normalize,copyable,move,dropEdge};
 });

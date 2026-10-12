@@ -14,7 +14,7 @@ $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.e
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (!$vs) { throw 'Install Visual Studio Build Tools with Desktop development with C++.' }
 $buildDir = Join-Path $taskRoot 'build'
-$dist = Join-Path $taskRoot 'dist/BeipMU-Recovery-0.7'
+$dist = Join-Path $taskRoot 'dist/BeipMU-Recovery-0.8'
 New-Item -ItemType Directory -Force $buildDir,$dist | Out-Null
 $batch = @"
 @echo off
@@ -43,5 +43,5 @@ foreach ($testFile in Get-ChildItem -LiteralPath "$taskRoot/tests" -Filter "*_te
     & node $testFile.FullName
     if ($LASTEXITCODE -ne 0) { throw "JavaScript tests failed: $($testFile.Name)" }
 }
-Compress-Archive -Path "$dist/*" -DestinationPath "$taskRoot/dist/BeipMU-Recovery-0.7-x64.zip" -Force
+Compress-Archive -Path "$dist/*" -DestinationPath "$taskRoot/dist/BeipMU-Recovery-0.8-x64.zip" -Force
 Write-Output "Built: $dist/BeipMU-Recovery.exe"

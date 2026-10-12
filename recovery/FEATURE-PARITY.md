@@ -1,7 +1,7 @@
 # BeipMU recovery feature inventory
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the 0.7 recovery worktree (`recovery/`). The original 4.335 executable was
+from the 0.8 recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.
 "Verified" below means focused tests or an app fixture passed for the stated
 subset. Version labels identify the verified milestone; they do not mean full
@@ -9,14 +9,14 @@ upstream compatibility.
 
 | Feature | Original BeipMU behavior | Recovery status |
 | --- | --- | --- |
-| Desktop layout | Bottom-left popup, output/input panes, bottom session tabs and activity indicators | **0.4 app fixture verified:** native Windows/Tools/Logging/Settings/Help/Exit popup, black output and input, resizable command pane, and tabs/activity on one bottom row. Worlds and supported feature editors follow the directly inspected original 4.335 dialog layouts. **0.5 app fixture verified:** right-side session panes with keyboard resizing; 0.6 adds independent native floating panes and Dock actions; free drag docking remains open. |
+| Desktop layout | Bottom-left popup, output/input panes, bottom session tabs and activity indicators | **0.4 app fixture verified:** native Windows/Tools/Logging/Settings/Help/Exit popup, black output and input, resizable command pane, and tabs/activity on one bottom row. Worlds and supported feature editors follow the directly inspected original 4.335 dialog layouts. **0.5 app fixture verified:** right-side session panes with keyboard resizing; 0.6 adds independent native floating panes and Dock actions; 0.8 adds caption and group dragging across four edges. |
 | Connections and output | Multiple worlds/characters, telnet, configurable sessions, ANSI text | **0.3 app fixture verified:** two concurrent telnet sessions with independent output and command routing. The 0.2 baseline supported one plain TCP connection. |
 | Pueblo/MXP | Pueblo plus MXP support, clickable commands, images and text formatting | Preview 0.3 retains the documented Pueblo and explicit MXP subset, with parser and local-server tests. Full MXP remains open. |
 | World profiles | Server and character entries, connect strings, notes, per-profile rules and logging | **0.3 app fixture verified:** saved world/character labels, startup choices, settings persistence, scoped rules, and character-bound login with a password kept in Windows Credential Manager. The test-mode vault is memory-only; wrong-character and unapproved plain-TCP login attempts were rejected. **0.5 app fixture verified:** one character's notes saved and reloaded without appearing in another's pane. Original connect templates and complete per-profile behavior remain open. |
 | TLS | Secure server connections | **0.3 full-app fixture verified:** Schannel transport with system trust and hostname checks. Local trusted, untrusted and wrong-host certificate tests also passed. |
-| Aliases | Ordered global/server/character aliases, simple or regex replacement, capture substitutions, multi-line output, folders, variables, processing options | **0.3 app fixture verified subset:** ordered scopes, simple/wildcard and worker-isolated regex captures, `\0`/`\1` replacement, multi-line output and bounded command expansion. Folders, variables and complete internal-command ordering remain open. |
-| Triggers | Ordered global/server/character triggers, regex or simple matching, appearance, filtering, gagging, send, spawn, toast, sound, speech, scripts, children and multi-line capture | **0.3 app fixture verified subset:** completed-line simple/wildcard and worker-isolated regex matching, captures, commands, highlight, gag, spawn and notification actions. **0.5 app fixture verified:** original-style editor saves a description without losing enabled/copy/send/highlight fields; grouped spawn, capture-until, filtered spawn text, move/copy, log-gag and manual capture cancellation work in the supported subset. Child processing, focus conditions, sound/speech and advanced appearance remain open. |
-| Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. 0.6 adds native floating panes; full free drag docking remains open. |
+| Aliases | Ordered global/server/character aliases, simple or regex replacement, capture substitutions, multi-line output, folders, variables, processing options | **0.3 app fixture verified subset:** ordered scopes, simple/wildcard and worker-isolated regex captures, `\0`/`\1` replacement, multi-line output and bounded command expansion. 0.8 adds bounded folders and children; variables and complete internal-command ordering remain open. |
+| Triggers | Ordered global/server/character triggers, regex or simple matching, appearance, filtering, gagging, send, spawn, toast, sound, speech, scripts, children and multi-line capture | **0.3 app fixture verified subset:** completed-line simple/wildcard and worker-isolated regex matching, captures, commands, highlight, gag, spawn and notification actions. **0.5 app fixture verified:** original-style editor saves a description without losing enabled/copy/send/highlight fields; grouped spawn, capture-until, filtered spawn text, move/copy, log-gag and manual capture cancellation work in the supported subset. 0.8 adds bounded child processing and folder enablement; focus conditions, sound/speech and advanced appearance remain open. |
+| Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. 0.6 adds native floating panes; full 0.8 adds caption and group dragging across four edges. |
 | Keyboard shortcuts and macros | Remappable application shortcuts and per-world macros | **0.3 app fixture verified subset:** scoped keyboard macros and command history. **0.5 app fixture verified:** session history pane, entry recall, and Ctrl+Down saving a draft without sending it. 0.6 adds remapping of supported application actions. |
 | Logging | Manual and automatic per-character logs, date naming, log from scrollback | **0.3 app fixture verified subset:** start/stop session logs, local log files and transcript export. **0.5 app fixture verified:** restarting a log from the beginning includes existing scrollback; captured lines marked log-gag are absent. Original per-character naming and full lifecycle options remain open. |
 | Scripting | JavaScript startup and immediate mode, trigger functions, application objects | **0.3 app fixture verified subset:** opt-in worker JavaScript with startup/immediate execution, line/GMCP callbacks, bounded effects and execution timeout. 0.6 adds send/receive suppression, raw GMCP callbacks, named trigger functions, window userdata, connection Display/Transmit, bounded timers and script error output. 0.7 adds input controls, character collections, window titles, debug output and command callbacks. Native COM/filesystem and the complete application object model remain open. |
@@ -81,7 +81,7 @@ patterns. Rule order is global, server, then character, preserving order within
 each scope. The 0.3 app runs regular-expression rules in a dedicated worker
 through `BeipRegexRules.Runtime`, which stops jobs that exceed 500 ms. The
 default synchronous engine ignores regex rules. The original also permits
-configurable pre/post and nested rule ordering, which remains open.
+configurable pre/post ordering, which remains open; 0.8 adds bounded nested processing.
 
 Alias fields include `replacement`, `matchCase`, and `stopProcessing`. A
 replacement can use BeipMU's `\0` for the full match and `\1`–`\9` for captures.
@@ -196,3 +196,29 @@ layouts with separate session content, native floating-pane lifecycle, script
 input/selection and live timer context, Atlas save-byte verification through
 Python ZIP/XML readers, and reviewed browser reimport. Pueblo/MXP image/link
 and WHO-spacing fixtures also passed. Browser and native screenshots were inspected.
+
+## Preview 0.8 scope
+
+Caption drags move the selected supported pane; an edge grip moves its docked group.
+Blue targets preview left/right/top/bottom placement. Escape, outside drops,
+Control and session switches cancel the drag. Floating windows keep their owner.
+Arbitrary nested splits and dragging between native windows remain open.
+
+Nested aliases/triggers use up to 128 entries and eight levels. Folders gate their
+subtree; children inherit the root scope. Alias children process the replaced
+command; trigger children process the whole processed line, as in Connection.cpp.
+Children execute before parent stop, and child stop propagates. Invalid ancestry
+is removed without promoting children or disabling unrelated valid roots.
+
+Supported output/input preferences resolve global, world, then character settings.
+Original BeipMU defaults character settings directly to global settings. The world
+layer, retaining dormant overrides, sparse per-field fallback, and including input
+height in input inheritance are explicit recovery adaptations. Config.txt imports
+supported MainWindowSettings Output/Input and InputSize fields; unchecked preference
+imports leave these overrides out. Rich original font/color/output settings remain open.
+
+0.8 module/native build checks and two-phase packaged acceptance passed
+(`sessions-20261012-063705`). Hierarchy editor and worker checks, scoped setting
+save/reopen/cancel, original import category selection, and invalid ancestry
+regressions passed. Browser pointer drag checks and Pueblo/MXP packaged image,
+command-link and WHO-spacing checks passed; screenshots were inspected.

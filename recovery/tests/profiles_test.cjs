@@ -89,4 +89,8 @@ check('Shortcut overrides and named trigger callbacks persist through allowlisti
  assert.equal(settings.triggers[0].scriptName,'onPing');assert.equal(settings.triggers[1].scriptName,'');
 });
 
+check('Invalid ancestry cannot promote disabled children or poison unrelated roots',()=>{
+ const raw={triggers:[{id:'bad parent!',folder:true,enabled:false},{id:'child',parentId:'bad parent!',match:'x',sendText:'unexpected'},{id:'empty',match:''},{id:'orphan',parentId:'empty',match:'x'},{id:'safe',match:'x',sendText:'safe'}]};
+ const settings=normalizeSettings(raw);assert.deepEqual(settings.triggers.map(r=>r.id),['safe']);assert.deepEqual(normalizeSettings(settings),settings);
+});
 console.log(`${passed} profile checks passed.`);

@@ -59,3 +59,11 @@ placement, adds top/left/right groups, and retains its explicit edge chooser and
 Float/Dock controls. Copy/Paste all window settings transfers the supported
 pane layout internally, following the original internal clipboard workflow;
 it does not yet copy every original output/input preference.
+
+October 12 direct inspection of original 4.335 Settings reconfirmed its compact
+light category dialog and General image controls. Source inspection paired this
+with character/global Output/Input settings in Wnd_Main.cpp and Wnd_Input.cpp.
+Recovery 0.8 keeps that category layout and adds an explicit scope selector. Its
+world inheritance and retained override drafts are recovery adaptations. Caption
+and group dragging now supplement the existing edge chooser; arbitrary original
+split layouts and native cross-window dragging remain incomplete.

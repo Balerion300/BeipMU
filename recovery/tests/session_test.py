@@ -15,7 +15,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.7" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.8" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -165,6 +165,9 @@ def run(phase):
                   "atlasExportPreview", "atlasExportPreviewed", "atlasReimport",
                   "floatingSessionCleanup", "shortcutRemap", "delayRouting", "smartPasteRouting"):
         assert result.get(check) is True, (check, result)
+    parity = result.get("parity") or {}
+    for check in ("hierarchyEngine", "hierarchyWorker", "hierarchyEditor", "hierarchyTreeActions", "hierarchyTriggerEditor", "scopedSettings", "scopedSettingsCancel", "scopedRuntime", "restorationSaved"):
+        assert parity.get(check) is True, (check, parity)
     imported = result.get("classicImport") or {}
     for check in ("configPreview", "reviewBeforeApply", "credentialsOmitted", "scriptOmitted",
                   "configApplied", "atlasPreview", "zipDecompression", "atlasApplied", "restorationSaved"):

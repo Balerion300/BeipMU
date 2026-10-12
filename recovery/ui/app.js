@@ -4,6 +4,7 @@ const send=text=>bridge?.postMessage(text),output=$('output'),menu=$('menu');
 const defaults={fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,inputHeight:40};
 const state={worlds:[],characters:[],preferences:{...defaults},aliases:[],triggers:[],macros:[],scriptSource:"",scriptEnabled:false,maps:{},secretStatuses:new Map(),secretErrors:new Map()};
 const sessions=new Map(),spawnPanes=new Map(),closedIds=new Set();
+let profilePreferencesDraft=null;
 let activeId='default',nextSession=1,test=false,testClicked=false,testReported=false,settingsLoaded=false,ruleEngine=null;
 window.addEventListener('error',e=>{if(window.BeipCoreTesting)(window.BeipTestErrors??=[]).push(e.message);send('error|'+e.message);});
 
@@ -18,9 +19,22 @@ function createSession(id,{worldId='',characterId='',label='New session',kind='w
  const view=document.createElement('div');view.className='session-view';view.dataset.session=id;view.hidden=id!==activeId;output.append(view);if(kind==='world'){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='To connect to a world, click the globe icon in the bottom left';view.append(welcome);}
  const session={id,worldId,characterId,label,kind,parentId,view,line:null,decoder:new TextDecoder(),parser:null,history:[],historyIndex:0,images:0,loaded:0,failed:0,connected:false,connecting:false,connectedAt:0,activityAt:Date.now(),typedCount:0,tls:false,loginAttempted:false,logging:false,logWanted:!!state.preferences.defaultLogging,unread:0,status:'Ready.',protocol:'Plain text',hasOutput:false};
  if(kind==='world'){configureRules(session);session.parser=new BeipProtocol.Parser(event=>renderEvent(session,event),value=>sendRaw(session,value));}
- sessions.set(id,session);refreshTabs();return session;
+ sessions.set(id,session);const prefs=preferencesForSession(session);view.style.fontSize=prefs.fontSize+'px';view.style.fontFamily=prefs.fontFamily==='system'?'Segoe UI,sans-serif':'Courier New,Consolas,monospace';refreshTabs();return session;
 }
 function current(){return sessions.get(activeId);}
+function preferencesForSession(session=current()){
+ const owner=session?.kind==='spawn'?sessions.get(session.parentId)||session:session;
+ const world=state.worlds.find(x=>x.id===owner?.worldId),character=state.characters.find(x=>x.id===owner?.characterId&&x.worldId===world?.id);
+ return BeipProfilePreferences.resolve(state.preferences,world,character);
+}
+function setInputHeight(value,persist=false){
+ const owner=current()?.kind==='spawn'?sessions.get(current().parentId)||current():current();
+ const world=state.worlds.find(x=>x.id===owner?.worldId),character=state.characters.find(x=>x.id===owner?.characterId&&x.worldId===world?.id);
+ const height=Math.max(40,Math.min(300,Math.round(Number(value)||40)));
+ let target=null;for(const profile of [character,world])if(profile&&BeipProfilePreferences.normalizeOverrides(profile.preferences).input.useParent===false){target=profile;break;}
+ if(target){target.preferences=BeipProfilePreferences.normalizeOverrides(target.preferences);target.preferences.input.values.inputHeight=height;}else state.preferences.inputHeight=height;
+ applyPreferences();if(persist)saveSettings();return height;
+}
 function refreshTabs(){
  const tabs=$('sessionTabs');tabs.replaceChildren();
  for(const session of sessions.values()){
@@ -38,7 +52,7 @@ function selectSession(id){
  const previous=current();if(previous){previous.draft=$('input').value;previous.draftSelection={start:$('input').selectionStart,end:$('input').selectionEnd};}
  const next=sessions.get(id);if(!next)return;
  for(const session of sessions.values())session.view.hidden=session.id!==id;
- activeId=id;next.unread=0;refreshTabs();renderStatus(next.status);$('protocol').textContent=next.protocol;updateCounts();$('logging').checked=next.logWanted;$('logging').disabled=next.kind!=='world';$('disconnect').disabled=next.kind!=='world';
+ activeId=id;applyPreferences();next.unread=0;refreshTabs();renderStatus(next.status);$('protocol').textContent=next.protocol;updateCounts();$('logging').checked=next.logWanted;$('logging').disabled=next.kind!=='world';$('disconnect').disabled=next.kind!=='world';
  if(next.kind==='world'){$('world').value=next.worldId||'';updateCharacterChoices();$('character').value=next.characterId||'';const world=state.worlds.find(x=>x.id===next.worldId);if(world){$('host').value=world.host;$('port').value=world.port;$('tls').checked=!!world.tls;}}
  $('input').value=next.draft||'';if(next.draftSelection)$('input').setSelectionRange(next.draftSelection.start,next.draftSelection.end);window.BeipFeatures?.selected();window.BeipDockPanels?.selected(next);window.BeipDesktopShell?.refreshPauseBadge();$('input').focus();
 }
@@ -55,7 +69,7 @@ async function command(value,prompt,session=current()){
  if(!session)return;
  if(value.startsWith('/')&&!value.startsWith('//')){const epoch=session.connectionEpoch;const result=await window.BeipFeatures?.dispatch(session,'command',value);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||result?.handled)return;}
  if(window.BeipFeatures?.handleCommand(value,session))return;
- const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(state.preferences.localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
+ const transmit=async commands=>{for(const cmd of commands){if(!cmd)continue;const epoch=session.connectionEpoch,wasConnected=session.connected;const result=await window.BeipFeatures?.dispatch(session,'send',cmd);if(sessions.get(session.id)!==session||session.connectionEpoch!==epoch||(wasConnected&&!session.connected))return;if(result?.handled)continue;sendRaw(session,cmd);if(preferencesForSession(session).localEcho){session.suppressAutomation=true;appendText(session,'> '+cmd+'\n',{color:'var(--echo)'},null);session.suppressAutomation=false;}}};
  const context={serverId:session.worldId,characterId:session.characterId};
  if(session.ruleRuntime){session.ruleRuntime.expandCommand(value,context).then(result=>{if(sessions.get(session.id)===session)transmit(result.commands||[]);});return;}
  let commands=[value];try{commands=(session.ruleEngine||ruleEngine)?.expandCommand(value,context).commands||commands;}catch(e){showStatus(session,'Alias error: '+e.message);return;}transmit(commands);
@@ -119,7 +133,7 @@ function appendText(session,text,style={},link=null){
  });scroll(session);
 }
 function image(session,event,targetLine=null){
- session.images++;window.BeipDockPanels?.addImage(session,event);if(!state.preferences.inlineImages){const a=anchor(event.link||{kind:'url',value:event.url},session);a.textContent='[Image: '+event.alt+']';(targetLine||ensureLine(session)).append(a);updateCounts();return;}
+ session.images++;window.BeipDockPanels?.addImage(session,event);if(!preferencesForSession(session).inlineImages){const a=anchor(event.link||{kind:'url',value:event.url},session);a.textContent='[Image: '+event.alt+']';(targetLine||ensureLine(session)).append(a);updateCounts();return;}
  const figure=document.createElement('figure');figure.className='inline-image';const img=document.createElement('img');img.alt=event.alt;img.style.maxHeight=event.height+'px';const caption=document.createElement('figcaption');caption.textContent='Loading image…';const parent=event.link?anchor(event.link,session):anchor({kind:'url',value:event.url},session);parent.append(img);figure.append(parent,caption);(targetLine||ensureLine(session)).append(figure);
  img.onload=()=>{session.loaded++;caption.textContent=event.alt;updateCounts();scroll(session);window.BeipDockPanels?.refreshLine(session);};img.onerror=()=>{session.failed++;caption.classList.add('image-error');caption.replaceChildren(document.createTextNode('Image could not be loaded. '));const source=anchor({kind:'url',value:event.url},session);source.textContent='Open source';caption.append(source);updateCounts();window.BeipDockPanels?.refreshLine(session);};img.src=event.url;updateCounts();
 }
@@ -130,7 +144,7 @@ function renderEvent(session,event){
  else if(event.type==='warning')appendText(session,'\n'+event.text+'\n',{color:'#e9ab96'},null);
  scroll(session);
 }
-function scroll(session){const pane=session.view;if($('autoscroll').checked&&session.id===activeId)output.scrollTop=output.scrollHeight;const limit=Number(state.preferences.scrollback)||5000;while(pane.children.length>limit)pane.firstChild.remove();}
+function scroll(session){const pane=session.view;if($('autoscroll').checked&&session.id===activeId)output.scrollTop=output.scrollHeight;const limit=Number(preferencesForSession(session).scrollback)||5000;while(pane.children.length>limit)pane.firstChild.remove();}
 function updateCounts(){const s=current();$('counts').textContent=s?`${s.images} image${s.images===1?'':'s'} · ${s.loaded} loaded${s.failed?' · '+s.failed+' failed':''}`:'0 images';}
 function renderStatus(message){$('status').textContent=message;$('status').dataset.active=String(message!=='Ready.'&&message!=='');}
 function showStatus(session,message){session.status=message;if(session.id===activeId)renderStatus(message);}
@@ -218,7 +232,7 @@ function saveSettings(){if(test)return;send('settings:save|'+JSON.stringify(Beip
 function configureRules(session){session.ruleRuntime?.stop();session.ruleRuntime=null;session.ruleEngine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers});if(([...state.aliases,...state.triggers].some(r=>r.enabled!==false&&r.matchType==='regex')||state.triggers.some(r=>r.enabled!==false&&r.captureUntil))&&window.BeipRegexRules){session.ruleRuntime=new BeipRegexRules.Runtime(message=>showStatus(session,message));session.ruleRuntime.start({aliases:state.aliases,triggers:state.triggers});}}
 function rebuildRules(){ruleEngine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers});for(const s of sessions.values())if(s.kind==='world')configureRules(s);}
 function applyPreferences(){
- const p=state.preferences;document.documentElement.dataset.theme=p.theme==='light'?'light':'dark';document.documentElement.style.setProperty('--output-size',Math.max(10,Math.min(30,Number(p.fontSize)||13))+'px');document.documentElement.style.setProperty('--output-font',p.fontFamily==='system'?'"Segoe UI",sans-serif':'"Courier New",Consolas,monospace');document.documentElement.style.setProperty('--input-height',Math.max(40,Math.min(300,Number(p.inputHeight)||40))+'px');$('inputSplitter').setAttribute('aria-valuenow',String(Math.max(40,Math.min(300,Number(p.inputHeight)||40))));
+ const p=preferencesForSession();for(const session of sessions.values()){const own=preferencesForSession(session);session.view.style.fontSize=own.fontSize+'px';session.view.style.fontFamily=own.fontFamily==='system'?'Segoe UI,sans-serif':'Courier New,Consolas,monospace';}document.documentElement.dataset.theme=p.theme==='light'?'light':'dark';document.documentElement.style.setProperty('--output-size',Math.max(10,Math.min(30,Number(p.fontSize)||13))+'px');document.documentElement.style.setProperty('--output-font',p.fontFamily==='system'?'"Segoe UI",sans-serif':'"Courier New",Consolas,monospace');document.documentElement.style.setProperty('--input-height',Math.max(40,Math.min(300,Number(p.inputHeight)||40))+'px');$('inputSplitter').setAttribute('aria-valuenow',String(Math.max(40,Math.min(300,Number(p.inputHeight)||40))));
 }
 function option(select,value,label){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}
 function renderProfileChoices(){
@@ -237,6 +251,7 @@ function renderProfileLists(){
 }
 function markProfileSelection(kind,id){for(const row of $('profilesDialog').querySelectorAll('.profile-row[data-profile-id]'))row.classList.toggle('selected',row.dataset.profileKind===kind&&row.dataset.profileId===id);}
 function openEditor(kind,profile=null){
+ profilePreferencesDraft=BeipProfilePreferences.normalizeOverrides(profile?.preferences);
  $('profileKind').value=kind;$('profileId').value=profile?.id||'';$('profileEditorTitle').textContent=(profile?'Edit ':'New ')+(kind==='world'?'world':'character');$('profileName').value=profile?.name||'';$('profileError').textContent='';$('worldFields').hidden=kind!=='world';$('characterFields').hidden=kind!=='character';markProfileSelection(kind,profile?.id||'');
  $('profileInfo').value=kind==='world'?profile?.notes||'':'';
  $('profileHost').value=profile?.host||$('host').value;$('profilePort').value=profile?.port||$('port').value;$('profileTLS').checked=profile?.tls??$('tls').checked;$('profileAuto').checked=!!profile?.autoConnect;$('characterOpen').checked=!!profile?.openAtStartup;$('characterAuto').checked=!!profile?.autoConnect;
@@ -247,14 +262,14 @@ function openEditor(kind,profile=null){
 }
 function saveProfile(event){
  event.preventDefault();const kind=$('profileKind').value,id=$('profileId').value||newId(kind==='world'?'w':'c'),name=$('profileName').value.trim();if(!name){$('profileError').textContent='Enter a display name.';return;}
- if(kind==='world'){const host=$('profileHost').value.trim(),port=$('profilePort').value.trim();if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('profileError').textContent='Enter a valid server address and port.';return;}const p={...state.worlds.find(x=>x.id===id),id,name,notes:$('profileInfo').value,host,port,tls:$('profileTLS').checked,autoConnect:$('profileAuto').checked};const index=state.worlds.findIndex(x=>x.id===id);if(index>=0)state.worlds[index]=p;else state.worlds.push(p);}
+ if(kind==='world'){const host=$('profileHost').value.trim(),port=$('profilePort').value.trim();if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('profileError').textContent='Enter a valid server address and port.';return;}const p={...state.worlds.find(x=>x.id===id),id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),notes:$('profileInfo').value,host,port,tls:$('profileTLS').checked,autoConnect:$('profileAuto').checked};const index=state.worlds.findIndex(x=>x.id===id);if(index>=0)state.worlds[index]=p;else state.worlds.push(p);}
  else{const worldId=$('profileWorld').value,loginName=$('profileLoginName').value.trim(),password=$('profilePassword').value,remember=$('profileRememberSecret').checked;
   if(!state.worlds.some(x=>x.id===worldId)){$('profileError').textContent='Choose a saved world first.';return;}
   if(/[\x00-\x1f\x7f]/.test(loginName)||new TextEncoder().encode(loginName).length>128){$('profileError').textContent='Use a single-line login name of at most 128 bytes.';return;}
   if($('profileAutoLogin').checked&&!loginName){$('profileError').textContent='Enter a login name for automatic login.';return;}
   if(password&&!remember){$('profileError').textContent='Check Remember password to save the entered password, or clear the field.';return;}
   if(remember&&(!password||/[\x00-\x1f\x7f]/.test(password)||new TextEncoder().encode(password).length>2048)){$('profileError').textContent='Enter a single-line password of at most 2048 bytes.';return;}
-  const p={...state.characters.find(x=>x.id===id),id,name,worldId,loginName,autoLogin:$('profileAutoLogin').checked,allowPlainLogin:$('profileAllowPlainLogin').checked,openAtStartup:$('characterOpen').checked,autoConnect:$('characterAuto').checked};const index=state.characters.findIndex(x=>x.id===id);if(index>=0)state.characters[index]=p;else state.characters.push(p);
+  const p={...state.characters.find(x=>x.id===id),id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),worldId,loginName,autoLogin:$('profileAutoLogin').checked,allowPlainLogin:$('profileAllowPlainLogin').checked,openAtStartup:$('characterOpen').checked,autoConnect:$('characterAuto').checked};const index=state.characters.findIndex(x=>x.id===id);if(index>=0)state.characters[index]=p;else state.characters.push(p);
   if(remember)send('secret:save|'+id+'|'+encode64(password));$('profilePassword').value='';
  }
  saveSettings();renderProfileChoices();if(kind==='world'){$('world').value=id;updateCharacterChoices();}renderProfileLists();const saved=kind==='world'?state.worlds.find(x=>x.id===id):state.characters.find(x=>x.id===id);if($('profilesDialog').open)openEditor(kind,saved);else $('profileEditor').close();
@@ -343,5 +358,5 @@ $('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:s
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,appendText,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,rebuildRules,startLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,appendText,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});

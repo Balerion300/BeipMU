@@ -6,15 +6,11 @@ const splitter=byId('inputSplitter');
 let dragging=false,startY=0,startHeight=40;
 const clamp=value=>Math.max(40,Math.min(300,Math.round(Number(value)||40)));
 function setHeight(value,persist){
- const height=clamp(value);
- api().state.preferences.inputHeight=height;
- document.documentElement.style.setProperty('--input-height',height+'px');
- splitter.setAttribute('aria-valuenow',String(height));
- if(persist)api().saveSettings();
+ api().setInputHeight(clamp(value),persist);
 }
 splitter.addEventListener('pointerdown',event=>{
  if(event.button!==0)return;
- dragging=true;startY=event.clientY;startHeight=clamp(api().state.preferences.inputHeight);
+ dragging=true;startY=event.clientY;startHeight=clamp(api().preferencesForSession().inputHeight);
  splitter.focus();
  splitter.setPointerCapture(event.pointerId);event.preventDefault();
 });
@@ -24,7 +20,7 @@ splitter.addEventListener('pointerup',finishDrag);
 splitter.addEventListener('pointercancel',finishDrag);
 splitter.addEventListener('lostpointercapture',finishDrag);
 splitter.addEventListener('keydown',event=>{
- let height=clamp(api().state.preferences.inputHeight);
+ let height=clamp(api().preferencesForSession().inputHeight);
  if(event.key==='ArrowUp')height+=4;
  else if(event.key==='ArrowDown')height-=4;
  else if(event.key==='Home')height=40;

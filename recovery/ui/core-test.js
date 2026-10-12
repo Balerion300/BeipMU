@@ -306,6 +306,7 @@ window.BeipCoreTest=async function(config){
   await wait(()=>window.BeipDockPanels.floatingStatus(app.sessions.get(closed)).some(item=>item.type==='history'&&item.ready&&item.rendered),'closing session floating window');
   const closingSession=app.sessions.get(closed);
   app.closeSession(closed);await new Promise(r=>setTimeout(r,200));result.macros=true;result.closedIsolation=!app.sessions.has(closed)&&app.sessions.get(survivor)?.connected;result.floatingSessionCleanup=window.BeipDockPanels.floatingStatus(closingSession).length===0;app.selectSession(survivor);
+  result.parity=await window.BeipParityFixture.run(app);
   result.classicImport=await window.BeipClassicImportFixture.run();
   send('testresult:'+JSON.stringify(result));
  }catch(error){errors.push(String(error.message||error),...(window.BeipTestErrors||[]));send('testresult:'+JSON.stringify({phase:config.phase,errors,alpha:{text:alpha?.view.textContent},beta:{text:beta?.view.textContent}}));}

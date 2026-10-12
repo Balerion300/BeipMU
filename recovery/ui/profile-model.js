@@ -3,10 +3,12 @@
  const macros=typeof module==='object'&&module.exports?require('./macros.js'):root.BeipMacros;
  const mapper=typeof module==='object'&&module.exports?require('./mapper.js'):root.BeipMapper;
  const shortcuts=typeof module==='object'&&module.exports?require('./shortcut-model.js'):root.BeipShortcuts;
- const api=factory(macros,mapper,shortcuts);
+ const preferences=typeof module==='object'&&module.exports?require('./profile-preferences.js'):root.BeipProfilePreferences;
+ const rules=typeof module==='object'&&module.exports?require('./rules.js'):root.BeipRules;
+ const api=factory(macros,mapper,shortcuts,preferences,rules);
  if(typeof module==='object'&&module.exports)module.exports=api;
  if(root)root.BeipProfiles=api;
-})(typeof globalThis==='object'?globalThis:this,function(macros,mapper,shortcuts){
+})(typeof globalThis==='object'?globalThis:this,function(macros,mapper,shortcuts,profilePreferences,ruleModel){
  'use strict';
  const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40});
  const ID=/^[A-Za-z0-9_-]{1,64}$/;
@@ -34,7 +36,7 @@
    if(!item||typeof item!=='object'||!ID.test(item.id))return null;
    const name=text(item.name,80).trim(),host=text(item.host,253).trim(),port=String(item.port??'').trim();
    if(!name||!host||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return null;
-   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384)};
+   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const worldIds=new Set(worlds.map(x=>x.id));
   const characters=unique(array(raw.characters,512).map(item=>{
@@ -42,7 +44,7 @@
    const name=text(item.name,80).trim();if(!name)return null;
    const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
    return {id:item.id,worldId:item.worldId,name,loginName,autoLogin:bool(item.autoLogin)&&!!loginName,
-    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384)};
+    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const characterIds=new Map(characters.map(x=>[x.id,x]));
   const source=raw.preferences&&typeof raw.preferences==='object'?raw.preferences:{};
@@ -58,12 +60,14 @@
    inputHeight:number(source.inputHeight,DEFAULTS.inputHeight,40,300)
   };
   function rules(input,kind){
-   return unique(array(input,128).map(item=>{
+   const sanitized=unique(ruleModel.normalizeHierarchy(array(input,128)).items.map(item=>{
     if(!item||typeof item!=='object'||!ID.test(item.id))return null;
+    if(item.parentId&&!ID.test(item.parentId))return null;
     const scope=scopeOf(item.scope,worldIds,characterIds),match=text(item.match,128);
-    if(!scope||!match)return null;
+    if(!scope||(!match&&!item.folder))return null;
     const result={id:item.id,enabled:item.enabled!==false,scope,match,matchType:['simple','exact','wildcard','regex'].includes(item.matchType)?item.matchType:'simple',matchCase:bool(item.matchCase),stopProcessing:bool(item.stopProcessing)};
     result.description=text(item.description,80);
+    result.parentId=ID.test(item.parentId)?item.parentId:'';result.folder=bool(item.folder);result.processChildren=item.processChildren!==false;
     if(kind==='alias')result.replacement=text(item.replacement,65536);
     else{
      result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);
@@ -83,6 +87,7 @@
     }
     return result;
    }).filter(Boolean));
+   return ruleModel.normalizeHierarchy(sanitized).items;
   }
   const macroItems=unique(array(raw.macros,macros.MAX_MACROS).map(item=>{
    if(!item||typeof item!=='object'||!ID.test(item.id))return null;

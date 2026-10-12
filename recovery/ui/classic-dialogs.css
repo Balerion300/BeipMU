@@ -33,6 +33,14 @@
 .classic-dialog .classic-error{min-height:17px;margin:0;color:#a22;font-size:12px}
 .classic-dialog .classic-footer{height:32px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 4px}
 .classic-dialog .classic-list-actions,.classic-dialog .classic-save-actions{display:flex;align-items:center;gap:5px}
+.classic-dialog .classic-tree-item[data-folder=true]::before{content:"▣";color:#b38700;font-size:14px}
+.classic-dialog .classic-tree-item[data-enabled=false]{opacity:.55}
+.classic-dialog .classic-hierarchy-controls{display:flex;flex-direction:column;gap:5px}
+.classic-dialog.classic-aliases{height:min(555px,calc(100vh - 24px));width:min(800px,calc(100vw - 20px))}
+.classic-dialog.classic-aliases .classic-workspace{grid-template-columns:35% 65%}
+.classic-dialog.classic-aliases .classic-footer,.classic-dialog.classic-triggers .classic-footer{height:60px;flex-wrap:wrap}
+.classic-dialog.classic-aliases .classic-list-actions,.classic-dialog.classic-triggers .classic-list-actions{flex-wrap:wrap}
+.classic-dialog.classic-aliases .classic-workspace,.classic-dialog.classic-triggers .classic-workspace{height:calc(100% - 88px)}
 .classic-dialog .classic-list-actions{width:45%}
 .classic-dialog .classic-list-actions button{flex:1;min-width:0}
 .classic-dialog .classic-save-actions button{min-width:72px}
