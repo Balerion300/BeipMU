@@ -1,4 +1,4 @@
-.classic-dialog.classic-triggers{width:min(800px,calc(100vw - 20px));height:min(580px,calc(100vh - 24px))}
+.classic-dialog.classic-triggers{width:min(800px,calc(100vw - 20px));height:min(740px,calc(100vh - 24px))}
 .classic-triggers .classic-workspace{grid-template-columns:35% 65%}
 .classic-triggers .classic-editor{gap:5px}
 .classic-triggers .classic-trigger-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -13,3 +13,9 @@
 .classic-triggers .classic-trigger-panel input[type=color]{height:28px;padding:1px 3px}
 .classic-triggers .classic-trigger-panel .classic-note{line-height:1.35}
 @media(max-width:650px){.classic-dialog.classic-triggers{height:calc(100vh - 16px);width:calc(100vw - 12px)}.classic-triggers .classic-workspace{grid-template-columns:1fr}.classic-triggers .classic-trigger-pair{grid-template-columns:1fr}}
+
+.classic-triggers .classic-editor>.classic-field:not(.classic-trigger-cooldown){display:grid;grid-template-columns:70px 1fr;align-items:center}
+.classic-triggers .classic-trigger-cooldown{display:flex;flex-direction:row;align-items:center;max-width:none}
+.classic-triggers .classic-trigger-cooldown input{width:68px;margin-left:8px}
+.classic-triggers .classic-trigger-panel [data-audio-status]:empty{display:none}
+.classic-triggers .classic-trigger-panel [data-audio-status]{margin:0}

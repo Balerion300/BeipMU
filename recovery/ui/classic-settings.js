@@ -40,7 +40,7 @@ function group(category,title,...nodes){
  panels.get(category).append(wrapper);
 }
 function note(text){const p=document.createElement('p');p.className='classic-settings-note';p.textContent=text;return p;}
-group('general','Windows',fields.mediaEnabled,note('Sound playback is an application preference.'));
+group('general','Windows',fields.mediaEnabled,note('Sound and speech playback is an application preference.'));
 group('theme','Display',fields.theme,note('The selected theme applies to output and command windows.'));
 const heightLabel=document.createElement('label');heightLabel.className='classic-settings-number';heightLabel.textContent='Command window height';
 const height=document.createElement('input');height.type='number';height.min='40';height.max='300';height.step='1';height.id='classicInputHeight';height.setAttribute('aria-label','Command window height in pixels');heightLabel.append(height);

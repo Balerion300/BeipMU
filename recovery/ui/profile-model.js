@@ -44,7 +44,7 @@
    const name=text(item.name,80).trim();if(!name)return null;
    const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
    return {id:item.id,worldId:item.worldId,name,loginName,autoLogin:bool(item.autoLogin)&&!!loginName,
-    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),preferences:profilePreferences.normalizeOverrides(item.preferences)};
+    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const characterIds=new Map(characters.map(x=>[x.id,x]));
   const source=raw.preferences&&typeof raw.preferences==='object'?raw.preferences:{};
@@ -68,8 +68,13 @@
     const result={id:item.id,enabled:item.enabled!==false,scope,match,matchType:['simple','exact','wildcard','regex'].includes(item.matchType)?item.matchType:'simple',matchCase:bool(item.matchCase),stopProcessing:bool(item.stopProcessing)};
     result.description=text(item.description,80);
     result.parentId=ID.test(item.parentId)?item.parentId:'';result.folder=bool(item.folder);result.processChildren=item.processChildren!==false;
-    if(kind==='alias')result.replacement=text(item.replacement,65536);
+    result.phase=item.phase==='after'?'after':'before';
+    if(kind==='alias'){result.replacement=text(item.replacement,65536);result.expandVariables=bool(item.expandVariables);}
     else{
+     result.awayCondition=['away','present'].includes(item.awayCondition)?item.awayCondition:'';result.awayOnce=bool(item.awayOnce);result.oncePerLine=item.oncePerLine!==false;
+     result.sendExpandVariables=bool(item.sendExpandVariables);result.filterExpandVariables=bool(item.filterExpandVariables);
+     if(item.sound&&typeof item.sound==='object')result.sound={enabled:bool(item.sound.enabled),path:text(item.sound.path,1024)};
+     if(item.speech&&typeof item.speech==='object')result.speech={enabled:bool(item.speech.enabled),wholeLine:bool(item.speech.wholeLine),text:text(item.speech.text,2048)};
      result.lineStart=bool(item.lineStart);result.lineEnd=bool(item.lineEnd);result.wholeWord=bool(item.wholeWord);
      result.scriptName=typeof item.scriptName==='string'&&/^[A-Za-z_$][\w$]{0,79}$/.test(item.scriptName)?item.scriptName:'';
      result.sendText=text(item.sendText,4096);result.gag=bool(item.gag);result.logGag=bool(item.logGag);

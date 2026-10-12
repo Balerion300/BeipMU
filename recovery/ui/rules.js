@@ -190,6 +190,33 @@
     if (commands.length > limits.maxCommands || commands.some(command => command.length > limits.maxCommand)) return null;
     return commands;
   }
+  function normalizeVariables(input) {
+    const values = Object.create(null); let total = 0;
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return values;
+    for (const [name, value] of Object.entries(input).slice(0, 128)) {
+      if (!name || name.length > 128 || /[=\r\n\x00]/.test(name) || typeof value !== 'string' || value.length > 4096 || /[\r\n\x00]/.test(value)) continue;
+      if ((total += name.length + value.length) > 65536) break;
+      values[name] = value;
+    }
+    return values;
+  }
+  // Match original FindStringReplacement: case sensitive, nonrecursive, and
+  // stop at the first unknown variable (rather than expanding later tokens).
+  function expandVariables(template, variables, maxLength = 65536) {
+    let text = String(template), start = text.indexOf('%');
+    const values = normalizeVariables(variables);
+    while (start >= 0) {
+      const end = text.indexOf('%', start + 1);
+      if (end < 0) break;
+      const name = text.slice(start + 1, end);
+      if (!Object.hasOwn(values, name)) break;
+      const replacement = values[name];
+      if (text.length - (end + 1 - start) + replacement.length > maxLength) return null;
+      text = text.slice(0, start) + replacement + text.slice(end + 1);
+      start = text.indexOf('%', start + replacement.length);
+    }
+    return text.length <= maxLength ? text : null;
+  }
   function makeId(rule, index, prefix) { return rule.id == null ? prefix + index : String(rule.id); }
   function createEngine(config) {
     config = config || {};
@@ -202,12 +229,13 @@
       const structural = tree.errors.filter(error => error !== 'Rule count limit reached.');
       diagnostics.push(...tree.errors);
       if (structural.length) return [];
-      return LEVELS.flatMap(level => tree.roots.filter(entry => levelOf(entry.rule) === level && inScope(entry.rule, context)));
+      const group = (level, after) => tree.roots.filter(entry => levelOf(entry.rule) === level && inScope(entry.rule, context) && (level === 'character' || (entry.rule.phase === 'after') === after));
+      return [...group('global', false), ...group('server', false), ...group('character', false), ...group('server', true), ...group('global', true)];
     }
     // Regex is only available to the bounded worker entry point. The default
     // synchronous engine intentionally ignores regex rules.
     const allowRegex = config.allowRegex === true && config.workerEngine === true;
-    const lastFire = new Map(), firedOnce = new Set(), captures = new Map();
+    const lastFire = new Map(), firedOnce = new Set(), captures = new Map(), awayStates = new Map();
     function contextKey(context) { return [context.serverId || '', context.characterId || ''].join('\u0000'); }
 
     function expandCommand(input, scope) {
@@ -224,9 +252,12 @@
         if (rule.folder) { if (rule.processChildren !== false) visit(entry.children); continue; }
         const replacement = typeof rule.replacement === 'string' ? rule.replacement : '';
         if (!rule.match) continue;
-        let from = 0, hit, thisRuleMatched = false;
+        let from = 0, hit, thisRuleMatched = false, sawEmpty = false;
         while ((hit = findMatch(text, rule, from, limits, allowRegex, diagnostics))) {
-          const inserted = interpolate(replacement, hit.captures);
+          if (hit.start === hit.end) { if (sawEmpty) break; sawEmpty = true; }
+          let inserted = interpolate(replacement, hit.captures);
+          if (rule.expandVariables) inserted = expandVariables(inserted, scope?.variables, limits.maxCommand * limits.maxCommands);
+          if (inserted === null) { diagnostics.push('Alias variable expansion exceeds length limit.'); break; }
           const next = text.slice(0, hit.start) + inserted + text.slice(hit.end);
           if (next.length > limits.maxCommand * limits.maxCommands) {
             diagnostics.push('Alias output exceeds length limit.');
@@ -253,10 +284,15 @@
       if (typeof input !== 'string' || input.length > limits.maxLine)
         return { text: input, actions, matches, gagged: false, logGagged: false,
           diagnostics: ['Line exceeds rule processing limit.'] };
-      const context = scope || {};
+      const context = { ...(scope || {}), variables: normalizeVariables(scope?.variables) };
       const now = Number.isFinite(nowMs) ? nowMs : Date.now();
       let text = input, gagged = false, logGagged = false;
       const captureKey = contextKey(context);
+      let awayState = awayStates.get(captureKey);
+      if (!awayState || awayState.epoch !== context.awayEpoch || awayState.away !== !!context.away) {
+        awayState = { epoch: context.awayEpoch, away: !!context.away, notified: false };
+        awayStates.set(captureKey, awayState);
+      }
       let activeCapture = captures.get(captureKey);
       if (activeCapture && (now - activeCapture.startedAt >= limits.maxCaptureMs ||
           activeCapture.lines >= limits.maxCaptureLines)) {
@@ -279,12 +315,16 @@
         const rule = entry.rule, id = makeId(rule, entry.index, 'trigger-');
         if (rule.enabled === false) continue;
         if (rule.folder) { if (rule.processChildren !== false) visit(entry.children); continue; }
+        if (rule.awayCondition === 'away' && (!context.away || rule.awayOnce && awayState.notified) || rule.awayCondition === 'present' && context.away) continue;
         const key = [id, context.serverId || '', context.characterId || ''].join('\u0000');
         if (rule.once && firedOnce.has(key)) continue;
         const cooldown = Math.max(0, Math.min(Number(rule.cooldownMs) || 0, 86400000));
         if (cooldown && lastFire.has(key) && now - lastFire.get(key) < cooldown) continue;
-        const hit = findMatch(text, rule, 0, limits, allowRegex, diagnostics);
-        if (!hit) continue;
+        let from = 0, hit, thisRuleMatched = false, occurrences = 0, sawEmpty = false;
+        while ((hit = findMatch(text, rule, from, limits, allowRegex, diagnostics))) {
+        if (hit.start === hit.end) { if (sawEmpty) break; sawEmpty = true; }
+        thisRuleMatched = true;
+        if (++occurrences > limits.maxReplacements || actions.length >= limits.maxActions) { diagnostics.push('Trigger match/action limit reached.'); break; }
         matches.push({ triggerId: id, start: hit.start, end: hit.end, captures: hit.captures.slice() });
         const detail = { triggerId: id };
         if (rule.highlight && typeof rule.highlight === 'object') {
@@ -297,10 +337,20 @@
         if (rule.gag) gagged = true;
         if (rule.logGag) logGagged = true;
         if (typeof rule.sendText === 'string' && rule.sendText) {
-          const command = interpolate(rule.sendText, hit.captures);
-          if (command.length <= limits.maxCommand && !/[\r\n]/.test(command))
+          let command = interpolate(rule.sendText, hit.captures);
+          if (rule.sendExpandVariables) command = expandVariables(command, context.variables, limits.maxCommand);
+          if (command !== null && command.length <= limits.maxCommand && !/[\r\n]/.test(command)) {
             actions.push({ type: 'command', text: command, ...detail });
-          else diagnostics.push('Trigger command exceeds one-line limit.');
+            // A following rule on this same line sees a successful original
+            // /set or /unset action; the caller later persists those effects.
+            const set = /^\/set\s+([^=]+)=([^\r\n]*)$/i.exec(command);
+            const unset = /^\/unset\s+(.+)$/i.exec(command);
+            if (set) {
+              const candidate = Object.assign(Object.create(null), context.variables, { [set[1]]: set[2] });
+              const normalized = normalizeVariables(candidate);
+              if (Object.hasOwn(normalized, set[1]) && Object.keys(candidate).length === Object.keys(normalized).length) context.variables = normalized;
+            } else if (unset) delete context.variables[unset[1]];
+          } else diagnostics.push('Trigger command exceeds one-line limit.');
         }
         if (rule.spawnTitle && !spawnedThisLine && actions.length < limits.maxActions) {
           spawnedThisLine = true;
@@ -323,19 +373,36 @@
           }
         }
         if (rule.notify) actions.push({ type: 'notification', text, ...detail });
+        if (rule.sound?.enabled && typeof rule.sound.path === 'string') {
+          const path = expandVariables(rule.sound.path, context.variables, 1024);
+          if (path) actions.push({ type: 'sound', path, ...detail });
+        }
+        if (rule.speech?.enabled) {
+          const spoken = rule.speech.wholeLine ? text : interpolate(rule.speech.text || '', hit.captures);
+          if (spoken && spoken.length <= 2048) actions.push({ type: 'speech', text: spoken, ...detail });
+          else if (spoken) diagnostics.push('Speech text exceeds the 2048-character limit.');
+        }
         if (typeof rule.scriptName === 'string' && rule.scriptName) {
           if (!/^[A-Za-z_$][\w$]{0,79}$/.test(rule.scriptName))diagnostics.push('Invalid trigger script name in rule ' + id + '.');
           else if(actions.length < limits.maxActions)
             actions.push({ type: 'script', name: rule.scriptName, text, ranges: hit.ranges.slice(0, 32), ...detail });
         }
+        let nextFrom = hit.end;
         if (typeof rule.filterText === 'string') {
-          const replacement = interpolate(rule.filterText, hit.captures);
-          const next = text.slice(0, hit.start) + replacement + text.slice(hit.end);
-          if (next.length <= limits.maxLine) text = next;
+          let replacement = interpolate(rule.filterText, hit.captures);
+          if (rule.filterExpandVariables) replacement = expandVariables(replacement, context.variables, limits.maxLine);
+          const next = replacement === null ? null : text.slice(0, hit.start) + replacement + text.slice(hit.end);
+          if (next !== null && next.length <= limits.maxLine) { text = next; nextFrom = hit.start + replacement.length; }
           else diagnostics.push('Filtered line exceeds length limit.');
         }
         if (rule.once) firedOnce.add(key);
         if (cooldown) lastFire.set(key, now);
+        if (rule.awayOnce) awayState.notified = true;
+        if (rule.oncePerLine !== false || rule.matchType === 'exact' || rule.matchType === 'wildcard') break;
+        from = nextFrom + (hit.start === hit.end ? 1 : 0);
+        if (from > text.length) break;
+        }
+        if (!thisRuleMatched) continue;
         if (rule.processChildren !== false) visit(entry.children);
         if (rule.stopProcessing) stopped = true;
       } }
@@ -348,5 +415,5 @@
     }
     return { expandCommand, processLine, cancelCapture };
   }
-  return { createEngine, interpolate, hierarchy, normalizeHierarchy, DEFAULT_LIMITS };
+  return { createEngine, interpolate, expandVariables, normalizeVariables, hierarchy, normalizeHierarchy, DEFAULT_LIMITS };
 });

@@ -67,3 +67,17 @@ Recovery 0.8 keeps that category layout and adds an explicit scope selector. Its
 world inheritance and retained override drafts are recovery adaptations. Caption
 and group dragging now supplement the existing edge chooser; arbitrary original
 split layouts and native cross-window dragging remain incomplete.
+
+
+## 0.9 original automation comparison
+
+Original 4.335 was opened directly on 2026-10-12. Tools > Triggers showed separate
+Once per line, Only when Away/Present, Once, cooldown, and child-trigger controls.
+The Activity Sound sample uses `(.+)`, Once per line, Away and the Sound tab.
+The Sound tab contains Play Sound, Sound File, Browse and Play, then Speak,
+Say whole line and Say only this. Its sample path is Windows Media chord.wav.
+The original also advertises SAPI XML and the General settings offer a Voice
+selector. Recovery mirrors the supported Sound controls and conditions, with
+plain-text/default-voice limits stated in the dialog and feature inventory.
+`src/Connection.cpp`, `src/FindString.cpp`, `src/PropFuncs.cpp` and `src/Root.prp`
+provide the companion evidence for traversal, variables and away-once semantics.

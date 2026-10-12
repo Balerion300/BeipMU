@@ -1,7 +1,7 @@
 # BeipMU recovery feature inventory
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the 0.8 recovery worktree (`recovery/`). The original 4.335 executable was
+from the 0.9 recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.
 "Verified" below means focused tests or an app fixture passed for the stated
 subset. Version labels identify the verified milestone; they do not mean full
@@ -14,8 +14,8 @@ upstream compatibility.
 | Pueblo/MXP | Pueblo plus MXP support, clickable commands, images and text formatting | Preview 0.3 retains the documented Pueblo and explicit MXP subset, with parser and local-server tests. Full MXP remains open. |
 | World profiles | Server and character entries, connect strings, notes, per-profile rules and logging | **0.3 app fixture verified:** saved world/character labels, startup choices, settings persistence, scoped rules, and character-bound login with a password kept in Windows Credential Manager. The test-mode vault is memory-only; wrong-character and unapproved plain-TCP login attempts were rejected. **0.5 app fixture verified:** one character's notes saved and reloaded without appearing in another's pane. Original connect templates and complete per-profile behavior remain open. |
 | TLS | Secure server connections | **0.3 full-app fixture verified:** Schannel transport with system trust and hostname checks. Local trusted, untrusted and wrong-host certificate tests also passed. |
-| Aliases | Ordered global/server/character aliases, simple or regex replacement, capture substitutions, multi-line output, folders, variables, processing options | **0.3 app fixture verified subset:** ordered scopes, simple/wildcard and worker-isolated regex captures, `\0`/`\1` replacement, multi-line output and bounded command expansion. 0.8 adds bounded folders and children; variables and complete internal-command ordering remain open. |
-| Triggers | Ordered global/server/character triggers, regex or simple matching, appearance, filtering, gagging, send, spawn, toast, sound, speech, scripts, children and multi-line capture | **0.3 app fixture verified subset:** completed-line simple/wildcard and worker-isolated regex matching, captures, commands, highlight, gag, spawn and notification actions. **0.5 app fixture verified:** original-style editor saves a description without losing enabled/copy/send/highlight fields; grouped spawn, capture-until, filtered spawn text, move/copy, log-gag and manual capture cancellation work in the supported subset. 0.8 adds bounded child processing and folder enablement; focus conditions, sound/speech and advanced appearance remain open. |
+| Aliases | Ordered global/server/character aliases, simple or regex replacement, capture substitutions, multi-line output, folders, variables, processing options | **0.3 app fixture verified subset:** ordered scopes, simple/wildcard and worker-isolated regex captures, `\0`/`\1` replacement, multi-line output and bounded command expansion. 0.9 preserves nested imported trees and pre/post scope ordering, and adds character variables with selected expansion. Complete original internal-command ordering remains open. |
+| Triggers | Ordered global/server/character triggers, regex or simple matching, appearance, filtering, gagging, send, spawn, toast, sound, speech, scripts, children and multi-line capture | **0.3 app fixture verified subset:** completed-line simple/wildcard and worker-isolated regex matching, captures, commands, highlight, gag, spawn and notification actions. **0.5 app fixture verified:** original-style editor saves a description without losing enabled/copy/send/highlight fields; grouped spawn, capture-until, filtered spawn text, move/copy, log-gag and manual capture cancellation work in the supported subset. 0.9 adds Away/Present and once-per-away conditions, repeated matches, native WAV/speech and nested Config import. Multiline child windows, advanced appearance and complete original action compatibility remain open. |
 | Spawn windows | Named panes, capture-until, grouped tabs, docking/floating | **0.5 app fixture verified subset:** named and grouped streams appear in a session dock; a WHO-like start/body/end sequence moves to the grouped stream, then following output resumes in the main view. The copy option retains a matched line in main output. 0.6 adds native floating panes; full 0.8 adds caption and group dragging across four edges. |
 | Keyboard shortcuts and macros | Remappable application shortcuts and per-world macros | **0.3 app fixture verified subset:** scoped keyboard macros and command history. **0.5 app fixture verified:** session history pane, entry recall, and Ctrl+Down saving a draft without sending it. 0.6 adds remapping of supported application actions. |
 | Logging | Manual and automatic per-character logs, date naming, log from scrollback | **0.3 app fixture verified subset:** start/stop session logs, local log files and transcript export. **0.5 app fixture verified:** restarting a log from the beginning includes existing scrollback; captured lines marked log-gag are absent. Original per-character naming and full lifecycle options remain open. |
@@ -26,7 +26,7 @@ upstream compatibility.
 | Stat windows | Text/range/progress displays and updates | **0.3 app fixture verified subset:** `Beip.Stats` text, range and progress display. Richer original layout behavior remains open. |
 | Client.Media | Default/Load/Play/Stop; name-based sound playback | **Partial browser fixture verified:** incoming `Default` and `Load` messages set the media base and cache a name while playback stays disabled by default. Isolated module tests cover `Play`, `Stop`, volume and loops. Browser audio playback still needs checking. |
 | Beip.Tilemap | Info/data updates with hex and base64 encodings and map windows | **0.3 app fixture verified subset:** incoming Info/Data loads an HTTP tileset and renders a two-tile red/blue canvas in the browser; decoded tiles and canvas dimensions are asserted and the screenshot was inspected. Isolated tests cover `hex_4`, `hex_8`, `base64_8`, `zbase64_8`, partial updates and safety limits. Original maximum map size is reduced. |
-| Media and accessibility | Sounds, speech, avatars, web views and rich display options | **0.3 app fixture verified subset:** inline images and a GMCP line avatar load and display in the browser. Speech, web views, richer display options and actual audio playback remain open. |
+| Media and accessibility | Sounds, speech, avatars, web views and rich display options | **0.3 app fixture verified subset:** inline images and a GMCP line avatar load and display in the browser. 0.9 adds local WAV playback and plain-text Windows speech; voice selection, SAPI XML, web views and richer display options remain open. |
 
 The 0.5 packaged-app fixture in `tests/session_test.py` passed on a fresh launch
 and a persisted relaunch. It runs two independent local
@@ -81,7 +81,7 @@ patterns. Rule order is global, server, then character, preserving order within
 each scope. The 0.3 app runs regular-expression rules in a dedicated worker
 through `BeipRegexRules.Runtime`, which stops jobs that exceed 500 ms. The
 default synchronous engine ignores regex rules. The original also permits
-configurable pre/post ordering, which remains open; 0.8 adds bounded nested processing.
+configurable pre/post ordering, implemented in 0.9; 0.8 adds bounded nested processing.
 
 Alias fields include `replacement`, `matchCase`, and `stopProcessing`. A
 replacement can use BeipMU's `\0` for the full match and `\1`–`\9` for captures.
@@ -222,3 +222,48 @@ imports leave these overrides out. Rich original font/color/output settings rema
 save/reopen/cancel, original import category selection, and invalid ancestry
 regressions passed. Browser pointer drag checks and Pueblo/MXP packaged image,
 command-link and WHO-spacing checks passed; screenshots were inspected.
+
+
+## Preview 0.9 automation compatibility
+
+Original source traversal is global pre, world pre, character, world post,
+global post. Root rules expose that choice; children always run in source order.
+Existing recovery rules retain their previous defaults. Imported original
+`AfterCount`, nested rules, disabled trigger folders and container activation
+are converted explicitly; child identities are remapped when the review is applied.
+Original multiline child windows and capture-only child subtrees are omitted and
+reported, because flattening them would change when commands fire.
+
+The trigger engine now supports every match or once per line, Away/Present and
+once while away (shared across qualifying rules for that connection, reset on
+activation changes). Away means another session is selected or the main WebView
+has lost focus. A floating pane does not currently make its owner present.
+The old recovery `once` setting still means once until the rule engine reloads.
+Character variables are case-sensitive; unknown names stop further expansion,
+and expanded values are not recursively expanded. Names are limited to 128
+characters, values to 4,096, and each character to 128 variables/64 KiB.
+Same-line `/set` and `/unset` effects feed following trigger actions; completed
+lines apply their effects in order before the next line takes its variable snapshot.
+Only these variable commands are processed internally from alias/trigger output;
+the full original command-processing pipeline remains incomplete.
+
+Trigger audio uses explicitly enabled application playback, reviewed configured
+local WAV paths, and plain-text SAPI. The native host checks registered session
+ownership and rejects network/device paths, invalid WAV headers and files over
+32 MiB. One WAV channel replaces the previous WAV; speech has eight owner voices,
+eight pending utterances per owner and 2,048 characters per utterance. Sound API
+acceptance and SAPI start/end events are observable; these do not establish what
+a listener heard through their selected output device. Browser Client.Media
+playback remains a separate, previously unverified claim.
+
+For 0.9, the full Windows/native-module build and packaged two-launch session
+fixture passed (`sessions-20261012-070038`). It verifies original nested imports
+and remapped identities through real session workers, pre/post ordering,
+character variables and wire isolation, Away context, Sound editor persistence
+and visibility, and actual WAV API acceptance plus matching SAPI queued/start/end
+events. Negative playback assertions wait for native completion barriers; delayed
+worker results and a final partial line cannot restart audio after disconnect.
+The Sound editor screenshot was inspected. The standalone native audio fixture
+also passed queue bounds and owner-specific stopping. Pueblo/MXP image, command
+link and WHO-spacing fixtures passed. TLS code is unchanged; no fresh complete
+TLS verification or subjective listening verification is claimed.

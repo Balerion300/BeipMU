@@ -22,7 +22,7 @@ window.BeipCoreTest=async function(config){
  let alpha,beta,persistenceLoaded=false,persistenceSaved=false;
  try{
   await wait(()=>app.settingsLoaded,'settings load');
-  persistenceLoaded=config.phase==='persist'&&app.state.worlds.some(w=>w.id==='coreworld')&&app.state.characters.some(c=>c.id==='corecharA'&&c.notes==='Core alpha note')&&app.state.preferences.fontSize===18&&app.state.preferences.inputHeight===120&&app.state.preferences.shortcuts?.clearInput==='Ctrl+K'&&app.state.aliases.length===2&&app.state.aliases.some(rule=>rule.description==='Core alias')&&app.state.triggers.some(rule=>rule.description==='Core trigger')&&app.state.triggers.some(rule=>rule.id==='corecapture'&&rule.captureUntil==='^WHO END$')&&app.state.triggers.some(rule=>rule.id==='corescripttrigger'&&rule.scriptName==='CoreTrigger')&&app.state.scriptEnabled===true&&app.state.scriptSource===scriptSource&&app.state.macros.some(macro=>macro.description==='Core macro');
+  persistenceLoaded=config.phase==='persist'&&app.state.worlds.some(w=>w.id==='coreworld')&&app.state.characters.some(c=>c.id==='corecharA'&&c.notes==='Core alpha note'&&c.variables?.automationSaved==='persisted')&&app.state.preferences.fontSize===18&&app.state.preferences.inputHeight===120&&app.state.preferences.shortcuts?.clearInput==='Ctrl+K'&&app.state.aliases.length===2&&app.state.aliases.some(rule=>rule.description==='Core alias')&&app.state.triggers.some(rule=>rule.description==='Core trigger')&&app.state.triggers.some(rule=>rule.id==='corecapture'&&rule.captureUntil==='^WHO END$')&&app.state.triggers.some(rule=>rule.id==='corescripttrigger'&&rule.scriptName==='CoreTrigger')&&app.state.scriptEnabled===true&&app.state.scriptSource===scriptSource&&app.state.macros.some(macro=>macro.description==='Core macro');
   const header=document.querySelector('.app-header');
   const initialLayout=!visible('connection')&&!visible('connectDialog')&&!visible('profilesDialog')&&(!header||getComputedStyle(header).display==='none')&&el('sessionTabs').getBoundingClientRect().top>=el('command').getBoundingClientRect().bottom&&el('command').getBoundingClientRect().top>=el('output').getBoundingClientRect().bottom;
   if(!initialLayout)throw Error('Classic output, input, and bottom tab layout is missing.');
@@ -299,6 +299,7 @@ window.BeipCoreTest=async function(config){
   result.scriptDebug=el('scriptDebugDialog').querySelector('.script-debug-entry')?.textContent.includes('Alpha');
   el('scriptDebugDialog').querySelector('[data-action="close"]').click();
   send('logstop|alpha');send('logstop|beta');await wait(()=>!alpha.logging&&!beta.logging,'logs stopped');
+  result.automation=await BeipAutomationFixture.run(app,config);
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
   app.selectSession(closed);
   const closingPane=await openDock('ui:window-input-history','Input History','history');

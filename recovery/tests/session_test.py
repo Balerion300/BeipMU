@@ -12,10 +12,12 @@ import threading
 import time
 import zlib
 import zipfile
+import wave
+import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.8" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.9" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -165,12 +167,16 @@ def run(phase):
                   "atlasExportPreview", "atlasExportPreviewed", "atlasReimport",
                   "floatingSessionCleanup", "shortcutRemap", "delayRouting", "smartPasteRouting"):
         assert result.get(check) is True, (check, result)
+    automation = result.get("automation") or {}
+    for check in ("variablesIsolated", "awayContext", "audioOptIn", "nativeSound", "nativeSpeech", "soundEditor", "audioEpochIsolation", "audioDisabled"):
+        assert automation.get(check) is True, (check, automation)
+    assert (OUT / "automation-sound.png").stat().st_size > 1000
     parity = result.get("parity") or {}
     for check in ("hierarchyEngine", "hierarchyWorker", "hierarchyEditor", "hierarchyTreeActions", "hierarchyTriggerEditor", "scopedSettings", "scopedSettingsCancel", "scopedRuntime", "restorationSaved"):
         assert parity.get(check) is True, (check, parity)
     imported = result.get("classicImport") or {}
     for check in ("configPreview", "reviewBeforeApply", "credentialsOmitted", "scriptOmitted",
-                  "configApplied", "atlasPreview", "zipDecompression", "atlasApplied", "restorationSaved"):
+                  "configApplied", "nestedConfigApplied", "nestedConfigWorker", "atlasPreview", "zipDecompression", "atlasApplied", "restorationSaved"):
         assert imported.get(check) is True, (check, imported)
     assert not imported.get("error"), imported
     assert result.get("draftsIsolated") is True and result.get("closedIsolation") is True, result
@@ -200,6 +206,12 @@ def run(phase):
         fixture.finish()
     a, b = [bytes(f.received) for f in fixtures]
     assert b'Core.Supports.Set ["Beip.Stats 1","Beip.Tilemap 1","Beip.Id 1","Client.Media 1"]' in a,(phase,a)
+    for command in (b"automation-alias-friend\r\n", b"automation-variable-updated\r\n", b"automation-away-once\r\n"):
+        assert a.count(command) == 1 and command not in b, (phase, command, a, b)
+    assert b"/set target=" not in a + b, (phase, a, b)
+    events = [json.loads(line) for line in (OUT / "trigger-audio.jsonl").read_text().splitlines()]
+    assert any(e["sessionId"] == "alpha" and e["event"]["action"] == "sound" and e["event"]["status"] == "api-accepted" for e in events), events
+    assert any(e["sessionId"] == "alpha" and e["event"]["action"] == "speech" and e["event"]["status"] == "ended" for e in events), events
     assert b"core-alpha\r\n" in a and b"core-beta\r\n" not in a, (phase, a)
     assert b"core-beta\r\n" in b and b"core-alpha\r\n" not in b, (phase, b)
     assert b"core-line-one\r\n" in a and b"core-line-two\r\n" in a, (phase, a)
@@ -231,6 +243,11 @@ def run(phase):
 if __name__ == "__main__":
     assert EXE.exists(), "Build first."
     OUT.mkdir(parents=True)
+    with wave.open(str(OUT / "test-tone.wav"), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b"".join(struct.pack("<h", int(1000 * math.sin(2 * math.pi * 440 * i / 16000))) for i in range(3200)))
     run("first")
     assert (OUT / "settings.json").exists(), "First pass did not save isolated settings"
     run("persist")

@@ -65,8 +65,28 @@
  function cancelPaste(sessionId){if(pasteJob&&(!sessionId||pasteJob.sessionId===sessionId)){clearTimeout(pasteJob.timer);pasteJob=null;}}
  function closed(session){scheduler.cancelSession(session.id);cancelPaste(session.id);}
  function incoming(session,payload){if(payload==='ended:'||payload==='reset:')closed(session);}
+ function handleVariableCommand(value,session){
+  const match=/^\/(set|unset|printenv)(?:\s+([\s\S]*))?$/i.exec(value);
+  if(!match||!browser)return false;
+  const api=getApi(),variables=api.variablesForSession(session),name=match[1].toLowerCase(),arg=match[2]||'';
+  try{
+   if(name==='printenv'){display(session,Object.entries(variables).map(([key,value])=>key+'='+value).join('\n')||'No character variables.');return true;}
+   if(name==='set'){
+    const equal=arg.indexOf('=');if(equal<1)throw Error('Use /set name=value.');
+    const key=arg.slice(0,equal),text=arg.slice(equal+1);
+    const candidate=Object.assign(Object.create(null),variables,{[key]:text});
+    const normalized=BeipRules.normalizeVariables(candidate);
+    if(!Object.hasOwn(normalized,key)||normalized[key]!==text||Object.keys(normalized).length!==Object.keys(candidate).length)throw Error('Variables allow 128 names of 128 characters, values of 4096 characters, and 64 KiB total.');
+    Object.defineProperty(variables,key,{value:text,writable:true,enumerable:true,configurable:true});
+    display(session,'Variable set: '+key);
+   }else{if(!Object.hasOwn(variables,arg))throw Error('Variable not found.');delete variables[arg];display(session,'Variable deleted: '+arg);}
+   if(session.characterId)api.saveSettings();
+  }catch(error){display(session,error.message);}
+  return true;
+ }
  function handle(value,session){
   if(!browser||typeof value!=='string'||!value.startsWith('/')||value.startsWith('//'))return false;
+  if(handleVariableCommand(value,session))return true;
   const match=/^(\/\S+)(?:\s+([\s\S]*))?$/.exec(value);if(!match)return false;
   const name=match[1].toLowerCase(),arg=match[2]||'',api=getApi();
   try{
@@ -136,5 +156,5 @@
   }
   if(!pasteDialog.open)pasteDialog.showModal();document.getElementById('smartPasteText').focus();
  }
- return {words,duration,createScheduler,pasteLines,handle,closed,incoming,smartPaste,scheduler};
+ return {words,duration,createScheduler,pasteLines,handle,handleVariableCommand,closed,incoming,smartPaste,scheduler};
 });

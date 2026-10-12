@@ -1,10 +1,28 @@
-# BeipMU recovery preview 0.8
+# BeipMU recovery preview 0.9
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
 several implementations, generated properties and Visual Studio project are
 absent. This runtime builds without those components or a downloaded upstream
 executable. Its code is distributed under the repository MIT license.
+
+Version 0.9 brings original automation behavior into the recovery client.
+Aliases and triggers can run before or after inner scopes; original Config.txt
+imports retain bounded nested trees, activation and this ordering. Triggers
+support Away/Present, once while away, and repeated matches with a distinct
+Once per line control. Character variables use `/set name=value`, `/unset name`
+and `/printenv`; opt-in variable expansion works in aliases, send and filter
+actions. Character variables persist; quick-connect variables last for the session.
+
+The original-style Sound tab plays a chosen local WAV file and speaks whole lines
+or captured text through the default Windows voice. Browse, Play and Stop work
+without connecting. Enable sound and speech in Settings first. Playback stops on
+disable, disconnect and close; results from a previous connection cannot restart it.
+Speech uses plain text, one WAV channel, up to eight owner voices with eight queued
+utterances each, and at most 2,048 speech characters. Original SAPI XML, voice
+selection, OS environment expansion, remote sound files and other audio formats
+remain unsupported. The Config.txt review reports unsupported temporal child
+subtrees instead of flattening their conditions.
 
 Version 0.8 adds caption dragging into four dock edges and group grips that move
 all docked panes on an edge. The edge chooser and keyboard controls remain available.
@@ -79,7 +97,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.8-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.9-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -110,8 +128,8 @@ after user interaction.
 
 ## Verification
 
-The build runs 438 named parser and feature-module checks, a shortcut model
-suite, and native telnet tests.
+The build runs the parser and feature-module checks, shortcut model suite,
+and native telnet tests, and compiles the native WAV/SAPI acceptance test.
 With Python installed, run these compiled-app fixtures:
 
 ```powershell
@@ -144,7 +162,7 @@ modes, `SEND href/hint/prompt`, `A href`, `IMAGE url/fname`, `IMG src`, `B`, `I`
 `U`, `COLOR`, `FONT color`, `BR`, `P`, `VERSION` and `SUPPORT`. Custom elements,
 MXP SOUND, frames, element definitions, image maps and full conformance remain
 open. Other outstanding work includes nested/multiline triggers, full script
-objects, free drag docking, speech, Atlas export/layers/drawings and unsupported
+objects, arbitrary split docking, SAPI XML, Atlas layers/drawings and unsupported
 original preferences.
 
 The user verified live Blood of Dragons login and images in preview 0.1.
@@ -202,3 +220,15 @@ save/reopen/cancel, alongside existing native floating, script and Atlas checks.
 Focused browser pointer checks verified caption/group drag, cancellation and
 preserved floating identity. Packaged Pueblo/MXP image/link and WHO-spacing tests
 passed. TLS code is unchanged; no new full TLS run is claimed for 0.8.
+
+For 0.9, the full Windows/native-module build and packaged two-launch session
+fixture passed (`sessions-20261012-070038`). It verifies original nested imports
+and remapped identities through real session workers, pre/post ordering,
+character variables and wire isolation, Away context, Sound editor persistence
+and visibility, and actual WAV API acceptance plus matching SAPI queued/start/end
+events. Negative playback assertions wait for native completion barriers; delayed
+worker results and a final partial line cannot restart audio after disconnect.
+The Sound editor screenshot was inspected. The standalone native audio fixture
+also passed queue bounds and owner-specific stopping. Pueblo/MXP image, command
+link and WHO-spacing fixtures passed. TLS code is unchanged; no fresh complete
+TLS verification or subjective listening verification is claimed.

@@ -27,10 +27,13 @@
 #include <cstdio>
 #include <cstring>
 #include "protocol.h"
+#include "trigger-audio.h"
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Callback;
 static constexpr UINT NetworkMessage=WM_APP+1;
+static constexpr UINT TriggerAudioMessage=WM_APP+3;
+static constexpr size_t MaxNativeSessions=64;
 static constexpr size_t ClipboardTextLimit=1024*1024;
 enum MenuCommand : UINT {
     FileNew=1001,FileClose,FileExport,FileExit,
@@ -362,6 +365,7 @@ struct Application {
         if(!f->open(window,environment.Get(),uiRoot,title,geometry[0],geometry[1],geometry[2],geometry[3])){floats.erase(id);reject();}else ++floatCreated;
     }
     HWND window=nullptr;HMENU mainMenu=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
+    TriggerAudio triggerAudio;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
     std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,ready=false;std::vector<std::string> queued;
     std::unordered_map<std::string,std::string> testSecrets;
@@ -388,6 +392,27 @@ struct Application {
         if(command)SendMessageW(window,WM_COMMAND,MAKEWPARAM(command,0),0);
     }
     void scoped(const std::string& id,std::string payload){message("session:"+id+":"+payload);}
+    void initializeTriggerAudio(){
+        triggerAudio.initialize(window,TriggerAudioMessage,[this](const std::string& id,const std::string& action,const std::string& status,ULONG stream,const std::wstring& path){
+            auto data="{\"action\":"+jsonString(action)+",\"status\":"+jsonString(status)+",\"stream\":"+std::to_string(stream);
+            if(!path.empty())data+=",\"path\":"+jsonString(utf8(path));data+="}";
+            scoped(id,"triggeraudio:"+data);
+            if(testMode&&action!="browse"){std::filesystem::create_directories(testPath);std::ofstream(testPath/"trigger-audio.jsonl",std::ios::app)<<"{\"sessionId\":"<<jsonString(id)<<",\"event\":"<<data<<"}\n";}
+        });
+    }
+    void receiveTriggerAudio(std::string_view text){
+        auto first=text.find('|',13),second=first==text.npos?text.npos:text.find('|',first+1);
+        if(second==text.npos)return;
+        std::string id(text.substr(13,first-13));auto action=text.substr(first+1,second-first-1);
+        // Main-page bridge only; a stale/closed session never gets an audio resource.
+        if(!validId(id)||sessions.find(id)==sessions.end())return;
+        std::string value;
+        if(!unbase64(text.substr(second+1),value,8192)||!validUtf8(value))return;
+        if(action=="stop"&&value.empty())triggerAudio.stop(id);
+        else if(action=="browse"&&value.empty())triggerAudio.browse(id);
+        else if(action=="sound")triggerAudio.sound(id,wide(value));
+        else if(action=="speech")triggerAudio.speech(id,wide(value));
+    }
     std::wstring secretTarget(std::string_view id){return L"BeipMU-Recovery/character/"+wide(id);}
     void secretReply(const std::string& id,std::string_view result){message("secretstatus:"+id+":"+std::string(result));}
     void secretError(const std::string& id,std::string_view error){secretReply(id,"error:"+base64(error));}
@@ -536,16 +561,21 @@ struct Application {
             !(text.starts_with("clipboard|")&&text.size()<=10+4*((ClipboardTextLimit+2)/3))){
             message(text.starts_with("clipboard|")?"ui:clipboard-failed":"settings:error:Message is too large.");return;
         }
-        if(text.starts_with("float:"))floating(text);
+        if(text.starts_with("triggeraudio|"))receiveTriggerAudio(text);
+        else if(text.starts_with("float:"))floating(text);
         else if(text=="menu:open")openMainMenu();
         else if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
             else if(testCorePorts.size()==2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
-                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\"}";
+                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
                 message("testcore:"+base64(config));SetTimer(window,1,25000,nullptr);
             }
+        }else if(text.starts_with("sessionopen|")){
+            auto id=text.substr(12);if(!validId(id)||sessions.find(id)!=sessions.end())return;
+            if(sessions.size()>=MaxNativeSessions){scoped(id,"status:Session limit reached.");return;}
+            sessions.emplace(id,std::make_unique<Client>(window,id));
         }else if(text.starts_with("connect|")){
             auto split=text.find('|',8);if(split==text.npos)return;
             auto second=text.find('|',split+1);bool legacy=second==text.npos;
@@ -562,14 +592,19 @@ struct Application {
             if((!mode.empty()&&mode!="plain"&&mode!="tls")||(fourth!=text.npos&&(mode.empty()||!validId(character)))){error("status:Invalid connection mode or character.");return;}
             if(!validHost(host)||port.empty()||port.size()>5||port.find_first_not_of("0123456789")!=port.npos||std::stoul(port)==0||std::stoul(port)>65535){error("status:Enter a valid host and port.");return;}
             if(legacy)legacyClient->connect(host,port);
-            else {auto& slot=sessions[id];if(!slot)slot=std::make_unique<Client>(window,id);slot->connect(host,port,useTls,std::move(character));}
+            else {
+                if(sessions.find(id)==sessions.end()&&sessions.size()>=MaxNativeSessions){error("status:Session limit reached.");return;}
+                auto& slot=sessions[id];if(!slot)slot=std::make_unique<Client>(window,id);slot->connect(host,port,useTls,std::move(character));
+            }
         }else if(text=="disconnect")legacyClient->disconnect();
         else if(text.starts_with("disconnect|")){
             auto id=text.substr(11);if(!validId(id))return;
+            triggerAudio.stop(id);
             auto it=sessions.find(id);if(it!=sessions.end())it->second->disconnect();
             scoped(id,"connected:off");scoped(id,"ended:");
         }else if(text.starts_with("close|")){
             auto id=text.substr(6);if(!validId(id))return;
+            triggerAudio.stop(id);
             sessions.erase(id);scoped(id,"closed:");
         }else if(text.starts_with("send|")){
             auto split=text.find('|',5);
@@ -623,6 +658,11 @@ struct Application {
         }
         else if(text.starts_with("external|")){
             std::string url=text.substr(9);if(url.size()<=2048&&(url.starts_with("https://")||url.starts_with("http://")))ShellExecuteW(window,L"open",wide(url).c_str(),nullptr,nullptr,SW_SHOWNORMAL);
+        }else if(testMode&&text.starts_with("testcapture:")){
+            auto name=text.substr(12);if(!validId(name)||!view)return;
+            ComPtr<IStream> stream;auto path=testPath/(wide(name)+L".png");
+            HRESULT hr=SHCreateStreamOnFileEx(path.c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream);
+            if(SUCCEEDED(hr))view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,live=alive,stream,name](HRESULT result){if(*live)message(std::string(SUCCEEDED(result)?"testcaptured:":"testcapturefailed:")+name);return S_OK;}).Get());
         }else if(testMode&&text.starts_with("testresult:")){
             KillTimer(window,1);std::filesystem::create_directories(testPath);std::ofstream(testPath/"result.json",std::ios::binary)<<text.substr(11);
             captureNativeWindowEvidence(window,mainMenu,testPath);
@@ -690,14 +730,15 @@ struct Application {
 };
 LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
     auto app=(Application*)GetWindowLongPtrW(window,GWLP_USERDATA);
-    if(message==WM_NCCREATE){app=(Application*)((CREATESTRUCTW*)l)->lpCreateParams;app->window=window;app->legacyClient=std::make_unique<Client>(window,"legacy",true);SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
+    if(message==WM_NCCREATE){app=(Application*)((CREATESTRUCTW*)l)->lpCreateParams;app->window=window;app->legacyClient=std::make_unique<Client>(window,"legacy",true);app->initializeTriggerAudio();SetWindowLongPtrW(window,GWLP_USERDATA,(LONG_PTR)app);}
     if(app){if(message==NetworkMessage){auto event=(Event*)l;app->message(event->text);delete event;return 0;}
+        if(message==TriggerAudioMessage){app->triggerAudio.poll();return 0;}
         if(message==WM_COMMAND&&HIWORD(w)==0){
             if(LOWORD(w)==FileExit){PostMessageW(window,WM_CLOSE,0,0);return 0;}
             if(const char* action=menuAction(LOWORD(w))){app->message(action);return 0;}
         }
         if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER&&w==2){app->captureFloating();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_DESTROY){app->triggerAudio.shutdown();*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
@@ -712,7 +753,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.8",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.9",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.
