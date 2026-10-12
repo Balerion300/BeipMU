@@ -11,6 +11,63 @@ Status: **partial** means useful behavior exists but original parity remains;
 The independent recovery implementation and missing upstream dependencies remain
 as described in README. The original source stays intact.
 
+## Closeout at preview 0.15
+
+Work stopped at the user's request on October 12, 2026. The latest published
+preview is [0.15](https://github.com/Balerion300/BeipMU/releases/tag/recovery-preview-0.15),
+release commit `49b622e654fd88a322fdcdd88ed094178f9a9fe5`. PR #2 remains open;
+nothing is merged. The rows below describe published coverage through 0.15.
+
+The native build, all 48 JavaScript test files, fresh and persisted packaged
+sessions (`sessions-20261012-100046`), and compiled Pueblo/MXP spacing/link/image
+fixtures passed. The branch CI passed; the PR CI and its retry failed on the
+Node rules-worker startup deadline. A separate TLS acceptance attempt timed out
+around temporary certificate setup; its temporary CA was removed. Native
+titlebar drop and subjective audio remain unverified. Stress testing is deferred.
+
+### Next work, in priority order
+
+1. Resolve the CI worker-startup failure and the unpublished draft's packaged
+   startup timeouts, then rerun fresh/persisted and Pueblo/MXP acceptance before
+   any further preview. Keep execution watchdogs bounded. Obtain fresh TLS
+   acceptance separately; do not inherit an older pass.
+2. Finish input/window parity: original Type 0 input-layout import, global versus
+   copied settings, floating input/edit windows, primary/additional history and
+   selection rules, grouped multiline history restoration, and native drag/drop.
+3. Finish ANSI and command behavior: reverse, OSC send/prompt links, BEL, faint,
+   blink/flash and custom beep; `/roll`, normal `/exit`, and the remaining command
+   ledger. Source/docs disagreements need executable evidence, not assumed aliases.
+4. Complete trigger/script semantics: synchronous host reads after Run, reentrant
+   Receive and prompt processing, all original actions, Unicode range equivalence,
+   full object members and existing-script/COM/filesystem/language compatibility.
+5. Continue the remaining rows: logging rotation/multiple files, network CHARSET
+   and MCP/MCMP, map tools, stats/tilemap/media, full Pueblo/MXP, web views, profile
+   import/export and settings. Packaging and platform claims need their own tests.
+
+### Preserved unpublished work
+
+The local-only branch `codex/parity-016-draft`, checkpoint
+`609b4746f0bc29dc402efb4cf2b523a36c8b4aed`, preserves the next slice. It is not
+pushed, released, or part of 0.15. The active branch is `codex/client-features`.
+The draft includes Type 0 input import/settings inheritance, reverse colors,
+literal OSC send/prompt links and system-bell handling, `/roll`, and a separate
+test-worker startup allowance without extending the execution watchdog.
+
+Its native build and 53 JavaScript test files passed, but packaged session
+acceptance (`sessions-20261012-101702`) and the Pueblo fixture timed out. The
+cause remains undiagnosed; no packaged behavior is claimed for this draft.
+Local logs are `recovery/build/sessions-0.16.log` and `preview-0.16.log`.
+The next session should inspect these before rebuilding; generated files are
+ignored and are not a substitute for the published 0.15 artifact.
+
+The original 4.335 scratch reference supplied 34 `/roll` responses, all matching
+the draft with captured dice faces. Evidence is local under
+`recovery/build/next-commands/reference-20261012/` (`roll-observed.txt`,
+`observed-matrix.json`, `OBSERVATIONS.md`). This establishes command behavior,
+not packaged integration. The original executable rejects `/quit` as an unknown
+command despite its Markdown entry; normal `/exit` works in that reference.
+Faint/blink/custom-beep and native exit integration remain unfinished.
+
 | Area and original evidence | Current coverage | Completion work |
 | --- | --- | --- |
 | Shell/Windows menu (`Wnd_Main`, direct menu) | Partial: tabs, named panes, four edges, nested splits/tabs, native floating, layout/appearance copy | Native drag between windows; floating input/edit windows; multiple main windows; hidden captions; original saved arrangements |
@@ -73,7 +130,7 @@ before this ledger can be called exhaustive.
 
 ## Release evidence
 
-The last published starting point is preview 0.10, commit
+The historical preview 0.10 starting point is commit
 `969080ea735e5a83a06d11dfa6ef8ee39d27a92e`. Both GitHub native builds passed. Its evidence is recorded in README.
 Preview 0.10 implements the following **subsets**: independent window
 appearance/input behavior and import, reviewed connect templates, nested edge

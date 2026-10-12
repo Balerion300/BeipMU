@@ -5,6 +5,11 @@ Audited 2026-10-12 against the checked-in original `Documentation/Scripting.md`,
 `src/OM_Props.idl`, and original object implementations. This is a living gap
 inventory, not a declaration of complete original compatibility.
 
+Closeout at published preview 0.15: no further script integration is authorized
+in this round. Resume priorities and the local-only draft checkpoint are recorded
+in [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md). The original `/roll`
+comparison is draft evidence; it is not a feature of 0.15.
+
 Preview 0.12 routes Run and hooked sends through an awaited, owner/epoch-bound
 dispatcher, carrying hook provenance so Send is not hooked twice and Transmit
 continues to bypass OnSend. Nested Run effects finish before their parent resumes;

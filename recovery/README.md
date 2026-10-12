@@ -1,5 +1,10 @@
 # BeipMU recovery preview 0.15
 
+Development is stopped at published preview 0.15 as requested on October 12,
+2026. Nothing is merged. See [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md)
+for the remaining parity work, validation limits and the preserved local-only
+0.16 draft. That draft is not part of this release and failed packaged acceptance.
+
 Preview 0.15 adds docked additional input panes through `/newinput`, with independent
 drafts, prefixes, sticky selection, shared owner history and saved pane definitions.
 They participate in nested layouts and layout copying. Scripts keep `window.Input`
@@ -21,6 +26,8 @@ Pueblo/MXP spacing, links and images pass. Input and encoding screenshots were
 inspected; a squeezed encoding selector was fixed and its visible geometry tested.
 A separate TLS test attempt timed out around certificate setup, so this release
 makes no new full-app TLS validation claim. Its temporary test CA was removed.
+The branch CI passed; the PR CI and its retry failed on the Node rules-worker
+startup deadline. Local packaged acceptance above passed; full CI is not green.
 
 ## Previous preview 0.14
 

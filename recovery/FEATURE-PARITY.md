@@ -1,5 +1,9 @@
 # BeipMU recovery feature inventory
 
+Closeout: preview 0.15 is the final published milestone for this round. The
+completion checklist records outstanding work and the unpublished 0.16 checkpoint;
+its draft features are not counted as released coverage.
+
 For the current consolidated original-feature audit, use
 [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md). Historical milestone tables
 below describe the state at those milestones; later implementations supersede
