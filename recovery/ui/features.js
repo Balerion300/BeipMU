@@ -3,8 +3,9 @@
 'use strict';
 const byId=id=>document.getElementById(id),send=value=>window.chrome?.webview?.postMessage(value);
 const api=()=>window.BeipPreview;
-let daily;
+let daily,roll;
 function dailyCommands(){return daily||(daily=BeipDailyCommandAdapter.createAdapter(api(),window));}
+function rollCommand(){return roll||(roll=BeipRollCommand.createCommand({valid:s=>api().sessions.get(s.id)===s,write(s,text){const previous=s.suppressAutomation;s.suppressAutomation=true;try{api().appendText(s,text+'\n');}finally{s.suppressAutomation=previous;}}}));}
 const primaryInputs=new WeakMap();let inputBridge;
 function primaryInput(s){let pane=primaryInputs.get(s);if(!pane){pane={};primaryInputs.set(s,pane);}const node=byId('input'),active=api().current===s;Object.assign(pane,{text:active?node.value:s.draft||'',start:active?node.selectionStart:s.draftSelection?.start||0,end:active?node.selectionEnd:s.draftSelection?.end||0,prefix:s.inputPrefix||'',title:s.inputTitle||''});return pane;}
 function scriptInputs(){return inputBridge||(inputBridge=BeipInputScriptBridge.createBridge({
@@ -17,7 +18,7 @@ function scriptInputs(){return inputBridge||(inputBridge=BeipInputScriptBridge.c
 function inputSnapshot(s){return scriptInputs().snapshot(s);}
 function base64(value){const bytes=new TextEncoder().encode(value);let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);}
 function decode(value){return new TextDecoder().decode(Uint8Array.from(atob(value),x=>x.charCodeAt(0)));}
-function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),...inputSnapshot(s),buildNumber:15,version:15};}
+function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),...inputSnapshot(s),buildNumber:16,version:16};}
 function applyLine(node,snapshot){const line=BeipScripts.validLine(snapshot);if(!line)return;const fragment=document.createDocumentFragment();for(const run of line.runs){const span=document.createElement('span');span.textContent=run.text;const st=run.style;if(st.color)span.style.color=st.color;if(st.background)span.style.backgroundColor=st.background;if(st.bold)span.style.fontWeight='bold';if(st.italic)span.style.fontStyle='italic';span.style.textDecoration=[st.underline?'underline':'',st.strike?'line-through':''].filter(Boolean).join(' ');fragment.append(span);}node.replaceChildren(fragment);}
 function snapshotLine(node){
  const runs=[],nodes=window.BeipLineEdits?.textNodes(node)||(()=>{const values=[],walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))values.push(text);return values;})();
@@ -96,6 +97,7 @@ function selected(){for(const s of api().sessions.values()){if(s.stats)s.stats.h
 function closed(s){daily?.closed(s);window.BeipClientCommands?.closed?.(s);s.scripts?.stop();s.media?.stopAll();s.stats?.remove();s.mapsPane?.remove();}
 function display(s,value){s.suppressAutomation=true;api().appendText(s,value+'\n',{color:'#a6c9d5'});s.suppressAutomation=false;}
 async function handleCommand(value,s,execution,options={}){
+ if(rollCommand()(value,s,execution))return true;
  if(await dailyCommands().handle(value,s,execution,options))return true;
  if(await window.BeipClientCommands?.handle?.(value,s,execution,options))return true;
  if(!value.startsWith('/'))return false;

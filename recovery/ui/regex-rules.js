@@ -17,6 +17,9 @@
  class Runtime{
   constructor(onError=()=>{},WorkerClass=root.Worker,options={}){
    this.onError=onError;this.WorkerClass=WorkerClass;this.deadline=Math.max(1,Math.min(DEADLINE_MS,Number(options.timeoutMs)||DEADLINE_MS));
+   // Cold Node worker startup in adapter tests can exceed the browser deadline.
+   // This independent allowance never changes the regex/job execution budget.
+   this.startupDeadline=Math.max(1,Math.min(5000,Number(options.startupTimeoutMs)||this.deadline));
    this.worker=null;this.ready=false;this.queue=[];this.current=null;this.timer=null;this.serial=0;this.disabledReason='Rules are not running.';this.reported=new Set();
   }
   report(message){if(this.reported.has(message))return;this.reported.add(message);try{this.onError(message);}catch{}}
@@ -39,7 +42,7 @@
    worker.onmessage=event=>{if(this.worker===worker)this.message(event.data);};
    worker.onerror=event=>{if(this.worker!==worker)return;event?.preventDefault?.();this.shutdown('Rules worker failed.',true);};
    worker.onmessageerror=()=>{if(this.worker===worker)this.shutdown('Rules worker sent an unreadable result.',true);};
-   this.timer=setTimeout(()=>this.shutdown('Rules worker did not start within its time limit.',true),this.deadline);
+   this.timer=setTimeout(()=>this.shutdown('Rules worker did not start within its time limit.',true),this.startupDeadline);
    try{worker.postMessage({type:'start',aliases:Array.isArray(config.aliases)?config.aliases:[],triggers:Array.isArray(config.triggers)?config.triggers:[]});}
    catch(error){this.shutdown('Rules could not be loaded: '+String(error?.message||error),true);return false;}
    return true;

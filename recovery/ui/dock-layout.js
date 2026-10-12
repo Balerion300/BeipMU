@@ -1,7 +1,7 @@
 /* Persisted, profile-scoped pane layout. MIT. */
 (function(root,factory){
- const inputs=typeof module==='object'&&module.exports?require('./input-panes.js'):root.BeipInputPanes;const api=factory(inputs);if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipDockLayout=api;
-})(typeof globalThis==='object'?globalThis:this,function(inputs){
+ const inputs=typeof module==='object'&&module.exports?require('./input-panes.js'):root.BeipInputPanes;const originalInputs=typeof module==='object'&&module.exports?require('./original-input-layout.js'):root.BeipOriginalInputLayout;const api=factory(inputs,originalInputs);if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipDockLayout=api;
+})(typeof globalThis==='object'?globalThis:this,function(inputs,originalInputs){
  'use strict';
  const TYPES=Object.freeze(['map','history','image','notes','split','spawn']);
  const EDGES=Object.freeze(['left','right','top','bottom']);
@@ -64,11 +64,11 @@
   result.trees[edge]=insert(result.trees[edge]);result.activeByEdge[edge]=type;return normalize(result,{includeSpawn:true});
  }
  function resize(raw,edge,path,value){const result=normalize(raw,{includeSpawn:true});if(!EDGE_SET.has(edge)||!Array.isArray(path)||path.length>16)return result;let node=result.trees[edge];for(const key of path){if(!['first','second'].includes(key)||node?.kind!=='split')return result;node=node[key];}if(node?.kind==='split')node.ratio=ratio(value);return result;}
- function fromOriginal(profile,skipped=()=>{}){
+ function fromOriginal(profile,skipped=()=>{},context={}){
   const child=(node,name)=>(node?.children||[]).find(item=>item.name.toLowerCase()===name.toLowerCase());
   const docking=child(profile,'Docking');if(!docking)return null;
-  const out={order:[],edges:{},sizes:{},trees:{},floating:{}},sides=['left','top','right','bottom'];
-  const take=(entry,edge)=>{const type={3:'image',6:'notes',7:'map'}[entry.values?.Type];if(!type){skipped('Unsupported original docked window types');return null;}if(out.order.includes(type)){skipped('Repeated original docked window types');return null;}out.order.push(type);out.edges[type]=edge;if(/^(true|1)$/i.test(entry.values?.HideCaption||'')||/^(true|1)$/i.test(entry.values?.VerticalCaption||''))skipped('Original pane caption orientation or hiding');if(type==='map'&&child(entry,'MapWindow'))skipped('Original map window file and view settings');return {kind:'tabs',tabs:[type],active:type};};
+  let serial=0;const out={inputPanes:{version:1,panes:[]},order:[],edges:{},sizes:{},trees:{},floating:{}},sides=['left','top','right','bottom'];
+  const take=(entry,edge)=>{let type;if(Number(entry.values?.Type??0)===0){if(out.inputPanes.panes.length>=inputs.MAX_PANES){skipped('Additional original input limit');return null;}const pane=originalInputs.definition(entry,++serial,skipped,context);if(!pane)return null;out.inputPanes.panes.push(pane);type=pane.id;}else type={3:'image',6:'notes',7:'map'}[entry.values?.Type];if(!type){skipped('Unsupported original docked window types');return null;}if(out.order.includes(type)){skipped('Repeated original docked window types');return null;}out.order.push(type);out.edges[type]=edge;if(/^(true|1)$/i.test(entry.values?.HideCaption||'')||/^(true|1)$/i.test(entry.values?.VerticalCaption||''))skipped('Original pane caption orientation or hiding');if(type==='map'&&child(entry,'MapWindow'))skipped('Original map window file and view settings');return {kind:'tabs',tabs:[type],active:type};};
   const weighted=(items,axis)=>{if(!items.length)return null;if(items.length===1)return items[0].node;const total=items.reduce((sum,item)=>sum+item.size,0);return {kind:'split',axis,ratio:items[0].size/total,first:items[0].node,second:weighted(items.slice(1),axis)};};
   for(const frame of (child(docking,'DockedPanes')?.children||[]).slice(0,128)){
    const edge=sides[Number(frame.values?.Side??0)];if(!edge){skipped('Invalid original docking sides');continue;}
@@ -78,7 +78,7 @@
    if(out.trees[edge]){skipped('Original repeated edge frame sizing adapted');out.trees[edge]={kind:'split',axis:edge==='top'||edge==='bottom'?'y':'x',ratio:.5,first:out.trees[edge],second:node};}else out.trees[edge]=node;
   }
   for(const entry of (child(docking,'FloatingWindows')?.children||[]).slice(0,128)){
-   const node=take(entry,'right');if(!node)continue;const numbers=String(entry.values?.Rect||'').match(/-?\d+/g)?.map(Number);
+   const input=Number(entry.values?.Type??0)===0,node=take(entry,input?'bottom':'right');if(!node)continue;if(input){skipped('Original floating input docked at bottom');out.trees.bottom=out.trees.bottom?{kind:'split',axis:'x',ratio:.67,first:out.trees.bottom,second:node}:node;continue;}const numbers=String(entry.values?.Rect||'').match(/-?\d+/g)?.map(Number);
    if(numbers?.length===4&&numbers[2]>numbers[0]&&numbers[3]>numbers[1])out.floating[node.active]={x:numbers[0],y:numbers[1],width:numbers[2]-numbers[0],height:numbers[3]-numbers[1]};else skipped('Invalid original floating window rectangles');
   }
   return normalize(out);

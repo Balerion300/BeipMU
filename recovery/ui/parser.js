@@ -1,5 +1,6 @@
 /* MIT. Stream parser for the BeipMU recovery display; no server HTML executes. */
 (function(root){
+const ansiActions=typeof module==='object'&&module.exports?require('./ansi-actions.js'):root.BeipAnsiActions;
 const ansiModule=typeof module==='object'&&module.exports?require('./ansi-state.js'):root.BeipAnsiState;
 function entity(s){return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,(full,v)=>{
  const map={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:'\u00a0'};
@@ -29,6 +30,7 @@ class Parser{
    let c=this.pending[0];
    if(this.pendingCR){this.pendingCR=false;if(c==='\n'){if(this.ansiState.preferences.resetOnNewLine)this.ansi=this.ansiState.reset().style();this.pending=this.pending.slice(1);continue;}}
    if(c!=='\r'&&c!=='\n')this.brNewline=false;
+   if(c==='\x07'){flush();this.pending=this.pending.slice(1);this.emit({type:'bell'});continue;}
    if(c==='\x1b'){
     flush();if(this.pending.length<2)break;
     if(!this.ansiState.preferences.parse&&(!this.mxp||this.pending[1]!=='[')){this.pending=this.pending.slice(1);continue;}
@@ -38,7 +40,7 @@ class Parser{
     }
     if(this.pending[1]===']'){if(!this.ansiState.preferences.parse){this.pending=this.pending.slice(1);continue;}const end=this.pending.search(/\x07|\x1b\\/);if(end<0){if(this.pending.length>8192)this.pending='';break;}
      const seq=this.pending.slice(2,end);this.pending=this.pending.slice(end+(this.pending[end]==='\x07'?1:2));
-     if(seq.startsWith('8;')){const uri=seq.slice(seq.indexOf(';',2)+1);const url=webURL(uri);this.link=url?{kind:'url',value:url}:null;}continue;
+     if(seq.startsWith('8;')){const uri=seq.slice(seq.indexOf(';',2)+1);this.link=ansiActions.oscLink(uri);}continue;
     }
     this.pending=this.pending.slice(2);continue;
    }
@@ -66,7 +68,7 @@ class Parser{
   if(close){const index=this.stack.map(x=>x.name).lastIndexOf(name);if(index>=0){const saved=this.stack[index];this.style=saved.style;this.link=saved.link;this.stack.length=index;}return;}
   if(name==='br'||name==='p'){this.text('\n');/* PennMUSH pairs BR with a transport newline inside PRE. */this.brNewline=name==='br'&&this.pre>0;return;}
   if(name==='support'){const supported=['b','i','u','color','font','a','send','img','image','br','p','version','support'];const attrs={a:['href','hint'],send:['href','hint','prompt'],img:['src','height','alt'],image:['url','fname','height','alt'],color:['fore'],font:['color']};const queries=pos.length?pos:supported;this.send('\x1b[1z<SUPPORTS '+queries.map(q=>{const [tag,attr]=q.toLowerCase().split('.');return (supported.includes(tag)&&(!attr||attrs[tag]?.includes(attr))?'+':'-')+q;}).join(' ')+'>');return;}
-  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.15">');return;}
+  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.16">');return;}
   if(name==='img'||name==='image'){
    if(a.xch_mode!==undefined&&!a.src&&!a.fname&&!a.url&&!pos.length)return;
    let src=a.src;if(!src){const fname=a.fname||pos[0]||'';try{src=a.url?new URL(fname,a.url).href:fname;}catch{src='';}}
