@@ -25,7 +25,7 @@ body.append(categories,content);
 const scopeBar=document.createElement('label');scopeBar.className='classic-settings-scope';scopeBar.textContent='Settings for';
 const scopeChoice=document.createElement('select');scopeChoice.id='classicSettingsScope';scopeChoice.setAttribute('aria-label','Settings profile');scopeBar.append(scopeChoice);
 const definitions=[
- ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['logging','Logging']
+ ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['logging','Logging'],['emoji','Auto Emoji']
 ];
 const panels=new Map(),buttons=new Map();
 for(const [key,title] of definitions){
@@ -64,6 +64,8 @@ group('output','Output Settings',fields.scrollback,fields.inlineImages,setting('
 group('output','Appearance and scrolling',setting('fanFold','Alternating line backgrounds','checkbox'),setting('fanFoldColor1','First background','text'),setting('fanFoldColor2','Second background','text'),setting('scrollToBottom','Scroll to bottom on new output','checkbox'),setting('smoothScrolling','Smooth scrolling','checkbox'),setting('splitOnPageUp','Split on Page Up','checkbox'));
 group('logging','New Sessions',fields.defaultLogging,
  note('When enabled, each new connected session starts a separate log file. Use Logging to start or stop a session manually.'));
+const loggingPreferences=window.BeipLoggingUI?.createPreferencesPanel(panels.get('logging'));
+const emojiPreferences=window.BeipEmojiUI?.createPanel(panels.get('emoji'));
 form.replaceChildren(caption,scopeBar,body,actions);
 settings.classList.add('classic-settings');
 function selectCategory(key){
@@ -102,6 +104,8 @@ function captureDraft(){
  if(selected==='global'){
   for(const [key,control] of Object.entries(controls))target[key]=readControl(control);
   for(const key of ['theme','mediaEnabled','defaultLogging'])target[key]=readControl(byId(key));
+  if(loggingPreferences)target.logging=loggingPreferences.read();
+  if(emojiPreferences)target.emojiEnabled=emojiPreferences.read();
  }else{
   for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
    // Capture editable values before applying a changed inheritance checkbox.
@@ -130,6 +134,8 @@ for(const category of ['input','output']){
 }
 function renderScope(){
  const isGlobal=selected==='global',p=effective(selected),target=currentDraft(selected);
+ loggingPreferences?.load(currentDraft('global').logging,!isGlobal);
+ emojiPreferences?.load(currentDraft('global').emojiEnabled,!isGlobal);
  for(const [key,control] of Object.entries(controls))writeControl(control,p[key]);
  for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
   const item=inheritance[group];item.label.hidden=isGlobal;item.explanation.hidden=isGlobal;
@@ -176,7 +182,7 @@ logging.innerHTML=`<div class="classic-logging-caption"><h2 id="classicLoggingTi
  <div class="classic-logging-list" role="listbox" aria-label="Current logs"></div>
  <div class="classic-logging-current-actions"><button type="button" data-action="stop">Stop</button><button type="button" data-action="stop-all">Stop All</button></div>
  <div class="classic-logging-section"><strong>New</strong><div class="classic-logging-rule"></div></div>
- <div class="classic-logging-new-actions"><button type="button" data-action="start">Start...</button><label>Starting from <select data-action="starting-point"><option value="now">Now</option><option value="beginning">Beginning of scrollback</option></select></label><button type="button" data-action="close-bottom">Close</button></div><button type="button" data-action="export" class="classic-log-export">Export active transcript...</button>`;
+ <div class="classic-logging-new-actions"><button type="button" data-action="start">Start...</button><label>Starting from <select data-action="starting-point"><option value="now">Now</option><option value="beginning">Beginning of scrollback</option><option value="window">Top of window</option></select></label><button type="button" data-action="close-bottom">Close</button></div><button type="button" data-action="export" class="classic-log-export">Export active transcript...</button>`;
 document.body.append(logging);
 const list=logging.querySelector('.classic-logging-list');
 const stop=logging.querySelector('[data-action=stop]'),stopAll=logging.querySelector('[data-action=stop-all]');
@@ -212,10 +218,8 @@ stop.onclick=()=>{stopSession(app().sessions.get(selectedId));refreshLogging();}
 stopAll.onclick=()=>{for(const session of loggingSessions())stopSession(session);refreshLogging();};
 start.onclick=()=>{
  const session=app().current;if(!session||session.kind!=='world'||!session.connected)return;
- session.logWanted=true;
- byId('logging').checked=true;
- if(!session.logging){if(app().startLogging)app().startLogging(session,logging.querySelector('[data-action=starting-point]').value==='beginning');else window.chrome?.webview?.postMessage('logstart|'+session.id);}
- selectedId=session.id;refreshLogging();
+ const mode=logging.querySelector('[data-action=starting-point]').value;
+ window.BeipLoggingUI.choose(file=>{if(!file||app().sessions.get(session.id)!==session||!session.connected||session.logging)return;app().startLogging(session,mode,file);selectedId=session.id;refreshLogging();});
 };
 logging.querySelector('[data-action=export]').onclick=()=>byId('exportButton').click();
 function closeLogging(){logging.close();}

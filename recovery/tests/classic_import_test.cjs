@@ -45,7 +45,9 @@ async function check(name,fn){await fn();console.log('PASS '+name);checks++;}
   assert.deepEqual([main.rooms[0].x,main.rooms[0].y],[130,240]);
   assert.ok(main.exits.some(x=>x.from==='r0'&&x.to==='r1'&&x.command==='north'));
   assert.ok(main.exits.some(x=>x.from==='r1'&&x.to==='r0'&&x.command==='south'));
-  assert.ok(plan.report.skipped['Unresolved exits']>0);
+  assert.equal(plan.report.skipped['Unresolved exits'],undefined);
+  assert.equal(plan.atlas.layers.length,3);
+  assert.ok(plan.atlas.exits.some(exit=>plan.atlas.rooms.find(room=>room.id===exit.from).layerId!==plan.atlas.rooms.find(room=>room.id===exit.to).layerId));
  });
  await check('ZIP Atlas validates checksum and imports supported graph subset',async()=>{
   const bytes=fs.readFileSync(path.join(root,'Maps/Arx_Map_by_Precisi.atlas'));
@@ -53,7 +55,8 @@ async function check(name,fn){await fn();console.log('PASS '+name);checks++;}
   assert.equal(plan.maps.length,1);
   const graph=mapper.normalize(plan.maps[0].graph);
   assert.ok(graph.rooms.length>400);assert.ok(graph.exits.length>300);
-  assert.ok(plan.report.skipped['Unresolved exits']>0);
+  assert.equal(graph.rooms.length,442);assert.equal(graph.drawings.length,17);
+  assert.equal(plan.report.skipped['Unresolved exits'],undefined);
   const corrupt=Uint8Array.from(bytes);corrupt[Math.floor(corrupt.length/2)]^=1;
   await assert.rejects(core.readAtlas(corrupt),/(validation|decompress|invalid|failed)/i);
  });

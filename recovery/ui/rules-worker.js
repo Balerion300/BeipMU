@@ -19,6 +19,8 @@ self.onmessage=event=>{
     ?engine.processLine(job.value,job.scope,job.nowMs)
     :job.type==='cancel-capture'
      ?engine.cancelCapture(job.scope)
+    :job.type==='reset-temporal'
+     ?engine.resetTemporal(job.value==='all'?undefined:job.scope)
     :null;
   if(result)self.postMessage({id:job.id,result});
  }catch(error){self.postMessage({id:job.id,error:String(error?.message||error).slice(0,512)});}

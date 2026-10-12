@@ -4,7 +4,7 @@
 const core=window.BeipAtlasExportCore,app=()=>window.BeipPreview;
 if(!core)return;
 const dialog=document.createElement('dialog');dialog.id='classicMapExportDialog';dialog.className='classic-map-export';
-dialog.innerHTML='<h2>Export Atlas Map</h2><label>World<select data-world></select></label><div data-preview></div><p>Exports this world as one Atlas map. Rooms, supported colors, construction flags, route directions, and bend points are included. Drawings, images, and cross-layer links are outside this map model.</p><div data-status role="status"></div><div class="classic-map-export-actions"><button type="button" data-save>Save .atlas…</button><button type="button" data-close>Cancel</button></div>';
+dialog.innerHTML='<h2>Export Atlas Map</h2><label>World<select data-world></select></label><div data-preview></div><p>Exports all maps in this world’s atlas, including cross-map routes, room geometry, rectangles, colors, fonts, construction flags, and exit bends. Image and label objects are not yet supported.</p><div data-status role="status"></div><div class="classic-map-export-actions"><button type="button" data-save>Save .atlas…</button><button type="button" data-close>Cancel</button></div>';
 document.body.append(dialog);
 const world=dialog.querySelector('[data-world]'),preview=dialog.querySelector('[data-preview]'),status=dialog.querySelector('[data-status]'),save=dialog.querySelector('[data-save]');
 let prepared=null;
@@ -15,7 +15,7 @@ function selected(){
  try{
   prepared=core.exportAtlas(map,map.name||profile.name);
   const table=document.createElement('dl');
-  for(const [label,value] of [['Map',prepared.name],['Rooms',prepared.rooms],['Route directions',prepared.directions],['Atlas exit records',prepared.exitRecords],['File size',prepared.bytes.length+' bytes']]){
+  for(const [label,value] of [['Map',prepared.name],['Maps',prepared.layers],['Rectangles',prepared.rectangles],['Rooms',prepared.rooms],['Route directions',prepared.directions],['Atlas exit records',prepared.exitRecords],['File size',prepared.bytes.length+' bytes']]){
    const term=document.createElement('dt'),description=document.createElement('dd');term.textContent=label;description.textContent=String(value);table.append(term,description);
   }
   preview.append(table);save.disabled=false;

@@ -53,6 +53,24 @@
   if(/[\r\n]/.test(prefix+suffix))throw new Error('Prefix and suffix must each be one line.');
   return lines.map(line=>{const value=prefix+line+suffix;if(new TextEncoder().encode(value).length>8192)throw new Error('A pasted command exceeds 8192 bytes.');return value;});
  }
+ function idleSettings(minutes,text){
+  if(!/^\d+$/.test(String(minutes))||!Number.isSafeInteger(Number(minutes))||Number(minutes)>1440)throw Error('Idle time must be a whole number of minutes, up to 1440.');
+  if(typeof text!=='string'||/[\r\n\x00]/.test(text)||new TextEncoder().encode(text).length>8192)throw Error('An idle command must be one line, up to 8192 bytes.');
+  return {enabled:true,minutes:Math.max(1,Number(minutes)),text};
+ }
+ function createIdleController({setTimer=setTimeout,clearTimer=clearTimeout,now=Date.now,isAlive=()=>true,execute=()=>{},sendNOP=()=>{},report=()=>{}}={}){
+  const jobs=new Map();
+  function cancel(id){const job=jobs.get(id);if(!job)return false;clearTimer(job.timer);jobs.delete(id);return true;}
+  function arm(job){clearTimer(job.timer);job.due=now()+job.minutes*60000;job.timer=setTimer(()=>{
+   if(jobs.get(job.id)!==job)return;if(!isAlive(job.id)){cancel(job.id);return;}job.timer=null;
+   try{const result=job.text?execute(job.id,job.text):sendNOP(job.id);Promise.resolve(result).catch(error=>{if(jobs.get(job.id)===job){cancel(job.id);report(job.id,error.message);}});}catch(error){cancel(job.id);report(job.id,error.message);return;}
+   if(jobs.get(job.id)===job&&job.timer===null)arm(job);
+  },job.minutes*60000);}
+  function set(id,minutes,text){const settings=idleSettings(minutes,text);if(!isAlive(id))throw Error('Must be connected to set an idle timer.');if(!jobs.has(id)&&jobs.size>=64)throw Error('At most 64 idle timers may be active.');cancel(id);const job={...settings,id,due:0,timer:null};jobs.set(id,job);arm(job);return {...settings};}
+  function sent(id){const job=jobs.get(id);if(job&&isAlive(id))arm(job);}
+  function list(){return [...jobs.values()].map(({id,minutes,text,due})=>({id,minutes,text,due}));}
+  return {set,sent,cancel,list};
+ }
  const browser=typeof window==='object'&&typeof document==='object';
  const getApi=()=>browser?window.BeipPreview:null;
  function display(session,text){const api=getApi();if(!api||!session||api.sessions.get(session.id)!==session)return;const old=session.suppressAutomation;session.suppressAutomation=true;api.appendText(session,text+'\n',{color:'#a6c9d5'});session.suppressAutomation=old;}
@@ -61,11 +79,25 @@
   execute:(id,value)=>{const api=getApi(),session=api.sessions.get(id);if(session)api.command(value,false,session);},
   report:(id,value)=>display(getApi()?.sessions.get(id),value)
  });
- let pasteDialog=null,pasteJob=null;
+ const idle=createIdleController({
+  isAlive:id=>!!getApi()?.sessions.get(id)?.connected,
+  execute:(id,value)=>{const api=getApi(),session=api?.sessions.get(id);if(session)return api.command(value,false,session);},
+  sendNOP:id=>window.chrome?.webview?.postMessage('telnetnop|'+id),
+  report:(id,value)=>display(getApi()?.sessions.get(id),value)
+ });
+ let pasteDialog=null,pasteJob=null,wallPending=false,nextTab=1;
  function globalMessage(message){if(typeof message!=='string'||!message.startsWith('clipboard:'))return false;if(!pasteDialog?.open)return true;const status=document.getElementById('smartPasteStatus');if(message.startsWith('clipboard:text:')){try{const text=new TextDecoder().decode(Uint8Array.from(atob(message.slice(15)),c=>c.charCodeAt(0)));if(text.length>262144)throw Error('Clipboard exceeds the 256 KiB paste limit.');document.getElementById('smartPasteText').value=text;status.textContent='Clipboard loaded. Review the text before sending.';}catch(error){status.textContent=error.message;}}else status.textContent=message.slice(16);return true;}
  function cancelPaste(sessionId){if(pasteJob&&(!sessionId||pasteJob.sessionId===sessionId)){clearTimeout(pasteJob.timer);pasteJob=null;}}
- function closed(session){scheduler.cancelSession(session.id);cancelPaste(session.id);}
- function incoming(session,payload){if(payload==='ended:'||payload==='reset:')closed(session);}
+ function closed(session){scheduler.cancelSession(session.id);cancelPaste(session.id);idle.cancel(session.id);}
+ function sent(session){if(session?.connected)idle.sent(session.id);}
+ function incoming(session,payload){
+  if(payload==='ended:'||payload==='reset:'||payload==='connected:off')closed(session);
+  if(payload==='connected:on'){
+   const settings=getApi()?.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId)?.idle;
+   if(settings?.enabled)try{idle.set(session.id,settings.minutes,settings.text);}catch(error){display(session,error.message);}
+  }
+  if(session.gmcpDump&&(payload.startsWith('gmcp:')||payload.startsWith('gmcpsent:'))){try{const prefix=payload.startsWith('gmcp:')?'GMCP Received: ':'GMCP Sent: ',data=payload.slice(payload.indexOf(':')+1);if(data.length<=87384)display(session,prefix+new TextDecoder().decode(Uint8Array.from(atob(data),c=>c.charCodeAt(0))));}catch{}}
+ }
  function handleVariableCommand(value,session){
   const match=/^\/(set|unset|printenv)(?:\s+([\s\S]*))?$/i.exec(value);
   if(!match||!browser)return false;
@@ -103,13 +135,35 @@
    else if(name==='/chars'){const names=api.state.characters.filter(c=>c.worldId===session.worldId).map(c=>c.name);display(session,names.join('\n')||'No saved characters in this world.');}
    else if(name==='/connectioninfo'){display(session,(session.connected?'Connected':'Disconnected')+' · '+(session.host||api.state.worlds.find(w=>w.id===session.worldId)?.host||'Unknown host')+':'+(session.port||api.state.worlds.find(w=>w.id===session.worldId)?.port||'?')+' · '+(session.tls?'TLS with system certificate validation':'Plain TCP'));}
    else if(name==='/new')window.BeipDesktopShell?.handle('ui:file-new');
-   else if(name==='/connect'){
+   else if(name==='/newtab'){let id;do{id='commandtab'+nextTab++;}while(api.sessions.has(id));const tab=api.createSession(id,{label:'(New Tab)'});if(tab)api.selectSession(tab.id);}
+   else if(name==='/connect'||name==='/world'){
     const args=words(arg),world=args.length&&api.state.worlds.find(w=>w.name.toLowerCase()===args[0].toLowerCase());
-    if(!world)return false;
-    if(args.length>2)throw new Error('Use /connect "world name" "character name".');
+    if(args.length>2||!args.length)throw new Error('Use '+name+' "world name" "character name" or host:port.');
+    if(!world){const address=/^(\[[^\]]+\]|[^:\s]+):(\d{1,5})$/.exec(args[0]);if(!address||Number(address[2])<1||Number(address[2])>65535)throw Error('No saved world or valid host:port address.');api.connectSession(address[1].replace(/^\[|\]$/g,''),address[2]);return true;}
     const character=args[1]?api.state.characters.find(c=>c.worldId===world.id&&c.name.toLowerCase()===args[1].toLowerCase()):null;
     if(args[1]&&!character)throw new Error('No such saved character in this world.');
     api.connectSession(world.host,String(world.port),world.id,character?.id||'',world.tls);
+   }
+   else if(name==='/removelast'){
+    api.removeLastLine(session);
+   }
+   else if(name==='/receivegmcp'){
+    if(session.kind!=='world')throw Error('Select a world session for GMCP.');if(new TextEncoder().encode(arg).length>65536)throw Error('GMCP input must be no larger than 64 KiB.');
+    const encoded=btoa(String.fromCharCode(...new TextEncoder().encode(arg)));api.incoming('session:'+session.id+':gmcp:'+encoded);
+   }
+   else if(name==='/gmcp'){if(/^dump_on$/i.test(arg))session.gmcpDump=true;else if(/^dump_off$/i.test(arg))session.gmcpDump=false;else display(session,'GMCP options: dump_on and dump_off.');}
+   else if(name==='/silence'){for(const target of api.sessions.values()){target.triggerAudio?.stop();target.media?.stopAll();}}
+   else if(name==='/wall'){
+    if(!arg)return true;if(wallPending)throw Error('A broadcast cannot start another broadcast.');if(/[\r\n]/.test(arg)||new TextEncoder().encode(arg).length>8192)throw Error('A broadcast must be one line, up to 8192 bytes.');
+    wallPending=true;const targets=[...api.sessions.values()].filter(target=>target.kind==='world'&&target.connected);
+    Promise.allSettled(targets.map(target=>Promise.resolve().then(()=>{if(api.sessions.get(target.id)===target&&target.connected)return api.command(arg,false,target);}))).then(results=>{for(let index=0;index<results.length;index++)if(results[index].status==='rejected')display(targets[index],results[index].reason?.message||'Broadcast failed.');}).finally(()=>{wallPending=false;});
+   }
+   else if(name==='/idle'){
+    if(session.kind!=='world'||!session.connected)throw Error('Must be connected to set an idle timer.');const args=words(arg),character=api.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId);
+    if(!args.length){const removed=idle.cancel(session.id);if(character?.idle)character.idle.enabled=false;display(session,removed?'Idle timer removed.':'No idle timer set.');}
+    else if(args.length===2){const settings=idle.set(session.id,args[0],args[1]);if(character)character.idle=settings;display(session,'Idle timer activated, sending '+(settings.text||'Telnet NOP')+' every '+settings.minutes+' minute'+(settings.minutes===1?'':'s')+'.');}
+    else throw Error('Use /idle minutes "command"; /idle alone turns it off. An empty quoted command sends Telnet NOP.');
+    if(character)api.saveSettings();
    }
    else if(name==='/close')api.closeSession(session.id);
    else if(name==='/reconnect'){const targets=arg.trim().toLowerCase()==='all'?[...api.sessions.values()].filter(s=>s.kind==='world'):[session];for(const target of targets)if(!api.reconnectSession(target)&&target===session)throw Error('No previous connection for this tab.');}
@@ -161,5 +215,5 @@
   const preferences=getApi().state.preferences;document.getElementById('smartPastePrefix').value=preferences.pastePrefix||'';document.getElementById('smartPasteSuffix').value=preferences.pasteSuffix||'';document.getElementById('smartPasteDelay').value=preferences.pasteDelay??250;
   if(!pasteDialog.open)pasteDialog.showModal();document.getElementById('smartPasteText').focus();
  }
- return {words,duration,createScheduler,pasteLines,handle,handleVariableCommand,closed,incoming,globalMessage,smartPaste,scheduler};
+ return {words,duration,createScheduler,pasteLines,idleSettings,createIdleController,handle,handleVariableCommand,closed,sent,incoming,globalMessage,smartPaste,scheduler,idle};
 });

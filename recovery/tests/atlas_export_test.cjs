@@ -15,8 +15,9 @@ const sample=name=>fs.readFileSync(path.join(__dirname,'../../Maps',name));
   assert.deepEqual(map.exits.map(({from,to,command})=>[from,to,command]),[['r0','r1','east & enter'],['r1','r0','west'],['r1','r1','portal']]);
   assert.deepEqual(map.exits[0].points,[[20,10],[80,10]]);assert.deepEqual(map.exits[1].points,[[80,10],[20,10]]);
  });
- await test('Fluff sample map layers remain separately selectable; cross-layer links are reported',async()=>{
-  const imported=await reader.readAtlas(sample('Fluff.atlas'));assert.equal(imported.maps.length,3);assert.ok(imported.report.skipped['Cross-layer exits']>=2);
+ await test('Fluff sample layers remain selectable and cross-layer links are retained',async()=>{
+  const imported=await reader.readAtlas(sample('Fluff.atlas'));assert.equal(imported.maps.length,3);assert.equal(imported.report.skipped['Cross-layer exits'],undefined);
+  assert.ok(imported.atlas.exits.some(exit=>imported.atlas.rooms.find(room=>room.id===exit.from).layerId!==imported.atlas.rooms.find(room=>room.id===exit.to).layerId));
   const chosen=imported.maps[1],result=await reader.readAtlas(writer.exportAtlas(chosen.graph).bytes);
   assert.equal(result.maps.length,1);assert.equal(result.maps[0].name,chosen.name);
   assert.equal(result.maps[0].graph.rooms.length,chosen.graph.rooms.length);assert.equal(result.maps[0].graph.exits.length,chosen.graph.exits.length);
@@ -26,7 +27,7 @@ const sample=name=>fs.readFileSync(path.join(__dirname,'../../Maps',name));
   const restored=(await reader.readAtlas(writer.exportAtlas(map).bytes)).maps[0].graph;
   assert.equal(restored.rooms.length,map.rooms.length);assert.equal(restored.exits.length,map.exits.length);
   assert.equal(restored.rooms.find(x=>x.title==='Jazmyn\'s Puma Pad').underConstruction,true);
-  assert.equal(restored.rooms.find(x=>x.title==='North Furry Avenue').outlineColor,'#F717E0');
+  assert.equal(restored.rooms.find(x=>x.title==='North Furry Avenue').outlineColor,'#f717e0');
   assert.deepEqual(restored.rooms[0].rect,map.rooms[0].rect);
  });
  await test('Arx compressed source exports as a valid stored ZIP and retains supported graph',async()=>{

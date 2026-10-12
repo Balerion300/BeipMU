@@ -148,12 +148,13 @@ window.BeipCoreTest=async function(config){
    document.getElementById('exitFrom').selectedIndex=0;document.getElementById('exitTo').selectedIndex=1;document.getElementById('exitCommand').value='n';document.getElementById('exitForm').requestSubmit();
   }
   if(mapRoom.options.length!==2)throw Error('Expected two saved map rooms.');
-  mapRoom.selectedIndex=0;mapRoom.dispatchEvent(new Event('change'));document.getElementById('roomCurrent').click();
+  const sharedMapPositionBeforePin=app.state.maps.coreworld.currentRoomId,betaMapPositionBeforePin=BeipMapSessions.get(beta).currentRoomId;
+  mapRoom.selectedIndex=0;mapRoom.dispatchEvent(new Event('change'));const pinnedMapRoom=mapRoom.value;document.getElementById('roomCurrent').click();
   mapRoom.selectedIndex=1;mapRoom.dispatchEvent(new Event('change'));document.getElementById('mapRoute').click();
-  const mapperUI=document.getElementById('mapRouteText').textContent==='n'&&document.getElementById('mapperCanvas').querySelectorAll('g').length===2&&app.state.maps.coreworld?.rooms?.length===2;
+  const mapperUI=document.getElementById('mapRouteText').textContent==='n'&&document.getElementById('mapperCanvas').querySelectorAll('[data-map-room]').length===2&&app.state.maps.coreworld?.rooms?.length===2&&BeipMapSessions.get(alpha).currentRoomId===pinnedMapRoom&&BeipMapSessions.get(beta).currentRoomId===betaMapPositionBeforePin&&app.state.maps.coreworld.currentRoomId===sharedMapPositionBeforePin;
   document.getElementById('mapperClose').click();
   const mapDock=await openDock('ui:options-map','Map','map');
-  const dockMap=mapDock.querySelectorAll('.dock-map g').length===2&&mapDock.querySelector('select[aria-label="Map destination"]')?.options.length===2;
+  const dockRooms=[...mapDock.querySelectorAll('.dock-map [data-map-room]')],dockMap=dockRooms.length===2&&dockRooms.every(room=>room.querySelector('rect')&&room.querySelector('text'))&&mapDock.querySelector('select[aria-label="Map destination"]')?.options.length===2;
   const dockSplitter=el('dockSplitter'),dockBefore=Number(dockSplitter.getAttribute('aria-valuenow'));dockSplitter.focus();press(dockSplitter,'ArrowLeft');
   const dockResize=Number(dockSplitter.getAttribute('aria-valuenow'))===Math.min(700,dockBefore+10);
   app.selectSession('beta');const dockIsolation=config.phase==='first'?!tabFor('Map'):!!tabFor('Map')&&!beta.view.textContent.includes('CORE A COMPLETE');app.selectSession('alpha');
@@ -303,7 +304,12 @@ window.BeipCoreTest=async function(config){
   result.scriptObjects=await BeipScriptObjectsFixture.run(app);
   result.settings=await BeipSettingsFixture.run(app);
   result.layouts=await BeipLayoutFixture.run(app);
+  result.maps=await BeipMapFixture.run(app);
   result.everyday=await BeipEverydayFixture.run(app);
+  result.temporal=await BeipTemporalTriggersFixture.run(app);
+  result.loggingOptions=await BeipLoggingFixture.run(app);
+  result.emoji=await BeipEmojiFixture.run(app);
+  result.commands=await BeipCommandFixture.run(app,config);
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
   app.selectSession(closed);
   const closingPane=await openDock('ui:window-input-history','Input History','history');

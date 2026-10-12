@@ -11,6 +11,7 @@
 #include <wrl.h>
 #include <WebView2.h>
 #include "tls.h"
+#include "native-log-name.h"
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -238,9 +239,19 @@ public:
     Client(const Client&)=delete;Client& operator=(const Client&)=delete;
     void disconnect(){stop=true;gmcpReady=false;{std::lock_guard guard(lock);tlsReady=false;if(socket!=INVALID_SOCKET)shutdown(socket,SD_BOTH);}if(worker.joinable())worker.join();{std::lock_guard guard(lock);if(socket!=INVALID_SOCKET){closesocket(socket);socket=INVALID_SOCKET;}tls.reset();}}
     ~Client(){disconnect();}
-    void logStart(const std::filesystem::path& root){
+    void logStart(const std::filesystem::path& root,const std::filesystem::path& selected={}){
         std::lock_guard guard(logLock);
         if(logFile.is_open()){post("logstatus:on:"+base64(utf8(logPath.wstring())));return;}
+        if(!selected.empty()){
+            std::error_code error;std::filesystem::create_directories(selected.parent_path(),error);
+            if(error){post("logstatus:error:"+base64("Could not create the log folder."));return;}
+            bool empty=!std::filesystem::exists(selected,error)||std::filesystem::file_size(selected,error)==0;
+            logFile.clear();logFile.open(selected,std::ios::binary|std::ios::app);
+            if(!logFile){post("logstatus:error:"+base64("Could not open the selected log file."));return;}
+            logPath=selected;auto extension=BeipLogName::lower(selected.extension().wstring());
+            if(empty&&(extension==L".html"||extension==L".htm"))logFile<<"<!doctype html>\r\n<meta charset=\"utf-8\"><title>BeipMU log</title>\r\n<body style=\"font-family:monospace\">\r\n";
+            logFile.flush();post("logstatus:on:"+base64(utf8(logPath.wstring())));return;
+        }
         std::error_code ec;auto dir=root/L"Logs";std::filesystem::create_directories(dir,ec);
         if(ec){post("logstatus:error:"+base64("Could not create the Logs folder."));return;}
         SYSTEMTIME now;GetLocalTime(&now);wchar_t stamp[32];swprintf_s(stamp,L"%04u%02u%02u-%02u%02u%02u",now.wYear,now.wMonth,now.wDay,now.wHour,now.wMinute,now.wSecond);
@@ -254,6 +265,11 @@ public:
         post("logstatus:error:"+base64("Could not open a log file."));
     }
     void logStop(){std::lock_guard guard(logLock);if(logFile.is_open())logFile.close();logPath.clear();post("logstatus:off");}
+    void logWrite(std::string_view encoded){
+        std::string record;if(!unbase64(encoded,record,262144)||!validUtf8(record)||record.find('\0')!=record.npos){post("logstatus:error:"+base64("Invalid log record."));return;}
+        std::lock_guard guard(logLock);if(!logFile.is_open()){post("logstatus:error:"+base64("Logging is not active."));return;}
+        logFile.write(record.data(),std::streamsize(record.size()));logFile.flush();if(!logFile)post("logstatus:error:"+base64("Could not write the log file."));
+    }
     void logLine(std::string_view encoded){
         std::string line;if(!unbase64(encoded,line)||!validUtf8(line)||line.find('\r')!=line.npos||line.find('\n')!=line.npos){post("logstatus:error:"+base64("Invalid log line."));return;}
         std::lock_guard guard(logLock);if(!logFile.is_open()){post("logstatus:error:"+base64("Logging is not active."));return;}
@@ -276,7 +292,9 @@ public:
         std::string payload;if(!unbase64(encoded,payload)||payload.size()>65535){post("status:Invalid GMCP payload.");return;}
         if(!gmcpReady){post("status:GMCP is not enabled for this connection.");return;}
         if(!transmit(TelnetStream::subneg(201,payload)))post("status:Could not send GMCP payload.");
+        else post("gmcpsent:"+base64(payload));
     }
+    void telnetNop(){if(!transmit(std::string_view("\xff\xf1",2)))post("status:Not connected.");}
     void resize(unsigned short width,unsigned short height){columns=width;rows=height;resizePending=true;}
     bool mayLogin(std::string_view character,bool allowPlain){std::lock_guard guard(lock);return !boundCharacter.empty()&&boundCharacter==character&&(secure||allowPlain);}
     void connect(std::string host,std::string port,bool useTls=false,std::string character={}){
@@ -484,6 +502,28 @@ struct Application {
         if(safe)it->second->login(username,password);else scoped(session,"status:Saved password is invalid.");
         SecureZeroMemory(password.data(),password.size());
     }
+    void emojiCommand(std::string_view command){
+        auto path=dataRoot()/L"Emoji.txt",original=uiRoot/L"Emoji.txt";std::error_code error;
+        auto fail=[this](std::string_view reason){message("emoji:error:"+base64(reason));};
+        if(command=="revert"){
+            std::filesystem::remove(path,error);if(error){fail("Could not revert the custom Emoji.txt.");return;}
+        }else if(command=="copy"||command=="edit"){
+            std::filesystem::create_directories(path.parent_path(),error);if(error){fail("Could not create the emoji folder.");return;}
+            if(!std::filesystem::exists(path,error)&&!std::filesystem::copy_file(original,path,std::filesystem::copy_options::none,error)){fail("Could not copy the default Emoji.txt.");return;}
+            if(command=="edit"&&!testMode){auto argument=L"\""+path.wstring()+L"\"";if(reinterpret_cast<INT_PTR>(ShellExecuteW(window,L"open",L"notepad.exe",argument.c_str(),nullptr,SW_SHOWNORMAL))<=32){fail("Could not open Emoji.txt in Notepad.");return;}}
+        }else if(command.starts_with("save|")){
+            std::string source;if(!unbase64(command.substr(5),source,131072)||!validUtf8(source)||source.find('\0')!=source.npos){fail("Emoji.txt must be UTF-8 text of at most 128 KiB.");return;}
+            std::filesystem::create_directories(path.parent_path(),error);if(error){fail("Could not create the emoji folder.");return;}
+            auto temp=path.parent_path()/(L"emoji-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".tmp");
+            {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(source.data(),std::streamsize(source.size()));file.flush();if(!file){file.close();std::filesystem::remove(temp,error);fail("Could not save Emoji.txt.");return;}}
+            if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(temp,error);fail("Could not replace Emoji.txt.");return;}
+        }else if(command!="load"){return;}
+        bool custom=std::filesystem::exists(path,error);if(!custom)path=original;
+        auto size=std::filesystem::file_size(path,error);if(error||size>131072){fail("Emoji.txt is inaccessible or exceeds 128 KiB.");return;}
+        std::ifstream file(path,std::ios::binary);std::string source((std::istreambuf_iterator<char>(file)),{});
+        if(!file||file.bad()||!validUtf8(source)||source.find('\0')!=source.npos){fail("Could not read a valid UTF-8 Emoji.txt.");return;}
+        message(std::string("emoji:source:")+(custom?"custom":"default")+"|"+base64(source));
+    }
     void loadSettings(){
         auto path=dataRoot()/L"settings.json";std::error_code ec;
         if(!std::filesystem::exists(path,ec)){message("settings:"+base64("{}"));return;}
@@ -624,9 +664,23 @@ struct Application {
                 auto id=text.substr(5,split-5);auto it=sessions.find(id);
                 if(it!=sessions.end())it->second->command(text.substr(split+1));else scoped(id,"status:Session is closed.");
             }else legacyClient->command(text.substr(5));
-        }else if(text=="settings:load")loadSettings();
+        }else if(text.starts_with("emoji:"))emojiCommand(std::string_view(text).substr(6));
+        else if(text=="settings:load")loadSettings();
         else if(text.starts_with("settings:save|"))saveSettings(std::string_view(text).substr(14));
-        else if(text.starts_with("logstart|")){
+        else if(text.starts_with("logchoose|")){
+            auto id=text.substr(10);if(!validId(id)||!sessions.contains(id))return;
+            std::wstring path;
+            if(testMode&&!inspectMode)path=(testPath/L"selected-log.txt").wstring();
+            else{wchar_t filename[32768]=L"BeipMU log.txt";OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window;dialog.lpstrFile=filename;dialog.nMaxFile=32768;dialog.lpstrFilter=L"Text log (*.txt)\0*.txt\0HTML log (*.html)\0*.html\0Log (*.log)\0*.log\0\0";dialog.lpstrDefExt=L"txt";dialog.Flags=OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR|OFN_EXPLORER;if(GetSaveFileNameW(&dialog))path=filename;}
+            message("logchoice:"+id+":"+base64(utf8(path)));
+        }else if(text.starts_with("logstart2|")){
+            std::vector<std::string> fields;size_t at=10;while(at<=text.size()){auto end=text.find('|',at);fields.push_back(text.substr(at,end==text.npos?text.npos:end-at));if(end==text.npos)break;at=end+1;}
+            if(fields.size()!=6||!validId(fields[0])||!sessions.contains(fields[0])||(fields[5]!="0"&&fields[5]!="1"))return;
+            std::string values[4];for(size_t i=0;i<4;++i)if(!unbase64(fields[i+1],values[i],4096)||!validUtf8(values[i])||values[i].find('\0')!=values[i].npos)return;
+            try{auto path=values[0].empty()?std::filesystem::path{}:BeipLogName::resolve(dataRoot()/L"Logs",wide(values[0]),wide(values[1]),wide(values[2]),wide(values[3]),fields[5]=="1");sessions.at(fields[0])->logStart(dataRoot(),path);}catch(const std::exception& error){scoped(fields[0],"logstatus:error:"+base64(error.what()));}
+        }else if(text.starts_with("logwrite|")){
+            auto split=text.find('|',9);if(split==text.npos)return;auto id=text.substr(9,split-9);if(validId(id)&&sessions.contains(id))sessions.at(id)->logWrite(std::string_view(text).substr(split+1));
+        }else if(text.starts_with("logstart|")){
             auto id=text.substr(9);auto it=sessions.find(id);if(validId(id)&&it!=sessions.end())it->second->logStart(dataRoot());
         }else if(text.starts_with("logstop|")){
             auto id=text.substr(8);auto it=sessions.find(id);if(validId(id)&&it!=sessions.end())it->second->logStop();
@@ -634,6 +688,8 @@ struct Application {
             auto split=text.find('|',4);if(split==text.npos)return;
             auto id=text.substr(4,split-4);auto it=sessions.find(id);
             if(validId(id)&&it!=sessions.end())it->second->logLine(std::string_view(text).substr(split+1));
+        }else if(text.starts_with("telnetnop|")){
+            auto id=text.substr(10);if(validId(id)&&sessions.contains(id))sessions.at(id)->telnetNop();
         }else if(text.starts_with("gmcp|")){
             auto split=text.find('|',5);if(split==text.npos)return;
             auto id=text.substr(5,split-5);auto it=sessions.find(id);
@@ -775,7 +831,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.10",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.11",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

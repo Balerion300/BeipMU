@@ -5,7 +5,7 @@ async function run(app,config){
  if(!window.BeipCoreTesting)throw Error('Test mode required.');
  const clone=x=>JSON.parse(JSON.stringify(x)),state=app.state,alpha=app.sessions.get('alpha'),beta=app.sessions.get('beta');
  const saved={aliases:clone(state.aliases),triggers:clone(state.triggers),preferences:clone(state.preferences),characters:clone(state.characters)},selected=app.current.id;
- const result={},check=(key,value)=>{result[key]=!!value;if(!value)throw Error('Automation check failed: '+key);};
+ const result={},check=(key,value,details)=>{result[key]=!!value;if(!value)throw Error('Automation check failed: '+key+(details?' '+JSON.stringify(details):''));};
  const wait=async(fn,label)=>{const end=Date.now()+12000;while(!fn()){if(Date.now()>end)throw Error('Timed out: '+label);await new Promise(r=>setTimeout(r,30));}};
  const feed=async(session,text)=>{session.parser.feed(text+'\r\n');await session.pendingLineWork;};
  const scope={level:'character',serverId:alpha.worldId,characterId:alpha.characterId};
@@ -35,8 +35,9 @@ async function run(app,config){
   dialog.querySelector('[data-tab="sound"]').click();field('speechText').value='Saved voice text';field('awayCondition').value='away';field('awayOnce').checked=true;field('oncePerLine').checked=false;
   dialog.querySelector('[data-action="ok"]').click();if(dialog.open)throw Error(dialog.querySelector('.classic-error').textContent);
   BeipClassicDialogs.openTriggers();[...dialog.querySelectorAll('.classic-tree-item')].find(x=>x.textContent==='^AUTOMATION AUDIO$').click();dialog.querySelector('[data-tab="sound"]').click();
-  check('soundEditor',field('speechText').getBoundingClientRect().bottom<=dialog.querySelector('.classic-editor').getBoundingClientRect().bottom&&field('soundEnabled').checked&&field('soundPath').value===config.audioPath&&field('speechEnabled').checked&&field('speechText').value==='Saved voice text'&&field('awayCondition').value==='away'&&field('awayOnce').checked&&!field('oncePerLine').checked);
   window.chrome.webview.postMessage('testcapture:automation-sound');await wait(()=>window.BeipTestScreenshots?.has('automation-sound'),'Sound editor screenshot');
+  result.soundEditorDetails={speechBottom:field('speechText').getBoundingClientRect().bottom,editorBottom:dialog.querySelector('.classic-editor').getBoundingClientRect().bottom,soundEnabled:field('soundEnabled').checked,soundPathMatches:field('soundPath').value===config.audioPath,speechEnabled:field('speechEnabled').checked,speechText:field('speechText').value,awayCondition:field('awayCondition').value,awayOnce:field('awayOnce').checked,oncePerLine:field('oncePerLine').checked};
+  check('soundEditor',result.soundEditorDetails.speechBottom<=result.soundEditorDetails.editorBottom&&field('soundEnabled').checked&&field('soundPath').value===config.audioPath&&field('speechEnabled').checked&&field('speechText').value==='Saved voice text'&&field('awayCondition').value==='away'&&field('awayOnce').checked&&!field('oncePerLine').checked,result.soundEditorDetails);
   dialog.querySelector('[data-action="cancel"]').click();
   const stale=app.createSession('automation-stale',{worldId:alpha.worldId,characterId:alpha.characterId,label:'Stale audio test'});
   const originalProcess=stale.ruleRuntime.processLine.bind(stale.ruleRuntime);let release,started=false;

@@ -54,14 +54,16 @@ check('Imported conditional aliases and disabled trigger folders obey original r
 check('Unsupported parents omit their subtree and temporal child conditions are never flattened',()=>{
  const nested='Triggers\n{\n'+action()+'\n}';
  const plan=core.parseConfig(config('Triggers\n{\n{\nFindString.MatchText="["\nFindString.RegularExpression=true\n'+nested+'\n}\n{\nFindString.MatchText="ready"\nMultiline=true\n'+nested+'\n}\n}'));
- assert.equal(plan.triggers.length,0);assert.equal(plan.report.skipped['Unusable trigger patterns'],1);assert.equal(plan.report.skipped['Multiline trigger subtrees'],1);
+ assert.equal(plan.triggers.length,0);assert.equal(plan.report.skipped['Unusable trigger patterns'],1);assert.equal(plan.report.skipped['Invalid or excessive multiline trigger limits'],1);
  const script=core.parseConfig(config('Aliases\n{\nActive=true\n{\nFindString.MatchText="run"\nReplace="/script dangerous"\nAliases\n{\n{\nFindString.MatchText="run"\nReplace="dangerous child"\n}\n}\n}\n}'));
  assert.equal(script.aliases.length,0);assert.equal(script.report.skipped['Unsupported or script aliases'],1);
  const click=core.parseConfig(config('Triggers\n{\n{\nFindString.MatchText="ready"\nSend.Active=true\nSend.SendOnClick=true\nSend.Send="never auto send"\n'+nested+'\n}\n}'));
- assert.equal(click.triggers.length,2);assert.equal(click.triggers[0].sendText,undefined);assert.equal(click.triggers[1].parentId,click.triggers[0].id);
- assert.equal(click.report.skipped['Click-only trigger sends'],1);
+ assert.equal(click.triggers.length,2);assert.equal(click.triggers[0].sendText,'never auto send');assert.equal(click.triggers[1].parentId,click.triggers[0].id);
+ assert.equal(click.triggers[0].sendOnClick,true);assert.equal(click.report.skipped['Click-only trigger sends'],undefined);
  const capture=core.parseConfig(config('Triggers\n{\n{\nFindString.MatchText="ready"\nSpawn.Active=true\nSpawn.Title="Capture"\nSpawn.CaptureUntil="done"\nSpawn.OnlyChildrenDuringCapture=true\n'+nested+'\n}\n}'));
- assert.equal(capture.triggers.length,0);assert.equal(capture.report.skipped['Capture-only child trigger subtrees'],1);
+ assert.equal(capture.triggers.length,2);assert.equal(capture.triggers[0].captureOnlyChildren,true);assert.equal(capture.triggers[1].parentId,capture.triggers[0].id);
+ const mainCapture=core.parseConfig(config('Triggers\n{\n{\nFindString.MatchText="ready"\nSpawn.Active=true\nSpawn.CaptureUntil="done"\nSpawn.OnlyChildrenDuringCapture=true\n'+nested+'\n}\n}'));
+ assert.equal(mainCapture.triggers.length,0);assert.equal(mainCapture.report.skipped['Unsupported capture-only child trigger subtrees'],1);
  for(const unsupported of ['Script.Active=true\nScript.Function="mutateLine"','Filter.Active=true\nFilter.HTML=true\nFilter.Replace="<b>changed</b>"']){
   const mutated=core.parseConfig(config('Triggers\n{\n{\nFindString.MatchText="ready"\n'+unsupported+'\n'+nested+'\n}\n}'));
   assert.equal(mutated.triggers.length,0);assert.equal(mutated.report.skipped['Unsupported text-changing trigger subtrees'],1);

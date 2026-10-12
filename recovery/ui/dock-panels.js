@@ -115,7 +115,7 @@ function floatData(session,type,model){
  if(type==='history')return {rows:session.history.slice(-200).reverse().map(x=>String(x).slice(0,2048))};
  if(type==='image')return {images:model.images.slice(-100),selected:Math.max(0,model.imageIndex)};
  if(type==='notes'){const character=api().state.characters.find(x=>x.id===session.characterId),world=api().state.worlds.find(x=>x.id===session.worldId),profile=character||world,key=profile?(character?'character:':'world:')+profile.id:'';return {profileId:profile?.id||'',profileKind:character?'character':'world',name:profile?.name||'',text:key?(model.notesDrafts.get(key)??profile?.notes??''):''};}
- if(type==='map'){let graph;try{graph=BeipMapper.createWorld(api().state.maps?.[session.worldId]);}catch{graph=BeipMapper.createWorld();}return {worldId:session.worldId,rooms:graph.rooms().slice(0,512),exits:graph.exits().slice(0,2048),currentRoom:graph.currentRoom(),routeText:model.floatRoute||''};}
+ if(type==='map'){let graph;try{graph=BeipMapSessions.graph(session);}catch{graph=BeipMapper.createWorld();}const view=BeipMapSessions.get(session);return {worldId:session.worldId,graph:graph.serialize(),layerId:view.layerId,currentRoom:graph.currentRoom(),tracking:view.tracking,view:view.view,routeText:model.floatRoute||''};}
  if(type==='split')return {lines:(model.splitLines.length?model.splitLines:[...session.view.querySelectorAll('.line')]).slice(-200).map(richLine)};
  if(type==='spawn'){const names=[...model.spawn.keys()],selected=model.spawn.has(model.spawnSelected)?model.spawnSelected:names[0]||'';return {names,selected,lines:(model.spawn.get(selected)||[]).slice(-200).map(x=>x.slice(0,2048))};}
  return {};
@@ -173,6 +173,7 @@ function addHistory(session,text){const model=ensure(session);model.history.push
 function addImage(session,event){if(!event?.url)return;const model=ensure(session),wasLatest=model.imageIndex<0||model.imageIndex===model.images.length-1;model.images.push({url:event.url,alt:String(event.alt||'Image').slice(0,160)});if(model.images.length>100){model.images.shift();if(!wasLatest)model.imageIndex=Math.max(0,model.imageIndex-1);}if(wasLatest)model.imageIndex=model.images.length-1;updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))refreshPane('image',session,model);}
 function recordLine(session,line){const model=ensure(session);model.splitLines.push(line);if(model.splitLines.length>500)model.splitLines.shift();updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
 function refreshLine(session){const model=sessionPanels.get(session?.id);if(!model)return;updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
+function removeLine(session,line){const model=sessionPanels.get(session?.id);if(!model)return;model.splitLines=model.splitLines.filter(item=>item!==line);refreshLine(session);}
 function routeSpawn(session,title,text,{group=''}={}){
  const model=ensure(session),name=String(title||'Window').slice(0,80),groupName=String(group||'').slice(0,80),key=groupName?groupName+' / '+name:name,rows=model.spawn.get(key)||[];
  if(!model.spawn.has(key)&&model.spawn.size>=32){session.status='Spawn window limit reached (32 per session).';if(current()?.id===session.id)$('status').textContent=session.status;return true;}
@@ -183,19 +184,17 @@ function routeSpawn(session,title,text,{group=''}={}){
 }
 function renderMap(body,session){
  if(!session.worldId){status(body,'Choose a saved world to use its map.');return;}
- let graph;try{graph=BeipMapper.createWorld(api().state.maps?.[session.worldId]);}catch{graph=BeipMapper.createWorld();}
- const tools=document.createElement('div');tools.className='dock-toolbar';tools.append(button('Edit map…',()=>document.getElementById('mapperButton')?.click()));body.append(tools);
+ let graph;try{graph=BeipMapSessions.graph(session);}catch{status(body,'The saved map could not be read.');return;}const state=BeipMapSessions.get(session),tools=document.createElement('div');tools.className='dock-toolbar';tools.append(button('Edit map…',()=>document.getElementById('mapperButton')?.click()));body.append(tools);
+ const layers=document.createElement('select');layers.setAttribute('aria-label','Map layer');for(const layer of graph.layers()){const option=document.createElement('option');option.value=layer.id;option.textContent=layer.name;layers.append(option);}layers.value=state.layerId;layers.onchange=()=>BeipMapSessions.setLayer(session,layers.value);tools.append(layers);
  const rooms=graph.rooms();if(!rooms.length){status(body,'No rooms mapped yet. Use Edit map to add rooms and exits.');return;}
- const selector=document.createElement('select');selector.setAttribute('aria-label','Map destination');for(const room of rooms){const opt=document.createElement('option');opt.value=room.id;opt.textContent=room.title;selector.append(opt);}tools.append(selector);
- const route=document.createElement('p');route.className='dock-hint';
- tools.append(button('Route',()=>{const path=graph.shortestPath(selector.value);route.textContent=path?path.commands.join(' → ')||'Already in this room.':'No route from the current room.';}));
- tools.append(button('Walk',()=>{const commands=graph.walkCommands(selector.value);if(!session.connected||!commands||commands.length>256){route.textContent='No connected route for this session.';return;}for(const command of commands)api().sendRaw(session,command);route.textContent='Sent '+commands.length+' commands. Update the current room after arrival.';}));
- const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.classList.add('dock-map');svg.setAttribute('role','img');svg.setAttribute('aria-label','Mapped rooms and exits');
- const minX=Math.min(...rooms.map(r=>r.x))-70,minY=Math.min(...rooms.map(r=>r.y))-40,maxX=Math.max(...rooms.map(r=>r.x))+160,maxY=Math.max(...rooms.map(r=>r.y))+60;
- svg.setAttribute('viewBox',`${minX} ${minY} ${Math.max(240,maxX-minX)} ${Math.max(180,maxY-minY)}`);
- const ns='http://www.w3.org/2000/svg';for(const exit of graph.exits()){const from=rooms.find(r=>r.id===exit.from),to=rooms.find(r=>r.id===exit.to);if(!from||!to)continue;const line=document.createElementNS(ns,'line');for(const [k,v] of Object.entries({x1:from.x,y1:from.y,x2:to.x,y2:to.y,stroke:'#777','stroke-width':2}))line.setAttribute(k,v);svg.append(line);}
- for(const room of rooms){const group=document.createElementNS(ns,'g'),circle=document.createElementNS(ns,'circle'),label=document.createElementNS(ns,'text');circle.setAttribute('cx',room.x);circle.setAttribute('cy',room.y);circle.setAttribute('r','11');circle.setAttribute('fill',graph.currentRoom()===room.id?'#d5a600':'#9fa2a2');label.setAttribute('x',room.x+16);label.setAttribute('y',room.y+4);label.textContent=room.title;group.append(circle,label);group.addEventListener('click',()=>{selector.value=room.id;});svg.append(group);}
- body.append(svg,route);
+ const selector=document.createElement('select');selector.setAttribute('aria-label','Map destination');for(const room of rooms){const option=document.createElement('option');option.value=room.id;option.textContent=(graph.layers().length>1?(graph.layers().find(layer=>layer.id===(room.layerId||'layer0'))?.name||'Map')+' / ':'')+room.title;selector.append(option);}if(rooms.some(room=>room.id===state.destination))selector.value=state.destination;selector.onchange=()=>{state.destination=selector.value;};tools.append(selector);
+ const route=document.createElement('p');route.className='dock-hint';route.textContent=state.routeText||'';let canvas;
+ function showRoute(){const path=graph.shortestPath(selector.value);state.destination=selector.value;state.routeText=path?path.commands.join(' → ')||'Already in this room.':'No route from the current room.';route.textContent=state.routeText;draw(path);return path;}
+ function sendRoute(one){const path=showRoute(),commands=path?.commands;if(!session.connected||!commands||commands.length>256){route.textContent='No connected route for this session.';return;}for(const command of one?commands.slice(0,1):commands)api().sendRaw(session,command);route.textContent='Sent '+(one?Math.min(commands.length,1):commands.length)+' commands. Position updates only when you pin or track an observed room.';}
+ tools.append(button('Route',showRoute),button('Step',()=>sendRoute(true)),button('Walk',()=>sendRoute(false)),button('Pin',()=>BeipMapSessions.pin(session,selector.value)),button('Locate',()=>{const id=BeipMapSessions.locate(session,[...session.view.querySelectorAll('.line')].slice(-1000).map(line=>line.textContent));if(!id)route.textContent='No unambiguous room name found in recent output.';}),button('Center',()=>{const current=graph.rooms().find(room=>room.id===graph.currentRoom());if(current&&(current.layerId||'layer0')!==state.layerId){BeipMapSessions.setLayer(session,current.layerId||'layer0');return;}canvas?.center(graph.currentRoom());}),button('Fit',()=>canvas?.fit()));
+ const track=document.createElement('label'),tracking=document.createElement('input');tracking.type='checkbox';tracking.checked=state.tracking;tracking.onchange=()=>BeipMapSessions.setTracking(session,tracking.checked);track.append(tracking,document.createTextNode('Track'));tools.append(track);
+ const surface=document.createElement('div');surface.style.cssText='display:flex;flex:1;min-height:140px;overflow:hidden';body.append(surface,route);
+ function draw(path){canvas?.destroy();canvas=BeipMapView.mount(surface,graph,{layerId:state.layerId,currentRoomId:graph.currentRoom(),view:state.view,route:path,onView:view=>{state.view=view;},onRoom:id=>{selector.value=id;state.destination=id;showRoute();}});canvas.svg.classList.add('dock-map');}draw();
 }
 function renderHistory(body,session,model){
  const search=document.createElement('input');search.type='search';search.className='dock-history-search';search.placeholder='Find history';search.setAttribute('aria-label','Find history');search.value=model.historyQuery||'';
@@ -303,11 +302,16 @@ function handleFloatEvent(id,event){
   if(!profile||event.profileId!==profile.id||typeof event.text!=='string'||event.text.length>16384)return false;
   model.notesDrafts.set((character?'character:':'world:')+profile.id,event.text);return true;
  }
- if((action==='map-route'||action==='map-walk')&&type==='map'){
-  let graph;try{graph=BeipMapper.createWorld(api().state.maps?.[session.worldId]);}catch{return false;}
+ if(type==='map'&&['map-route','map-walk','map-step','map-pin','map-layer','map-track','map-locate'].includes(action)){
+  let graph;try{graph=BeipMapSessions.graph(session);}catch{return false;}
+  if(action==='map-layer')return BeipMapSessions.setLayer(session,event.layerId);
+  if(action==='map-track'){BeipMapSessions.setTracking(session,event.enabled===true);return true;}
+  if(action==='map-locate'){const found=BeipMapSessions.locate(session,[...session.view.querySelectorAll('.line')].slice(-1000).map(line=>line.textContent));if(!found){model.floatRoute='No unambiguous room found in recent output.';updateFloat(session,type);}return true;}
   if(typeof event.roomId!=='string'||!graph.rooms().some(room=>room.id===event.roomId))return false;
-  if(action==='map-route'){const route=graph.shortestPath(event.roomId);model.floatRoute=route?route.commands.join(' → ')||'Already in this room.':'No route from the current room.';}
-  else{const commands=graph.walkCommands(event.roomId);if(!session.connected||!commands||commands.length>256){model.floatRoute='No connected route for this session.';}else{for(const command of commands)api().sendRaw(session,command);model.floatRoute='Sent '+commands.length+' commands. Update the current room after arrival.';}}
+  if(action==='map-pin')return BeipMapSessions.pin(session,event.roomId);
+  const route=graph.shortestPath(event.roomId);
+  if(action==='map-route')model.floatRoute=route?route.commands.join(' → ')||'Already in this room.':'No route from the current room.';
+  else{const commands=route?.commands;if(!session.connected||!commands||commands.length>256)model.floatRoute='No connected route for this session.';else{for(const command of action==='map-step'?commands.slice(0,1):commands)api().sendRaw(session,command);model.floatRoute='Sent '+(action==='map-step'?Math.min(commands.length,1):commands.length)+' commands. Awaiting observed position.';}}
   updateFloat(session,type);return true;
  }
  if(action==='map-edit'&&type==='map'){api().selectSession(session.id);$('mapperButton')?.click();return true;}
@@ -349,7 +353,8 @@ for(const edge of layout.EDGES){
  sideSplitter.addEventListener('keydown',event=>{const grow=edge==='left'?'ArrowRight':edge==='right'?'ArrowLeft':edge==='top'?'ArrowDown':'ArrowUp',shrink=edge==='left'?'ArrowLeft':edge==='right'?'ArrowRight':edge==='top'?'ArrowUp':'ArrowDown';if(![grow,shrink,'Home','End'].includes(event.key))return;const session=current();if(!session)return;event.preventDefault();const model=ensure(session),minimum=edge==='bottom'?50:edge==='top'?90:edge==='right'?220:180,maximum=edge==='bottom'?400:edge==='top'?500:700;model.sizes[edge]=layout.dimension(event.key==='Home'?minimum:event.key==='End'?maximum:model.sizes[edge]+(event.key===grow?10:-10),edge);sideSplitter.setAttribute('aria-valuenow',String(model.sizes[edge]));document.documentElement.style.setProperty('--dock-'+edge+'-size',model.sizes[edge]+'px');remember(session);});
  sideSplitter.setAttribute('aria-valuenow',String(layout.DEFAULT_SIZE[edge]));
 }
+window.addEventListener('beip-map-position',event=>{const session=api()?.sessions.get(event.detail?.sessionId);if(!session)return;const model=ensure(session);if(current()?.id===session.id&&paneVisible(model,'map'))refreshPane('map',session,model);updateFloat(session,'map');});
 window.addEventListener('beip-map-updated',()=>{const session=current();if(!session)return;const model=ensure(session);if(paneVisible(model,'map'))refreshPane('map',session,model);updateFloat(session,'map');});
-window.BeipDockPanels={open,toggle,closePane,floatPane,dockPane,movePane,moveGroup,arrangePane,copyAllWindowSettings,pasteAllWindowSettings,selected,closed,clear,addHistory,addImage,recordLine,refreshLine,routeSpawn,handleNative,floatingStatus,render};
+window.BeipDockPanels={open,toggle,closePane,floatPane,dockPane,movePane,moveGroup,arrangePane,copyAllWindowSettings,pasteAllWindowSettings,selected,closed,clear,addHistory,addImage,recordLine,refreshLine,removeLine,routeSpawn,handleNative,floatingStatus,render};
 selected();
 })();

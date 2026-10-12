@@ -9,7 +9,7 @@ Full original parity remains open. Exact scripting membership is listed in
 [SCRIPT-PARITY.md](SCRIPT-PARITY.md).
 
 This inventory separates the published BeipMU client (`src/` and `Documentation/`)
-from the 0.9 recovery worktree (`recovery/`). The original 4.335 executable was
+from the current recovery worktree (`recovery/`). The original 4.335 executable was
 inspected as a UI reference; it is not included in the recovery build.
 "Verified" below means focused tests or an app fixture passed for the stated
 subset. Version labels identify the verified milestone; they do not mean full
@@ -275,3 +275,21 @@ The Sound editor screenshot was inspected. The standalone native audio fixture
 also passed queue bounds and owner-specific stopping. Pueblo/MXP image, command
 link and WHO-spacing fixtures passed. TLS code is unchanged; no fresh complete
 TLS verification or subjective listening verification is claimed.
+
+## Preview 0.11 source comparison
+
+The current checklist and README describe this milestone. Reference evidence:
+`Connection.cpp` multiline/capture processing and style/click ranges;
+`Logging.cpp` filename expansion and formatted records; `Commands.cpp` client
+commands; `Root.prp` and settings dialogs; original `Assets/Emoji.txt`; and all
+three bundled Atlas sample files. Original `src/` remains unchanged.
+
+Atlas v1 uses room ordinal endpoints, while v2 uses ordered map-child indices.
+The tests compare complete semantic roundtrips on Fluff (3 maps/96 rooms/134
+exits), FurryMUCK (2/237/240 plus 7 rectangles) and Arx (1/442/573 plus 17
+rectangles). A dangling Arx exit remains as geometry, not a fabricated route.
+
+Temporal, appearance, logging, emoji and command fixture details are maintained
+with the packaged session acceptance. They establish specific supported behavior,
+not exhaustive parity with the original executable. Restore.dat, image controls,
+full command/alias flag ordering and other open rows remain separate work.

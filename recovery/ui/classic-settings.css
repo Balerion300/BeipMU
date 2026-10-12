@@ -92,3 +92,19 @@ dialog.classic-logging{
 .connect-template-editor{margin:4px 0;padding:7px;border:1px solid #bbb;min-width:0}
 .connect-template-editor textarea{width:100%;min-height:54px;font:12px Consolas,monospace;border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:4px}
 .connect-template-editor p{font:11px/1.3 "Segoe UI",sans-serif;color:#555;white-space:normal;margin:4px 0}
+.logging-preferences button,.logging-character button{border:1px solid #888;border-radius:0;padding:3px 8px;background:#f6f6f6;color:#111;font:12px "Segoe UI",sans-serif;align-self:flex-end}
+.logging-preferences label:has(input[type=text]){flex-wrap:wrap}
+.logging-preferences input[type=text]{max-width:none;width:180px}
+.logging-character{margin:4px 0;padding:7px;border:1px solid #bbb;min-width:0}
+.logging-character label{font:12px "Segoe UI",sans-serif;margin:5px 0;color:#111;white-space:normal}
+.logging-character input:not([type=checkbox]){height:24px;border:1px solid #888;border-radius:0;background:#fff;color:#111;font:12px "Segoe UI",sans-serif;padding:3px}
+.logging-character p{font:11px/1.3 "Segoe UI",sans-serif;color:#555;margin:4px 0;white-space:normal}
+.emoji-settings p{font:11px/1.4 "Segoe UI",sans-serif;color:#555;margin:7px 0;white-space:normal}
+.emoji-settings label{font:12px "Segoe UI",sans-serif;color:#111;margin:7px 0;white-space:normal}
+.emoji-settings textarea{width:100%;min-height:155px;font:12px Consolas,"Segoe UI Emoji",monospace;border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:4px}
+.emoji-actions{display:flex;flex-wrap:wrap;gap:5px}
+.emoji-actions button{border:1px solid #888;border-radius:0;padding:4px 7px;background:#f6f6f6;color:#111;font:11px "Segoe UI",sans-serif}
+.emoji-file{display:flex;flex-direction:column;align-items:flex-start!important}
+.emoji-file input{max-width:100%;font:11px "Segoe UI",sans-serif}
+.emoji-settings output{display:block;padding:7px;white-space:pre-wrap;min-height:32px;border:1px solid #aaa;background:#fff;color:#111;font:13px "Segoe UI Emoji","Segoe UI",sans-serif}
+.auto-emoji{font-family:"Segoe UI Emoji","Segoe UI Symbol",sans-serif}

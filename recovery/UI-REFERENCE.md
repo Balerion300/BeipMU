@@ -97,3 +97,16 @@ sample and inheritance controls in the compact category dialog. The sample now
 updates when reopened and when controls change. Runtime font/color/margins and
 input sticky/autosize were verified in the actual WebView. Original display
 options not represented by the recovery controls remain listed explicitly.
+
+## 0.11 comparison
+
+The original settings' Logging and Auto Emoji categories now have recovery
+counterparts with filename/formatting controls and an editable original Emoji.txt
+workflow. Trigger child-window controls live in a Children tab; this keeps Sound
+controls visible at the packaged test viewport. Appearance has tri-state styles
+so unchanged and explicitly off remain distinct.
+
+Atlas shows room rectangles, exit polylines and background drawings in a shared
+layer canvas, with zoom, fit and owner-specific tracking. Packaged native floating
+map readiness/rendering is checked. The actual native titlebar-drop gesture
+remains unverified; successful floating-window creation is a narrower claim.

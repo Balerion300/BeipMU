@@ -17,7 +17,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.10" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.11" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -184,11 +184,29 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "everyday"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)
-        assert all(value is True for key, value in checks.items() if key != "error"), (section, checks)
+        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}}
+        assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
+    emoji_log = pathlib.Path(result["emoji"]["logPath"])
+    assert emoji_log.resolve().is_relative_to(OUT.resolve()) and emoji_log.is_file(), emoji_log
+    emoji_text = emoji_log.read_text(encoding="utf-8")
+    assert "fox dog face  warning :)" in emoji_text and "🦊" not in emoji_text, emoji_text
+    logs = result.get("loggingOptions") or {}
+    assert logs and not logs.get("error"), logs
+    for key in ("settingsSave", "settingsReopen", "settingsCancel", "nameTokens", "visibleStartFound", "nativeFilesClosed", "restorationSaved"):
+        assert logs.get(key) is True, (key, logs)
+    for kind in ("plain", "html"):
+        path = pathlib.Path(logs[kind + "Path"])
+        assert path.resolve().is_relative_to(OUT.resolve()) and path.is_file(), path
+        contents = path.read_text(encoding="utf-8")
+        assert all(value in contents for value in logs[kind + "Required"]), (kind, contents)
+        assert all(value not in contents for value in logs[kind + "Excluded"]), (kind, contents)
+    visible_path = pathlib.Path(logs["visiblePath"])
+    assert visible_path.resolve().is_relative_to(OUT.resolve()) and visible_path.is_file(), visible_path
+    assert visible_path.read_text(encoding="utf-8").splitlines()[0] == logs["visibleFirst"], logs
     exported = (OUT / "exported-map.atlas").read_bytes()
     assert exported == base64.b64decode(result.get("atlasBytes") or ""), f"{phase}: native Atlas bytes differ from reviewed export"
     with zipfile.ZipFile(io.BytesIO(exported)) as archive:
@@ -210,6 +228,13 @@ def run(phase):
     for fixture in fixtures:
         fixture.finish()
     a, b = [bytes(f.received) for f in fixtures]
+    assert a.count(b"temporal-next-alpha\r\n") == 2 and b"temporal-next-alpha\r\n" not in b, (phase, a, b)
+    assert a.count(b"trigger-click-owner-alpha\r\n") == 1 and b"trigger-click-owner-alpha\r\n" not in b, (phase, a, b)
+    for command, own, other in ((b"command-wall-alpha\r\n", a, b), (b"command-wall-beta\r\n", b, a), (b"command-idle-reset-alpha\r\n", a, b)):
+        assert own.count(command) == 1 and command not in other, (phase, command, a, b)
+    assert b"command-idle-alpha\r\n" not in a + b, (phase, a, b)
+    assert a.count(b"\xff\xf1") == 1 and b"\xff\xf1" not in b, (phase, a, b)
+    assert b'Core.Ping {"commandFixture":true}' in a and b'Core.Ping {"commandFixture":true}' not in b, (phase, a, b)
     assert b"script-objects-owner-alpha\r\n" in a and b"script-objects-owner-alpha\r\n" not in b, (phase, a, b)
     assert b"template-check SampleUser sample-pass\r\n" in a and b"template-check" not in b, (phase, a, b)
     assert b"template-delayed SampleUser\r\n" in a and b"template-delayed" not in b, (phase, a, b)

@@ -1,44 +1,52 @@
-# BeipMU recovery preview 0.10
+# BeipMU recovery preview 0.11
 
-Preview 0.10 expands everyday settings, layouts, scripting and search. Output
-and input have independent font faces/styles/colors and margins; output adds
-paragraph spacing, fixed width, wrapped indent and fanfold, and input adds
-sticky text and automatic height. Supported original settings import into their
-proper profile scopes. Character connect strings can use `%NAME%` (the login
-name), `%PASSWORD%`, multiple direct lines and bounded `/delay` commands after
-review. Saved passwords expand only inside the native host. Imported templates
-start disabled. Other original client commands inside connect strings remain open.
+Preview 0.11 adds layered Atlas maps, richer trigger processing, original-style
+logging, Auto Emoji, and another set of everyday client commands.
 
-Dock edges now contain nested horizontal/vertical splits and tab groups, with
-Arrange controls and pane-relative drop targets. Copy all window settings also
-copies resolved output/input appearance. Native floating titlebar dragging can
-target the owning main window; transfers between independent main windows and
-arbitrary reparenting of the main output remain open. Imported original docking
-retains supported map/image/notes layouts and reports unsupported pane identities.
-Native titlebar dragging is implemented but its manual pointer acceptance is
-still outstanding; the nested layout controls and persistence are app-verified.
+Atlas import/export preserves all records in the three original bundled samples,
+including cross-map exits, rectangles, colors, fonts and dangling visual exits.
+Docked, floating and editor views share zoom/pan and layer selection. Position and
+tracking belong to each live session; viewing a map never sends a game command.
+Image/label objects and the full original map-editing toolbar remain open.
 
-Find supports direction, case, whole words and bounded regular expressions in
-output, history and command input; command input also supports literal replacement.
-Search keeps existing output links/images intact. Smart Paste adds a clipboard
-preview button, zero delay and saved affixes. Scripts gain source-correct
-`window.Run`, variables, mutable text lines/display hooks, owner profile edits,
-logging and timer state. See [SCRIPT-PARITY](SCRIPT-PARITY.md) for exact API gaps.
+Triggers support next-line child activation with line/time limits, capture-only
+children, captured-group styles, independent whole-line color/style options,
+explicit style on/off and commands activated by clicking. Existing Pueblo/MXP
+links retain precedence. Filters that change text still limit later appearance
+and link ranges; several original actions and exact send ordering remain open.
 
-The [current completion checklist](COMPLETION-CHECKLIST.md) supersedes historical
-gap lists below. This remains an independent recovery client with substantial
-original feature gaps, including native COM/filesystem scripting, full MXP,
-multilayer maps, multiline trigger windows, restore logs and several settings
-categories. A working preview does not establish full original parity.
+Logging supports reviewed filename/date/environment substitutions, a local file
+chooser, append, timestamps, typed/sent prefixes, wrapping, indentation, double
+spacing, styled escaped HTML, and beginning/visible-window starting points.
+Received logs retain text before Auto Emoji and display hooks, as in the original.
+Character auto-start is supported. Multiple simultaneous files, midnight automatic
+rotation and Restore.dat replay remain open.
 
-The Windows/native-module build passed. Fresh and persisted packaged acceptance
-(`sessions-20261012-074009`) verifies scoped styling/sticky/autosize, editor
-save/cancel/reopen, nested splits and note-caret retention, copied preferences,
-script ownership/mutable lines/preserved untouched links, all search modes,
-clipboard preview handling and native connect-template wire isolation/cancellation.
-Pueblo/MXP fixtures still verify three loaded images, failed-image fallback,
-command clicks and consecutive WHO rows. The settings screenshot was inspected.
-TLS is unchanged; no fresh full TLS or subjective audio verification is claimed.
+Auto Emoji uses the original 4.335 table (1,189 phrases), section grammar and
+editable Emoji.txt workflow: copy, edit in Notepad, import, save/reload and revert.
+It starts disabled. Typed echoes, images and interactive link boundaries remain
+intact. The published repository lacks its original matching implementation, so
+Unicode boundaries are an independent implementation of the documented behavior.
+
+Added commands include `/newtab`, `/world`, `/removelast`, `/receivegmcp`, GMCP
+dump controls, `/silence`, `/wall`, `/idle`, `/logtop`, `/stoplogs` and `/autolog`.
+Broadcast aliases and idle timers retain session ownership. Idle timers are
+bounded to 1–1440 minutes; an empty idle command uses Telnet NOP. Imported idle
+commands start disabled and recognized embedded credentials are omitted.
+
+Preview 0.10's independent window appearance, reviewed connect templates, nested
+splits, scoped settings, search and expanded script APIs remain included. See
+[SCRIPT-PARITY](SCRIPT-PARITY.md) for exact scripting coverage and
+[COMPLETION-CHECKLIST](COMPLETION-CHECKLIST.md) for the current original-feature
+audit. This remains an independent recovery client with substantial original
+feature gaps; a working preview does not establish full original parity.
+
+Native/module and packaged evidence is recorded in the completion checklist.
+Pueblo/MXP links, inline images and consecutive WHO rows remain regression gates.
+The sound-editor and layered-map screenshots were inspected. Native floating
+history opens correctly; titlebar drop acceptance remains unverified because the
+UI automation tool rejected a drop onto the embedded WebView2 renderer.
+Stress tests remain deferred. No fresh full TLS or subjective audio claim is made.
 
 This fork provides an independently implemented Windows x64 client while keeping
 the published original `src/` intact. The original shared LibWin32, text renderer,
@@ -137,7 +145,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.10-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.11-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in

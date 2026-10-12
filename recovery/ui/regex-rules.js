@@ -9,6 +9,7 @@
  function fallback(job,reason){
   const diagnostics=[reason];
    if(job.type==='cancel-capture')return {cancelled:false,diagnostics};
+   if(job.type==='reset-temporal')return {reset:false,diagnostics};
   if(job.type==='expand')return {commands:[],matched:false,diagnostics};
   return {text:job.value,actions:[],matches:[],gagged:false,logGagged:false,diagnostics};
  }
@@ -71,6 +72,7 @@
   expandCommand(input,scope){return this.enqueue('expand',input,scope);}
   processLine(text,scope,nowMs){return this.enqueue('line',text,scope,nowMs);}
   cancelCapture(scope){return this.enqueue('cancel-capture','',scope);}
+  resetTemporal(scope){return this.enqueue('reset-temporal',scope===undefined?'all':'scope',scope);}
  }
  return {Runtime,DEADLINE_MS,MAX_QUEUE};
 });

@@ -1,12 +1,12 @@
 /* Supported window preferences. Original character/global overrides plus a world layer. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipProfilePreferences=api;})(typeof globalThis==='object'?globalThis:this,function(){
+(function(root,factory){const logging=typeof module==='object'&&module.exports?require('./logging-model.js'):root.BeipLogging;const api=factory(logging);if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipProfilePreferences=api;})(typeof globalThis==='object'?globalThis:this,function(logging){
 'use strict';
 const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40,
  outputFontFace:'',outputFontBold:false,outputFontItalic:false,outputFontUnderline:false,outputFontStrikeout:false,
  outputForeground:'',outputBackground:'',linkColor:'',outputMarginLeft:0,outputMarginTop:0,outputMarginRight:0,outputMarginBottom:0,
  paragraphSpacing:0,wrappedIndent:0,fixedWidth:false,fixedWidthChars:80,fanFold:false,fanFoldColor1:'#0f0f0f',fanFoldColor2:'#1e1e1e',scrollToBottom:true,smoothScrolling:false,splitOnPageUp:false,
  inputFontFace:'',inputFontSize:13,inputFontBold:false,inputFontItalic:false,inputFontUnderline:false,inputFontStrikeout:false,inputForeground:'',inputBackground:'',localEchoColor:'',
- inputMarginLeft:0,inputMarginTop:0,inputMarginRight:0,inputMarginBottom:0,inputSticky:false,inputAutoSize:false,inputMinLines:1,inputMaxLines:5,pastePrefix:'',pasteSuffix:'',pasteDelay:100});
+ inputMarginLeft:0,inputMarginTop:0,inputMarginRight:0,inputMarginBottom:0,inputSticky:false,inputAutoSize:false,inputMinLines:1,inputMaxLines:5,pastePrefix:'',pasteSuffix:'',pasteDelay:100,logging:logging.DEFAULTS,emojiEnabled:false});
 const OUTPUT_KEYS=Object.freeze(['fontSize','fontFamily','scrollback','inlineImages',...Object.keys(DEFAULTS).filter(key=>key.startsWith('output')), 'linkColor','paragraphSpacing','wrappedIndent','fixedWidth','fixedWidthChars','fanFold','fanFoldColor1','fanFoldColor2','scrollToBottom','smoothScrolling','splitOnPageUp']);
 const INPUT_KEYS=Object.freeze(['localEcho','localEchoColor',...Object.keys(DEFAULTS).filter(key=>key.startsWith('input'))]);
 const groups={output:OUTPUT_KEYS,input:INPUT_KEYS};
@@ -22,6 +22,8 @@ function valid(key,value){
 }
 function normalizeGlobal(raw){
  const source=object(raw),result={...DEFAULTS};
+ result.logging=logging.normalize(source.logging);
+ result.emojiEnabled=source.emojiEnabled===true;
  for(const key of [...OUTPUT_KEYS,...INPUT_KEYS])result[key]=valid(key,source[key])??DEFAULTS[key];
  result.theme=source.theme==='light'?'light':'dark';
  for(const key of ['pastePrefix','pasteSuffix'])result[key]=typeof source[key]==='string'?source[key].replace(/[\r\n\x00]/g,'').slice(0,1024):'';

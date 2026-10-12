@@ -9,7 +9,8 @@
   const DEFAULT_LIMITS = Object.freeze({
     maxRules: 128, maxDepth: 8, maxPattern: 128, maxLine: 4096, maxCommand: 4096,
     maxActions: 32, maxReplacements: 32, maxCommands: 16,
-    maxCapturePattern: 256, maxCaptureLines: 200, maxCaptureMs: 5000
+    maxCapturePattern: 256, maxCaptureLines: 200, maxCaptureMs: 5000,
+    maxMultilineLines: 9999, maxMultilineMs: 86400000
   });
   const LEVELS = ['global', 'server', 'character'];
 
@@ -235,7 +236,7 @@
     // Regex is only available to the bounded worker entry point. The default
     // synchronous engine intentionally ignores regex rules.
     const allowRegex = config.allowRegex === true && config.workerEngine === true;
-    const lastFire = new Map(), firedOnce = new Set(), captures = new Map(), awayStates = new Map();
+    const lastFire = new Map(), firedOnce = new Set(), captures = new Map(), awayStates = new Map(), multilineStates = new Map();
     function contextKey(context) { return [context.serverId || '', context.characterId || ''].join('\u0000'); }
 
     function expandCommand(input, scope) {
@@ -305,16 +306,29 @@
         if (!activeCapture.copy) gagged = true;
         if (activeCapture.gagLog) logGagged = true;
         activeCapture.lines++;
-        if (activeCapture.until.test(input)) captures.delete(captureKey);
       }
       let spawnedThisLine = !!activeCapture;
       let stopped = false;
+      const activeWindows = (multilineStates.get(captureKey) || []).filter(window => !window.expiresAt || now < window.expiresAt);
+      const pendingWindows = new Map();
+      function activateChildren(entry) {
+        const lines = entry.rule.multilineLines ?? 0, time = entry.rule.multilineMs ?? 0;
+        if (!Number.isSafeInteger(lines) || lines < 0 || lines > limits.maxMultilineLines ||
+            !Number.isSafeInteger(time) || time < 0 || time > limits.maxMultilineMs || (!lines && !time)) {
+          diagnostics.push('Multiline trigger needs a valid line or time limit: ' + makeId(entry.rule, entry.index, 'trigger-') + '.');
+          return;
+        }
+        // One activation per parent. A re-hit resets both limits and moves it
+        // ahead of earlier activations, after this line has finished processing.
+        pendingWindows.delete(entry);
+        pendingWindows.set(entry, { entry, remaining: lines, expiresAt: time ? now + time : 0 });
+      }
       function visit(list) { for (const entry of list) {
         if (stopped) break;
         if (actions.length >= limits.maxActions) { diagnostics.push('Trigger action limit reached.'); break; }
         const rule = entry.rule, id = makeId(rule, entry.index, 'trigger-');
         if (rule.enabled === false) continue;
-        if (rule.folder) { if (rule.processChildren !== false) visit(entry.children); continue; }
+        if (rule.folder) { if (rule.multiline) activateChildren(entry); else if (rule.processChildren !== false) visit(entry.children); continue; }
         if (rule.awayCondition === 'away' && (!context.away || rule.awayOnce && awayState.notified) || rule.awayCondition === 'present' && context.away) continue;
         const key = [id, context.serverId || '', context.characterId || ''].join('\u0000');
         if (rule.once && firedOnce.has(key)) continue;
@@ -328,11 +342,23 @@
         matches.push({ triggerId: id, start: hit.start, end: hit.end, captures: hit.captures.slice() });
         const detail = { triggerId: id };
         if (rule.highlight && typeof rule.highlight === 'object') {
-          const style = {};
-          for (const field of ['color', 'background', 'bold', 'italic', 'underline', 'strike'])
-            if (rule.highlight[field] != null) style[field] = rule.highlight[field];
-          actions.push({ type: 'highlight', start: rule.highlight.wholeLine ? 0 : hit.start,
-            end: rule.highlight.wholeLine ? text.length : hit.end, style, ...detail });
+          const highlight = rule.highlight, color = {}, style = {};
+          for (const field of ['color', 'background']) if (highlight[field] != null) color[field] = highlight[field];
+          for (const field of ['bold', 'italic', 'underline', 'strike'])
+            if (highlight[field] === true || highlight.styleExplicit && highlight[field] === false) style[field] = highlight[field];
+          const ranges = highlight.captureGroups && hit.ranges.length > 2 ? hit.ranges.slice(2) : [hit.start, hit.end];
+          const add = (value, wholeLine) => {
+            if (!Object.keys(value).length) return;
+            const selected = wholeLine ? [0, text.length] : ranges;
+            for (let index = 0; index < selected.length && actions.length < limits.maxActions; index += 2) {
+              const start = selected[index], end = selected[index + 1];
+              if (start >= 0 && end > start) actions.push({ type: 'highlight', start, end, style: value, ...detail });
+            }
+          };
+          const colorWholeLine = highlight.colorWholeLine ?? highlight.wholeLine;
+          const styleWholeLine = highlight.styleWholeLine ?? highlight.wholeLine;
+          if (!!colorWholeLine === !!styleWholeLine) add({ ...color, ...style }, colorWholeLine);
+          else { add(color, colorWholeLine); add(style, styleWholeLine); }
         }
         if (rule.gag) gagged = true;
         if (rule.logGag) logGagged = true;
@@ -340,16 +366,21 @@
           let command = interpolate(rule.sendText, hit.captures);
           if (rule.sendExpandVariables) command = expandVariables(command, context.variables, limits.maxCommand);
           if (command !== null && command.length <= limits.maxCommand && !/[\r\n]/.test(command)) {
-            actions.push({ type: 'command', text: command, ...detail });
+            if (rule.sendOnClick) {
+              const index = Number.isSafeInteger(rule.sendCaptureIndex) && rule.sendCaptureIndex >= 0 ? rule.sendCaptureIndex : 1;
+              const at = index * 2 < hit.ranges.length ? index * 2 : 0;
+              const start = hit.ranges[at], end = hit.ranges[at + 1];
+              if (start >= 0 && end > start) actions.push({ type: 'commandLink', start, end, text: command, ...detail });
+            } else actions.push({ type: 'command', text: command, ...detail });
             // A following rule on this same line sees a successful original
             // /set or /unset action; the caller later persists those effects.
             const set = /^\/set\s+([^=]+)=([^\r\n]*)$/i.exec(command);
             const unset = /^\/unset\s+(.+)$/i.exec(command);
-            if (set) {
+            if (set && !rule.sendOnClick) {
               const candidate = Object.assign(Object.create(null), context.variables, { [set[1]]: set[2] });
               const normalized = normalizeVariables(candidate);
               if (Object.hasOwn(normalized, set[1]) && Object.keys(candidate).length === Object.keys(normalized).length) context.variables = normalized;
-            } else if (unset) delete context.variables[unset[1]];
+            } else if (unset && !rule.sendOnClick) delete context.variables[unset[1]];
           } else diagnostics.push('Trigger command exceeds one-line limit.');
         }
         if (rule.spawnTitle && !spawnedThisLine && actions.length < limits.maxActions) {
@@ -365,7 +396,8 @@
               diagnostics.push('Spawn capture-until pattern is too long.');
             else {
               try {
-                captures.set(captureKey, { title, group, copy: !!rule.spawnCopy,
+                captures.set(captureKey, { title, group, copy: !!rule.spawnCopy, entry,
+                  onlyChildren: !!rule.captureOnlyChildren,
                   gagLog: !!rule.spawnGagLog, until: new RegExp(rule.captureUntil),
                   startedAt: now, lines: 0 });
               } catch { diagnostics.push('Invalid capture-until regex in rule ' + id + '.'); }
@@ -403,17 +435,35 @@
         if (from > text.length) break;
         }
         if (!thisRuleMatched) continue;
-        if (rule.processChildren !== false) visit(entry.children);
+        if (rule.multiline) activateChildren(entry);
+        else if (rule.processChildren !== false) visit(entry.children);
         if (rule.stopProcessing) stopped = true;
       } }
-      visit(rootsFor(triggerTree, context, diagnostics));
+      const roots = rootsFor(triggerTree, context, diagnostics);
+      // Original capture-only children have priority over every other trigger
+      // family. Like the original, this uses the stored child list directly.
+      if (activeCapture?.onlyChildren) { visit(activeCapture.entry.children); stopped = true; }
+      for (const window of activeWindows) if (!pendingWindows.has(window.entry)) visit(window.entry.children);
+      visit(roots);
+      const surviving = activeWindows.filter(window => !pendingWindows.has(window.entry) &&
+        (window.remaining === 0 || --window.remaining > 0));
+      const nextWindows = [...pendingWindows.values()].reverse().concat(surviving);
+      if (nextWindows.length) multilineStates.set(captureKey, nextWindows); else multilineStates.delete(captureKey);
+      // The terminating line is still captured. Its regex sees the processed
+      // text, including filters from capture children, as in Connection.cpp.
+      if (activeCapture && activeCapture.until.test(text)) captures.delete(captureKey);
       for (const action of actions) if (action.type === 'spawn') action.text = text;
       return { text, actions: actions.slice(0, limits.maxActions), matches, gagged, logGagged, diagnostics };
     }
     function cancelCapture(scope) {
       return { cancelled: captures.delete(contextKey(scope || {})) };
     }
-    return { expandCommand, processLine, cancelCapture };
+    function resetTemporal(scope) {
+      if (scope === undefined) { captures.clear(); multilineStates.clear(); }
+      else { const key = contextKey(scope || {}); captures.delete(key); multilineStates.delete(key); }
+      return { reset: true };
+    }
+    return { expandCommand, processLine, cancelCapture, resetTemporal };
   }
   return { createEngine, interpolate, expandVariables, normalizeVariables, hierarchy, normalizeHierarchy, DEFAULT_LIMITS };
 });

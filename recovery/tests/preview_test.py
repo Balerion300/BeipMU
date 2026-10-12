@@ -17,7 +17,7 @@ class Images(http.server.BaseHTTPRequestHandler):
 http=http.server.ThreadingHTTPServer(('127.0.0.1',0),Images)
 threading.Thread(target=http.serve_forever,daemon=True).start()
 image_base=f'http://127.0.0.1:{http.server_port}/'
-exe=ROOT/'dist/BeipMU-Recovery-0.10/BeipMU-Recovery.exe'
+exe=ROOT/'dist/BeipMU-Recovery-0.11/BeipMU-Recovery.exe'
 assert exe.exists(), 'Build first.'
 results={}
 for protocol in ['pueblo','mxp']:
