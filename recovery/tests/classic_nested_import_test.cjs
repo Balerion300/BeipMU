@@ -24,8 +24,13 @@ check('Serialized original trees retain conditional parents, source order, and r
 check('Original activation differs between aliases and triggers without silently enabling descendants',()=>{
  const plan=core.parseConfig(fixture);
  assert.ok(plan.aliases.every(rule=>rule.enabled));assert.equal(plan.aliases[0].processChildren,true);
- const disabled=core.parseConfig(fixture.replace('Aliases\n {\n  Active=true','Aliases\n {\n  Active=false'));
- assert.ok(disabled.aliases.every(rule=>!rule.enabled));
+ for(const newline of ['\n','\r\n']){
+  const source=fixture.replace(/\r?\n/g,newline);
+  const disabledSource=source.replace(/(Aliases\r?\n \{\r?\n  Active=)true/,'$1false');
+  assert.notEqual(disabledSource,source,'fixture activation must actually be changed');
+  const disabled=core.parseConfig(disabledSource);
+  assert.ok(disabled.aliases.every(rule=>!rule.enabled));
+ }
  const triggerDisabled=core.parseConfig(config('Triggers.Active=false\nShortcuts\n{\nTest\n{\nHost="example.org:1234"\nTriggers\n{\n'+action()+'\n}\nCharacters\n{\nAlice\n{\nTriggers\n{\n'+action()+'\n}\n}\n}\n}\n}'));
  assert.equal(triggerDisabled.triggers.length,2);assert.ok(triggerDisabled.triggers.every(rule=>!rule.enabled));
 });
