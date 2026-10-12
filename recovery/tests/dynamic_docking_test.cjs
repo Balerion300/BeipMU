@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{createRequire}=require('node:module'),layout=require('../ui/dock-layout.js'),{createController}=require('../ui/input-owner-controller.js');
+// Run the existing singleton/nested-layout regression suite unchanged against the
+// staged normalizer. Its import fixture continues to use its published importer.
+const original=path.resolve(__dirname,'dock_layout_test.cjs'),originalRequire=createRequire(original);
+new Function('require',fs.readFileSync(original,'utf8'))(name=>name==='../ui/dock-layout.js'?layout:originalRequire(name));
+const ownerA={id:'a',history:[]},ownerB={id:'b',history:[]},live=new Set([ownerA,ownerB]),owners=createController({valid:owner=>live.has(owner),history:owner=>owner.history}),old=layout.normalize({order:['map','notes'],edges:{map:'right',notes:'right'}});
+const first=owners.open(ownerA,'"say "',old),second=owners.open(ownerA,'"pose "',first.layout),other=owners.open(ownerB,'"say "',old);
+assert.equal(first.layout.version,3);assert.equal(first.layout.edges[first.pane.id],'bottom');assert.equal(layout.kindOf(first.layout,first.pane.id),'input');assert.equal(layout.kindOf(old,first.pane.id),'');assert.equal(layout.defaultEdge(first.layout,first.pane.id),'bottom');assert.notEqual(first.pane,other.pane);
+owners.model(ownerA).set(first.pane.id,'private draft');let arranged=layout.place(second.layout,first.pane.id,'map','left');arranged=layout.place(arranged,second.pane.id,first.pane.id,'bottom');arranged=layout.resize(arranged,'right',[],.6);assert.ok(layout.paneTypes(arranged.trees.right).includes(first.pane.id));assert.ok(layout.paneTypes(arranged.trees.right).includes(second.pane.id));assert.equal(arranged.inputPanes.panes.length,2);
+const moved=layout.move(arranged,first.pane.id,'left',{group:true});assert.deepEqual(moved.trees.left,arranged.trees.right);assert.equal(moved.trees.right,null);assert.equal(owners.model(ownerA).get(first.pane.id),first.pane);assert.equal(first.pane.text,'private draft');
+const copy=layout.copyable(moved);assert.ok(!JSON.stringify(copy).includes('private draft'));assert.deepEqual(layout.normalize(JSON.parse(JSON.stringify(copy))),copy);const replacement=owners.replace(ownerB,copy.inputPanes);assert.equal(replacement.get(first.pane.id).text,'');assert.notEqual(replacement.get(first.pane.id),first.pane);
+const hostile=layout.normalize({...copy,order:[...copy.order,'input:unregistered'],floating:{'input:unregistered':{x:0,y:0,width:500,height:500}}});assert.ok(!hostile.order.includes('input:unregistered'));assert.equal(hostile.floating['input:unregistered'],undefined);
+const floated=layout.normalize({...copy,floating:{[first.pane.id]:{x:50,y:60,width:320,height:210}}}),docked=layout.place(floated,first.pane.id,'notes','tabs');assert.equal(docked.floating[first.pane.id],undefined);assert.equal(layout.groupFor(docked.trees.left,first.pane.id).active,first.pane.id);
+assert.equal(floated.floating[first.pane.id],undefined);assert.ok(layout.paneTypes(floated.trees.left).includes(first.pane.id),'Unsupported floating input remains visibly docked');
+const closed=owners.close(ownerA,first.pane.id,moved);assert.ok(!closed.order.includes(first.pane.id));assert.ok(!closed.inputPanes.panes.some(p=>p.id===first.pane.id));assert.equal(layout.kindOf(closed,first.pane.id),'');assert.equal(owners.model(ownerB).get(first.pane.id).prefix,'say ');
+live.delete(ownerA);assert.throws(()=>owners.open(ownerA,'',closed),/closed/);owners.forget(ownerA);
+console.log('PASS dynamic registered pane identity, nested persistence, copied settings without drafts, owner isolation and closed-owner rejection');

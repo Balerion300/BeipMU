@@ -1,20 +1,25 @@
 /* Session-owned bridge for opt-in scripts running in a disposable worker. MIT. */
 (function(root){
 'use strict';
-const MAX_SOURCE=65536,MAX_VALUE=8192,MAX_QUEUE=64,MAX_EFFECTS=32,MAX_TIMERS=16;
+const MAX_SOURCE=65536,MAX_VALUE=8192,MAX_INPUT=65536,MAX_QUEUE=64,MAX_EFFECTS=32,MAX_TIMERS=16;
 const empty=()=>({handled:false,effects:[]});
 function label(value,max=160){return typeof value==='string'?value.slice(0,max):'';}
 function contextOf(input){
  const value=input&&typeof input==='object'?input:{};
  const character=item=>item&&typeof item==='object'?{id:label(item.id,64),name:label(item.name),notes:label(item.notes,1024),lastUsed:label(item.lastUsed,40),timeCreated:label(item.timeCreated,40),logFileName:label(item.logFileName,512)}:null;
  const profile=item=>item&&typeof item==='object'?{id:label(item.id,64),name:label(item.name),host:label(item.host,256),notes:label(item.notes,1024),characters:Array.isArray(item.characters)?item.characters.slice(0,64).map(character).filter(Boolean):[]}:null;
- const inputValue=value.input&&typeof value.input==='object'?value.input:{};
- const inputText=label(inputValue.text,MAX_VALUE),start=Number.isSafeInteger(inputValue.start)?inputValue.start:0,end=Number.isSafeInteger(inputValue.end)?inputValue.end:start;
+ const descriptor=(raw,primary=false)=>{
+  raw=raw&&typeof raw==='object'?raw:{};const text=label(raw.text,MAX_INPUT),start=Number.isSafeInteger(raw.start)?raw.start:0,end=Number.isSafeInteger(raw.end)?raw.end:start;
+  const result={text,start:Math.max(0,Math.min(text.length,start)),end:Math.max(0,Math.min(text.length,end))};result.end=Math.max(result.start,result.end);
+  if(typeof raw.generation==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(raw.generation)&&(primary||/^input:[a-z0-9_-]{1,48}$/.test(raw.id||'')))return {...result,id:primary?'primary':raw.id,generation:raw.generation,title:label(raw.title,160),prefix:label(raw.prefix,2048)};
+  return primary?result:null;
+ };
+ const primaryInput=descriptor(value.input,true),seenInputs=new Set(),inputs=(Array.isArray(value.inputs)?value.inputs:[]).slice(0,16).map(item=>descriptor(item)).filter(item=>item&&!seenInputs.has(item.id)&&seenInputs.add(item.id));
  return {sessionId:label(value.sessionId,64),connected:!!value.connected,logging:!!value.logging,
   world:profile(value.world),character:character(value.character),
   worlds:Array.isArray(value.worlds)?value.worlds.slice(0,32).map(profile).filter(Boolean):[],
   windows:Array.isArray(value.windows)?value.windows.slice(0,32).map(item=>({id:label(item?.id,64),title:label(item?.title)})):[],
-  title:label(value.title),input:{text:inputText,start:Math.max(0,Math.min(inputText.length,start)),end:Math.max(0,Math.min(inputText.length,end))},
+  title:label(value.title),input:primaryInput,...(inputs.length?{inputs}:{}),
   variables:Object.fromEntries(Object.entries(value.variables||{}).filter(([key,text])=>key.length<=128&&typeof text==='string'&&text.length<=4096).slice(0,128)),
   titlePrefix:label(value.titlePrefix),paused:!!value.paused,canReconnect:!!value.canReconnect,logFileName:label(value.logFileName,512),
   buildDate:label(value.buildDate,40),version:Number.isSafeInteger(value.version)?value.version:0,
@@ -25,6 +30,7 @@ function validLine(line){
  const runs=[];for(const run of line.runs){if(!run||typeof run.text!=='string'||run.text.length>MAX_VALUE)return null;const style={};for(const key of ['bold','italic','underline','strike'])if(run.style?.[key]===true)style[key]=true;for(const key of ['color','background'])if(typeof run.style?.[key]==='string'&&/^(#[\da-f]{6}|[a-z]{1,20})$/i.test(run.style[key]))style[key]=run.style[key];runs.push({text:run.text,style});}
  if(runs.map(x=>x.text).join('')!==line.text)return null;return {text:line.text,runs};
 }
+function inputTarget(item){if(item.id===undefined&&item.generation===undefined)return {};return (item.id==='primary'||/^input:[a-z0-9_-]{1,48}$/.test(item.id||''))&&typeof item.generation==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(item.generation)?{id:item.id,generation:item.generation}:null;}
 function validEffect(item){
  if(!item||typeof item!=='object')return null;
  if(['send','output','html','display'].includes(item.type))
@@ -40,9 +46,9 @@ function validEffect(item){
   if(typeof item.value==='string'&&item.value.length<=4096)return {type:item.type,name:item.name,value:item.value};
  }
  if(item.type==='output-line'){const line=validLine(item.line);return line?{type:item.type,line}:null;}
- if(item.type==='input-set')return typeof item.value==='string'&&item.value.length<=MAX_VALUE?{type:'input-set',value:item.value}:null;
- if(item.type==='input-select'&&Number.isSafeInteger(item.start)&&Number.isSafeInteger(item.end)&&item.start>=0&&item.end>=item.start&&item.end<=MAX_VALUE)
-  return {type:'input-select',start:item.start,end:item.end};
+ if(item.type==='input-set'){const target=inputTarget(item);return target&&typeof item.value==='string'&&item.value.length<=MAX_INPUT&&!item.value.includes('\0')?{type:'input-set',value:item.value,...target}:null;}
+ if(item.type==='input-select'){const target=inputTarget(item);return target&&Number.isSafeInteger(item.start)&&Number.isSafeInteger(item.end)&&item.start>=0&&item.end>=item.start&&item.end<=MAX_INPUT?{type:'input-select',start:item.start,end:item.end,...target}:null;}
+ if(item.type==='input-configure'){const target=inputTarget(item);return target?.id&&['prefix','title'].includes(item.key)&&typeof item.value==='string'&&item.value.length<=(item.key==='prefix'?2048:160)&&!/[\r\n\0]/.test(item.value)?{type:item.type,key:item.key,value:item.value,...target}:null;}
  if(item.type==='timer-start'&&Number.isSafeInteger(item.id)&&item.id>0&&Number.isSafeInteger(item.delay)&&item.delay>=100&&item.delay<=3600000&&typeof item.repeat==='boolean')
   return {type:item.type,id:item.id,delay:item.delay,repeat:item.repeat};
  if(item.type==='timer-stop'&&Number.isSafeInteger(item.id)&&item.id>0)return {type:item.type,id:item.id};

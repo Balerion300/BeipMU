@@ -5,9 +5,19 @@ const byId=id=>document.getElementById(id),send=value=>window.chrome?.webview?.p
 const api=()=>window.BeipPreview;
 let daily;
 function dailyCommands(){return daily||(daily=BeipDailyCommandAdapter.createAdapter(api(),window));}
+const primaryInputs=new WeakMap();let inputBridge;
+function primaryInput(s){let pane=primaryInputs.get(s);if(!pane){pane={};primaryInputs.set(s,pane);}const node=byId('input'),active=api().current===s;Object.assign(pane,{text:active?node.value:s.draft||'',start:active?node.selectionStart:s.draftSelection?.start||0,end:active?node.selectionEnd:s.draftSelection?.end||0,prefix:s.inputPrefix||'',title:s.inputTitle||''});return pane;}
+function scriptInputs(){return inputBridge||(inputBridge=BeipInputScriptBridge.createBridge({
+ valid:s=>api().sessions.get(s.id)===s,primary:primaryInput,model:s=>window.BeipDockPanels.inputModel(s),
+ setPrimary(s,value){const prefix=s.inputPrefix||'';value=value.replace(/\r\n?/g,'\n');if(prefix&&value.startsWith(prefix))value=value.slice(prefix.length);s.draft=value;s.draftSelection={start:value.length,end:value.length};if(api().current===s){byId('input').value=value;byId('input').setSelectionRange(value.length,value.length);api().resizeInput?.();}},
+ selectPrimary(s,start,end){const length=primaryInput(s).text.length;s.draftSelection={start:Math.min(start,length),end:Math.min(end,length)};if(api().current===s)byId('input').setSelectionRange(s.draftSelection.start,s.draftSelection.end);},
+ configurePrimary(s,props){if(Object.hasOwn(props,'prefix'))s.inputPrefix=props.prefix;if(Object.hasOwn(props,'title'))s.inputTitle=props.title;},
+ changed(s,id,options){if(id!=='primary')window.BeipDockPanels.inputChanged(s,id,options);}
+}));}
+function inputSnapshot(s){return scriptInputs().snapshot(s);}
 function base64(value){const bytes=new TextEncoder().encode(value);let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);}
 function decode(value){return new TextDecoder().decode(Uint8Array.from(atob(value),x=>x.charCodeAt(0)));}
-function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),input:{text:active?input.value:s.draft||'',start:active?input.selectionStart:s.draftSelection?.start||0,end:active?input.selectionEnd:s.draftSelection?.end||0},buildNumber:14,version:14};}
+function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),...inputSnapshot(s),buildNumber:15,version:15};}
 function applyLine(node,snapshot){const line=BeipScripts.validLine(snapshot);if(!line)return;const fragment=document.createDocumentFragment();for(const run of line.runs){const span=document.createElement('span');span.textContent=run.text;const st=run.style;if(st.color)span.style.color=st.color;if(st.background)span.style.backgroundColor=st.background;if(st.bold)span.style.fontWeight='bold';if(st.italic)span.style.fontStyle='italic';span.style.textDecoration=[st.underline?'underline':'',st.strike?'line-through':''].filter(Boolean).join(' ');fragment.append(span);}node.replaceChildren(fragment);}
 function snapshotLine(node){
  const runs=[],nodes=window.BeipLineEdits?.textNodes(node)||(()=>{const values=[],walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))values.push(text);return values;})();
@@ -41,7 +51,7 @@ async function dispatchTriggerCaptured(s,action,execution){
  return {...result,effects:[]};
 }
 function applyEffects(s,effects,execution){
- if(api().sessions.get(s.id)!==s||execution&&!execution.isCurrent())return;for(const e of effects){if(e.type==='input-set'){
+ if(api().sessions.get(s.id)!==s||execution&&!execution.isCurrent())return;for(const e of effects){if(e.id&&['input-set','input-select','input-configure'].includes(e.type)){scriptInputs().apply(s,e,execution);continue;}if(e.type==='input-set'){
   s.draft=e.value;s.draftSelection={start:e.value.length,end:e.value.length};if(api().current===s){byId('input').value=e.value;byId('input').setSelectionRange(e.value.length,e.value.length);}
  }else if(e.type==='input-select'){
   const length=(api().current===s?byId('input').value:s.draft||'').length;s.draftSelection={start:Math.min(length,e.start),end:Math.min(length,e.end)};if(api().current===s)byId('input').setSelectionRange(s.draftSelection.start,s.draftSelection.end);
@@ -91,6 +101,7 @@ async function handleCommand(value,s,execution,options={}){
  if(!value.startsWith('/'))return false;
  const at=value.indexOf(' '),name=(at<0?value:value.slice(0,at)).toLowerCase(),arg=at<0?'':value.slice(at+1).trim();
  if(name==='/clear')byId('clear').click();
+ else if(name==='/newinput')window.BeipDockPanels.newInput(at<0?'':value.slice(at+1),s);
  else if(name==='/disconnect')send('disconnect|'+s.id);
  else if(name==='/log'){byId('logging').checked=!s.logWanted;byId('logging').dispatchEvent(new Event('change'));}
  else if(name==='/echo')display(s,arg);
@@ -109,7 +120,7 @@ async function handleCommand(value,s,execution,options={}){
 let found=[],foundAt=-1;
 function findReset(){for(const node of found)node.classList.remove('find-hit');found=[];foundAt=-1;byId('findCount').textContent='';}
 function findNext(step){findReset();const value=byId('findText').value.toLocaleLowerCase();if(!value)return;const session=api().current;if(!session)return;found=[...session.view.querySelectorAll('.line')].filter(e=>e.textContent.toLocaleLowerCase().includes(value));for(const node of found)node.classList.add('find-hit');foundAt=step<0?found.length-1:0;if(found.length)found[foundAt].scrollIntoView({block:'center'});byId('findCount').textContent=found.length+' matching lines';}
-window.BeipFeatures={initialize,attachLine,incoming,completeLine,selected,closed,handleCommand,dispatch,dispatchTriggerCaptured,context,applyLine,applyEffects,beforeDisplay,snapshotLine,dailyCommands};
+window.BeipFeatures={initialize,attachLine,incoming,completeLine,selected,closed,handleCommand,dispatch,dispatchTriggerCaptured,context,applyLine,applyEffects,beforeDisplay,snapshotLine,dailyCommands,inputSnapshot,primaryInput};
 byId('findButton').onclick=()=>{byId('findBar').hidden=!byId('findBar').hidden;if(!byId('findBar').hidden)byId('findText').focus();else findReset();};
 byId('findForm').onsubmit=e=>{e.preventDefault();const query=byId('findText').value.toLocaleLowerCase();const s=api().current;if(!s)return;const next=[...s.view.querySelectorAll('.line')].filter(e=>query&&e.textContent.toLocaleLowerCase().includes(query));if(!next.length){findReset();byId('findCount').textContent='No matches';return;}if(next.length!==found.length||next.some((n,i)=>n!==found[i]))findNext(1);else{foundAt=(foundAt+1)%found.length;found[foundAt].scrollIntoView({block:'center'});byId('findCount').textContent=(foundAt+1)+' / '+found.length;}};
 byId('exportButton').onclick=()=>{const s=api().current;if(s)send('export|'+(s.kind==='spawn'?s.parentId:s.id)+'|'+base64([...s.view.querySelectorAll('.line')].map(e=>e.textContent).join('\r\n')));};

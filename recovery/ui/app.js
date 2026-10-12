@@ -3,6 +3,7 @@ const $=id=>document.getElementById(id),bridge=window.chrome?.webview;
 const send=text=>bridge?.postMessage(text),output=$('output'),menu=$('menu');
 const defaults={fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,localEcho:false,defaultLogging:false,inputHeight:40};
 const state={worlds:[],characters:[],preferences:{...defaults},commandSettings:{active:false,echo:true,processCommands:false,sendUnknown:false,legacyVariableAliases:false},aliases:[],triggers:[],macros:[],scriptSource:"",scriptEnabled:false,maps:{},secretStatuses:new Map(),secretErrors:new Map()};
+const encodingEditor=BeipEncodingEditor.create($('worldFields').querySelector('fieldset'));
 const sessions=new Map(),spawnPanes=new Map(),closedIds=new Set();
 let profilePreferencesDraft=null;
 let activeId='default',nextSession=1,test=false,testClicked=false,testReported=false,settingsLoaded=false,ruleEngine=null;
@@ -43,7 +44,7 @@ function replayRestoreRecords(session,records){
  // Historical one-line avatar instructions and request bookkeeping must not leak into live input.
  if(session.gmcp){session.gmcp.nextLine=pendingAvatar;session.gmcp.requests=pendingRequests;}
  if(fragment.childNodes.length){session.view.querySelector('.welcome')?.remove();session.view.prepend(fragment);session.hasOutput=true;}
- if(history.length){session.history=[...history,...session.history].slice(-500);session.historyIndex=session.history.length;}
+ if(history.length){const combined=[...history,...session.history].slice(-500);session.history.splice(0,session.history.length,...combined);session.historyIndex=session.history.length;}
  if(history.length&&session.id===activeId)window.BeipDockPanels?.selected(session);
  window.dispatchEvent(new CustomEvent('beip-restore-complete',{detail:{sessionId:session.id,records:records.length}}));
 }
@@ -140,6 +141,13 @@ async function command(value,prompt,session=current(),execution=null,options={})
  const text=String(value).replace(/\r\n|\r|\n/g,'\r\n');
  try{return await (execution?execution.run(session,text,options):getCommandPipeline().submit(session,text,options));}
  catch(error){if(sessions.get(session.id)===session)showStatus(session,error.message);return {completed:false,error:error.message,code:error.code||'command'};}
+}
+async function submitInputPane(session,packet){
+ if(sessions.get(session?.id)!==session||session.kind!=='world')throw Error('Input owner is closed.');
+ if(packet.historyAdded){for(const line of packet.historyText.replace(/\r\n?/g,'\n').split('\n'))if(line)session.restoreController?.capture({v:1,kind:'history',time:Date.now(),text:line});session.historyIndex=session.history.length;window.BeipDockPanels?.addHistory(session,packet.historyText);}
+ session.typedCount+=packet.text.replace(/\r\n?/g,'\n').split('\n').filter(Boolean).length;session.activityAt=Date.now();
+ if(packet.echo){const before=session.suppressAutomation;session.suppressAutomation=true;try{for(const line of packet.echoText.replace(/\r\n?/g,'\n').split('\n'))appendText(session,'> '+line+'\n',BeipWindowPreferences.echoStyle({...preferencesForSession(session),...(packet.echoColor?{localEchoColor:packet.echoColor}:{})}));}finally{session.suppressAutomation=before;}}
+ window.BeipDesktopShell?.refreshActivity();return command(packet.text,false,session,null,{source:'input-pane',prefix:packet.prefix});
 }
 function activate(link,event,session){
  if(link.kind==='url'){send('external|'+link.value);return;}
@@ -312,7 +320,8 @@ function incoming(message){
  if(window.BeipFeatures?.incoming(session,payload))return;
  if(payload.startsWith('data:')){if(session.paused){(session.pausedData??=[]).push(payload);session.pausedDataSize=(session.pausedDataSize||0)+payload.length;if(session.pausedDataSize>8*1024*1024){window.BeipDesktopShell?.resume(session);showStatus(session,'Output resumed after reaching the pause buffer limit.');}return;}try{const bytes=Uint8Array.from(atob(payload.slice(5)),c=>c.charCodeAt(0));session.activityAt=Date.now();session.parser?.feed(session.decoder.decode(bytes,{stream:true}));}catch(e){showStatus(session,'Could not decode server data.');}}
  else if(payload.startsWith('status:'))showStatus(session,payload.slice(7));
- else if(payload==='reset:'){session.parser?.reset();session.decoder=new TextDecoder();session.protocol='Plain text';session.loginAttempted=false;if(id===activeId)$('protocol').textContent=session.protocol;}
+ else if(payload.startsWith('encoding:')){const encoding=payload.slice(9);if(BeipEncoding.ENCODINGS.includes(encoding)){session.parser?.feed(session.decoder.decode());BeipEncodingConnection.resetDecoder(session,encoding);}}
+ else if(payload==='reset:'){session.parser?.reset();BeipEncodingConnection.resetDecoder(session);session.protocol='Plain text';session.loginAttempted=false;if(id===activeId)$('protocol').textContent=session.protocol;}
  else if(payload==='mxp:on')session.parser?.setMXP(true);else if(payload==='mxp:off')session.parser?.setMXP(false);
  else if(payload==='ended:')refreshTabs();
  else if(payload==='connected:on'){session.connected=true;session.connecting=false;session.connectedAt=Date.now();session.activityAt=Date.now();if(session.logWanted&&!session.logging)startLogging(session);autoLogin(session);refreshTabs();}
@@ -371,6 +380,7 @@ function renderProfileLists(){
 }
 function markProfileSelection(kind,id){for(const row of $('profilesDialog').querySelectorAll('.profile-row[data-profile-id]'))row.classList.toggle('selected',row.dataset.profileKind===kind&&row.dataset.profileId===id);}
 function openEditor(kind,profile=null){
+ encodingEditor.load(profile,kind==='world');
  profilePreferencesDraft=BeipProfilePreferences.normalizeOverrides(profile?.preferences);
  $('profileKind').value=kind;$('profileId').value=profile?.id||'';$('profileEditorTitle').textContent=(profile?'Edit ':'New ')+(kind==='world'?'world':'character');$('profileName').value=profile?.name||'';$('profileError').textContent='';$('worldFields').hidden=kind!=='world';$('characterFields').hidden=kind!=='character';markProfileSelection(kind,profile?.id||'');
  $('profileInfo').value=kind==='world'?profile?.notes||'':'';
@@ -385,7 +395,7 @@ function openEditor(kind,profile=null){
 }
 function saveProfile(event){
  event.preventDefault();const kind=$('profileKind').value,id=$('profileId').value||newId(kind==='world'?'w':'c'),name=$('profileName').value.trim();if(!name){$('profileError').textContent='Enter a display name.';return;}
- if(kind==='world'){const host=$('profileHost').value.trim(),port=$('profilePort').value.trim();if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('profileError').textContent='Enter a valid server address and port.';return;}const p={...state.worlds.find(x=>x.id===id),id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),notes:$('profileInfo').value,host,port,tls:$('profileTLS').checked,autoConnect:$('profileAuto').checked};const index=state.worlds.findIndex(x=>x.id===id);if(index>=0)state.worlds[index]=p;else state.worlds.push(p);}
+ if(kind==='world'){const host=$('profileHost').value.trim(),port=$('profilePort').value.trim();if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('profileError').textContent='Enter a valid server address and port.';return;}let encodingFields;try{encodingFields=encodingEditor.read();}catch(error){$('profileError').textContent=error.message;return;}const p={...state.worlds.find(x=>x.id===id),...encodingFields,id,name,preferences:BeipProfilePreferences.normalizeOverrides(profilePreferencesDraft),notes:$('profileInfo').value,host,port,tls:$('profileTLS').checked,autoConnect:$('profileAuto').checked};const index=state.worlds.findIndex(x=>x.id===id);if(index>=0)state.worlds[index]=p;else state.worlds.push(p);}
  else{const worldId=$('profileWorld').value,loginName=$('profileLoginName').value.trim(),password=$('profilePassword').value,remember=$('profileRememberSecret').checked;
   if(!state.worlds.some(x=>x.id===worldId)){$('profileError').textContent='Choose a saved world first.';return;}
   if(/[\x00-\x1f\x7f]/.test(loginName)||new TextEncoder().encode(loginName).length>128){$('profileError').textContent='Use a single-line login name of at most 128 bytes.';return;}
@@ -431,7 +441,7 @@ function reconnectSession(session){
  if(!host||!/^[0-9]{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return false;
  session.connectionEpoch=(session.connectionEpoch||0)+1;session.connected=false;session.connecting=true;session.host=host;session.port=port;session.tls=tls;session.loginAttempted=false;
  window.BeipClientCommands?.closed(session);session.triggerAudio?.stop();
- send('connect|'+session.id+'|'+host+'|'+port+'|'+(tls?'tls':'plain')+(session.characterId?'|'+session.characterId:''));showStatus(session,'Reconnecting to '+host+':'+port+'…');return true;
+ try{send(BeipEncodingConnection.bind(session,world));}catch(error){session.connecting=false;showStatus(session,error.message);return false;}showStatus(session,'Reconnecting to '+host+':'+port+'…');return true;
 }
 function connectTo(host,port,worldId='',characterId='',tls=false){
  if(!host||host.length>253||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535){$('status').textContent='Enter a valid server address and port.';return;}
@@ -440,7 +450,7 @@ function connectTo(host,port,worldId='',characterId='',tls=false){
  let session=sessions.get('default');
  if(test||!session||session.hasOutput||session.connected||session.connecting||sessions.size>1)session=createSession('s'+nextSession++,{worldId,characterId,label:host});
  else{session.worldId=worldId;session.characterId=characterId;session.label=host;session.view.replaceChildren();configureRestore(session);}
- session.host=host;session.port=String(port);session.tls=!!tls;session.loginAttempted=false;session.logWanted=!!state.preferences.defaultLogging||!!BeipLogging.normalizeCharacter(state.characters.find(c=>c.id===characterId)?.logging).autoLog;session.connecting=true;selectSession(session.id);showStatus(session,'Connecting to '+host+':'+port+'…');if($('connectDialog').open)$('connectDialog').close();send('connect|'+session.id+'|'+host+'|'+port+(characterId?'|'+(tls?'tls':'plain')+'|'+characterId:tls?'|tls':''));if(session.logWanted)startLogging(session);
+ session.host=host;session.port=String(port);session.tls=!!tls;session.loginAttempted=false;session.logWanted=!!state.preferences.defaultLogging||!!BeipLogging.normalizeCharacter(state.characters.find(c=>c.id===characterId)?.logging).autoLog;session.connecting=true;selectSession(session.id);showStatus(session,'Connecting to '+host+':'+port+'…');if($('connectDialog').open)$('connectDialog').close();try{send(BeipEncodingConnection.bind(session,savedWorld));}catch(error){session.connecting=false;showStatus(session,error.message);return;}if(session.logWanted)startLogging(session);
 }
 function welcome(){createSession('default',{label:'(New Tab)'});selectSession('default');}
 function setupTriggerDialog(){
@@ -469,7 +479,7 @@ $('world').onchange=()=>{const w=state.worlds.find(x=>x.id===$('world').value);i
 $('disconnect').onclick=()=>{const s=current();if(s?.kind==='world')send('disconnect|'+s.id);};
 $('connectAll').onclick=()=>{for(const world of state.worlds)connectWorld(world);};
 $('disconnectAll').onclick=()=>{for(const s of sessions.values())if(s.kind==='world'&&(s.connected||s.connecting))send('disconnect|'+s.id);};
-$('command').onsubmit=e=>{e.preventDefault();const s=current(),value=$('input').value;if(!s)return;const lines=value.replace(/\r\n?/g,'\n').split('\n');for(const line of lines){if(line){s.history.push(line);s.restoreController?.capture({v:1,kind:'history',time:Date.now(),text:line});if(s.history.length>500)s.history.shift();s.historyIndex=s.history.length;s.typedCount++;s.activityAt=Date.now();window.BeipDockPanels?.addHistory(s,line);}if(preferencesForSession(s).localEcho){const before=s.suppressAutomation;s.suppressAutomation=true;try{appendText(s,'> '+line+'\n',BeipWindowPreferences.echoStyle(preferencesForSession(s)));}finally{s.suppressAutomation=before;}}}command(value,false,s,null,{source:'input'});if(BeipWindowPreferences.shouldClearInput(preferencesForSession(s)))$('input').value='';else $('input').select();resizeInput();window.BeipDesktopShell?.refreshActivity();};
+$('command').onsubmit=e=>{e.preventDefault();const s=current(),value=$('input').value;if(!s)return;const lines=value.replace(/\r\n?/g,'\n').split('\n');for(const line of lines){if(line){s.history.push(line);s.restoreController?.capture({v:1,kind:'history',time:Date.now(),text:line});if(s.history.length>500)s.history.shift();s.historyIndex=s.history.length;s.typedCount++;s.activityAt=Date.now();window.BeipDockPanels?.addHistory(s,line);}if(preferencesForSession(s).localEcho){const before=s.suppressAutomation;s.suppressAutomation=true;try{appendText(s,'> '+line+'\n',BeipWindowPreferences.echoStyle(preferencesForSession(s)));}finally{s.suppressAutomation=before;}}}command(value,false,s,null,{source:'input',prefix:s.inputPrefix||''});if(BeipWindowPreferences.shouldClearInput(preferencesForSession(s)))$('input').value='';else $('input').select();resizeInput();window.BeipDesktopShell?.refreshActivity();};
 $('input').addEventListener('input',resizeInput);
 
 document.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.defaultPrevented)return;if(e.altKey&&/^[1-9]$/.test(e.key)){const id=[...sessions.keys()][Number(e.key)-1];if(id){e.preventDefault();selectSession(id);}}});
@@ -491,5 +501,5 @@ $('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:s
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,processTriggerLine,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,renderRuleLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,processTriggerLine,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,submitInputPane,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,renderRuleLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});

@@ -14,6 +14,7 @@
 #include "native-log-name.h"
 #include "native-image.h"
 #include "native-restore.h"
+#include "native-encoding-connect.h"
 #include <future>
 #include <atomic>
 #include <mutex>
@@ -227,6 +228,7 @@ bool validHost(std::string_view host){
     return true;
 }
 class Client {
+    BeipEncoding::Encoding encoding=BeipEncoding::Encoding::Utf8;bool limitTelnetCharset=false;
     HWND window=nullptr;std::string id,boundCharacter;bool legacy=false,secure=false,tlsReady=false;
     SOCKET socket=INVALID_SOCKET;std::mutex lock;BeipTLS::Stream tls;
     std::thread worker;std::atomic<bool> stop{false},gmcpReady{false},resizePending{false};
@@ -279,17 +281,28 @@ public:
         logFile.write(line.data(),std::streamsize(line.size()));logFile.put('\n');logFile.flush();
         if(!logFile)post("logstatus:error:"+base64("Could not write the log file."));
     }
-    void command(std::string s){if(s.size()>8192||s.find('\n')!=s.npos||s.find('\r')!=s.npos){post("status:Command rejected: one line at a time, up to 8192 bytes.");return;}s+="\r\n";if(!transmit(escapeTelnet(s)))post("status:Not connected.");}
+    void command(std::string s){
+        BeipEncoding::SecureBytes wire;
+        if(!BeipEncoding::commandWire(s,encoding,wire)){post("status:Command rejected: invalid text or more than one line.");return;}
+        if(!transmit(wire.value))post("status:Not connected.");
+    }
     void login(std::string_view username,std::string_view password){
-        std::string line;line.reserve(11+username.size()+password.size());
-        line="connect ";line.append(username);line+=' ';line.append(password);line+="\r\n";
-        std::string wire=escapeTelnet(line);bool sent=transmit(wire);
-        SecureZeroMemory(line.data(),line.size());SecureZeroMemory(wire.data(),wire.size());
-        if(!sent)post("status:Could not send login command; connection is unavailable.");
+        BeipEncoding::SecureBytes line,wire;line.value.reserve(9+username.size()+password.size());
+        line.value="connect ";line.value.append(username);line.value+=' ';line.value.append(password);
+        if(!BeipEncoding::commandWire(line.value,encoding,wire)){post("status:Saved login text could not be encoded.");return;}
+        if(!transmit(wire.value))post("status:Could not send login command; connection is unavailable.");
     }
     void loginTemplate(std::string_view text,std::string_view username,std::string_view password){
-        std::string line;for(size_t at=0;at<text.size();){if(text.substr(at,6)=="%NAME%"){line.append(username);at+=6;}else if(text.substr(at,10)=="%PASSWORD%"){line.append(password);at+=10;}else line+=text[at++];if(line.size()>8192){SecureZeroMemory(line.data(),line.size());post("status:Expanded connect template is too long.");return;}}
-        line+="\r\n";std::string wire=escapeTelnet(line);bool sent=transmit(wire);SecureZeroMemory(line.data(),line.size());SecureZeroMemory(wire.data(),wire.size());if(!sent)post("status:Could not send connect template; connection is unavailable.");
+        BeipEncoding::SecureBytes line,wire;line.value.reserve(8192);
+        for(size_t at=0;at<text.size();){std::string_view part;
+            if(text.substr(at,6)=="%NAME%"){part=username;at+=6;}
+            else if(text.substr(at,10)=="%PASSWORD%"){part=password;at+=10;}
+            else{part=text.substr(at,1);++at;}
+            if(part.size()>8192-line.value.size()){post("status:Expanded connect template is too long.");return;}
+            line.value.append(part);
+        }
+        if(!BeipEncoding::commandWire(line.value,encoding,wire)){post("status:Connect template text could not be encoded.");return;}
+        if(!transmit(wire.value))post("status:Could not send connect template; connection is unavailable.");
     }
     void gmcpSend(std::string_view encoded){
         std::string payload;if(!unbase64(encoded,payload)||payload.size()>65535){post("status:Invalid GMCP payload.");return;}
@@ -300,10 +313,10 @@ public:
     void telnetNop(){if(!transmit(std::string_view("\xff\xf1",2)))post("status:Not connected.");}
     void resize(unsigned short width,unsigned short height){columns=width;rows=height;resizePending=true;}
     bool mayLogin(std::string_view character,bool allowPlain){std::lock_guard guard(lock);return !boundCharacter.empty()&&boundCharacter==character&&(secure||allowPlain);}
-    void connect(std::string host,std::string port,bool useTls=false,std::string character={}){
-        disconnect();{std::lock_guard guard(lock);secure=useTls;tlsReady=false;boundCharacter=std::move(character);}stop=false;
+    void connect(std::string host,std::string port,bool useTls=false,std::string character={},BeipEncoding::Encoding selectedEncoding=BeipEncoding::Encoding::Utf8,bool limitCharset=false){
+        disconnect();encoding=selectedEncoding;limitTelnetCharset=limitCharset;{std::lock_guard guard(lock);secure=useTls;tlsReady=false;boundCharacter=std::move(character);}stop=false;
         worker=std::thread([this,host=std::move(host),port=std::move(port),useTls]{
-            post("reset:");post("status:Connecting to "+host+":"+port+"...");
+            post("reset:");post("encoding:"+std::string(BeipEncoding::name(encoding)));post("status:Connecting to "+host+":"+port+"...");
             addrinfo hints{},*addresses=nullptr;hints.ai_socktype=SOCK_STREAM;hints.ai_family=AF_UNSPEC;
             if(getaddrinfo(host.c_str(),port.c_str(),&hints,&addresses)){post("status:Could not resolve the server address.");post("connected:off");post("ended:");return;}
             SOCKET connected=INVALID_SOCKET;
@@ -688,15 +701,22 @@ struct Application {
             ready=true;for(auto& s:queued)message(s);queued.clear();
             if(inspectMode)message("inspect:");
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
-            else if(testCorePorts.size()==2){
+            else if(testCorePorts.size()>=2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
-                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"imageHttpBase\":"+jsonString("http://127.0.0.1:"+std::to_string(imageHttpPort)+"/")+",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
+                std::string portsJson;for(int port:testCorePorts){if(!portsJson.empty())portsJson+=',';portsJson+=std::to_string(port);}
+                auto config="{\"ports\":["+portsJson+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"imageHttpBase\":"+jsonString("http://127.0.0.1:"+std::to_string(imageHttpPort)+"/")+",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
                 message("testcore:"+base64(config));SetTimer(window,1,60000,nullptr);
             }
         }else if(text.starts_with("sessionopen|")){
             auto id=text.substr(12);if(!validId(id)||sessions.find(id)!=sessions.end())return;
             if(sessions.size()>=MaxNativeSessions){scoped(id,"status:Session limit reached.");return;}
             sessions.emplace(id,std::make_unique<Client>(window,id));
+        }else if(text.starts_with("connect2|")){
+            BeipEncoding::ConnectRequest request;
+            if(!BeipEncoding::parseConnect(text,request)){message("status:Invalid connection settings.");return;}
+            if(sessions.find(request.session)==sessions.end()&&sessions.size()>=MaxNativeSessions){scoped(request.session,"status:Session limit reached.");return;}
+            auto& slot=sessions[request.session];if(!slot)slot=std::make_unique<Client>(window,request.session);
+            slot->connect(std::move(request.host),std::move(request.port),request.tls,std::move(request.character),request.encoding,request.limit);
         }else if(text.starts_with("connect|")){
             auto split=text.find('|',8);if(split==text.npos)return;
             auto second=text.find('|',split+1);bool legacy=second==text.npos;
@@ -894,14 +914,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     if(argc==3&&std::wstring(argv[1])==L"--inspect"){app.inspectMode=true;app.testMode=true;app.testPath=argv[2];}
     if(argc==4&&(std::wstring(argv[1])==L"--test"||std::wstring(argv[1])==L"--test-tls")){
         app.testPort=_wtoi(argv[2]);app.testMode=app.testPort>0;app.testTls=std::wstring(argv[1])==L"--test-tls";app.testPath=argv[3];
-    }else if((argc==5||argc==6)&&std::wstring(argv[1])==L"--test-core"){
+    }else if((argc==5||argc==6||argc==8)&&std::wstring(argv[1])==L"--test-core"){
         int first=_wtoi(argv[2]),second=_wtoi(argv[3]);
-        if(first>0&&first<=65535&&second>0&&second<=65535){app.testCorePorts={first,second};app.testMode=true;app.testPath=argv[4];if(argc==6){const int port=_wtoi(argv[5]);if(port>0&&port<=65535)app.imageHttpPort=port;}}
+        const int cp1252=argc==8?_wtoi(argv[6]):0,cp437=argc==8?_wtoi(argv[7]):0;
+        if(first>0&&first<=65535&&second>0&&second<=65535&&(argc!=8||(cp1252>0&&cp1252<=65535&&cp437>0&&cp437<=65535))){app.testCorePorts={first,second};if(argc==8){app.testCorePorts.push_back(cp1252);app.testCorePorts.push_back(cp437);}app.testMode=true;app.testPath=argv[4];if(argc>=6){const int port=_wtoi(argv[5]);if(port>0&&port<=65535)app.imageHttpPort=port;}}
     }
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.14",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.15",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

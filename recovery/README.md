@@ -1,4 +1,28 @@
-# BeipMU recovery preview 0.14
+# BeipMU recovery preview 0.15
+
+Preview 0.15 adds docked additional input panes through `/newinput`, with independent
+drafts, prefixes, sticky selection, shared owner history and saved pane definitions.
+They participate in nested layouts and layout copying. Scripts keep `window.Input`
+bound to the primary input and can find additional panes with exact-title `GetInput`.
+Closing or replacing a pane invalidates its old script handle. Extra input panes
+cannot float yet; primary and extra history navigation still differ, and multiline
+history is split into individual records for saved restoration.
+
+World profiles now select UTF-8, Windows-1252 or CP437 for incoming text, outgoing
+commands and native saved-login text. Existing recovery profiles without an encoding
+retain UTF-8; newly created worlds default to Windows-1252, matching the original.
+Changes apply on reconnect. Automatic CHARSET negotiation is not implemented, and
+unknown imported encodings require a choice before connecting.
+
+Validation: Windows/native build and all 48 module test files pass. Fresh and
+persisted packaged sessions pass (`sessions-20261012-100046`), including actual
+CP1252/CP437 wire bytes, UTF-8 reconnect, input-pane ownership and script handles.
+Pueblo/MXP spacing, links and images pass. Input and encoding screenshots were
+inspected; a squeezed encoding selector was fixed and its visible geometry tested.
+A separate TLS test attempt timed out around certificate setup, so this release
+makes no new full-app TLS validation claim. Its temporary test CA was removed.
+
+## Previous preview 0.14
 
 Preview 0.14 adds the original global ANSI palette and policy controls: sixteen
 colors, XTerm/CMD/VGA/Old/Bright presets, font bold versus bright colors, equal-color

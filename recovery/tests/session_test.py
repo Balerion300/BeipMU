@@ -18,7 +18,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.14" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.15" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -136,16 +136,71 @@ class Fixture:
         assert self.error is None, (self.marker, self.error)
 
 
+class EncodingFixture:
+    def __init__(self, encoding):
+        self.encoding = encoding
+        self.received = []
+        self.error = None
+        self.listener = socket.socket()
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(2)
+        self.listener.settimeout(60)
+        self.port = self.listener.getsockname()[1]
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        try:
+            for index in range(2 if self.encoding == "cp1252" else 1):
+                conn, _ = self.listener.accept()
+                received = bytearray()
+                self.received.append(received)
+                with conn:
+                    conn.settimeout(20)
+                    encoding = "utf-8" if index else self.encoding
+                    conn.sendall(b"This world is Pueblo 1.10 enhanced.\r\n")
+                    while b"PUEBLOCLIENT 2.01\r\n" not in received:
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            raise AssertionError("Encoding fixture ended before Pueblo negotiation")
+                        received.extend(chunk)
+                    if index:
+                        content = "</xch_mudtext><pre>reconnected 🐉 café\r\nENCODING UTF8 COMPLETE\r\n"
+                    elif encoding == "cp1252":
+                        content = '</xch_mudtext><pre>café € ÿ\r\n<a xch_cmd="encoding-link café € ÿ">café €</a>\r\nENCODING 1252 COMPLETE\r\n'
+                    else:
+                        content = "</xch_mudtext><pre>café ╬ \u00a0\r\nENCODING 437 COMPLETE\r\n"
+                    wire = content.encode(encoding).replace(b"\xff", b"\xff\xff")
+                    for offset in range(0, len(wire), 3):
+                        conn.sendall(wire[offset:offset + 3])
+                        time.sleep(.001)
+                    while True:
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            break
+                        received.extend(chunk)
+        except Exception as exc:
+            self.error = str(exc)
+        finally:
+            self.listener.close()
+
+    def finish(self):
+        self.thread.join(timeout=3)
+        assert not self.thread.is_alive(), self.encoding
+        assert self.error is None, (self.encoding, self.error)
+
+
 def run(phase):
     assets = Assets()
     fixtures = [Fixture("CORE A COMPLETE", assets), Fixture("CORE B COMPLETE", assets)]
+    encodings = [EncodingFixture("cp1252"), EncodingFixture("cp437")]
     for name in ("result.json", "preview.png", "timeout.txt", "menu.json", "window.bmp", "window-capture-error.txt"):
         (OUT / name).unlink(missing_ok=True)
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = 4
     app = subprocess.Popen(
-        [str(EXE), "--test-core", str(fixtures[0].port), str(fixtures[1].port), str(OUT), str(assets.server.server_port)],
+        [str(EXE), "--test-core", str(fixtures[0].port), str(fixtures[1].port), str(OUT), str(assets.server.server_port), str(encodings[0].port), str(encodings[1].port)],
         startupinfo=startup,
     )
     try:
@@ -206,11 +261,11 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation", "ansi", "ansiSettings", "dailyCommands"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation", "ansi", "ansiSettings", "dailyCommands", "inputPanes", "inputScripts", "encoding", "encodingWire"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)
-        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}, "dailyCommands": {"grabWires"}}
+        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}, "dailyCommands": {"grabWires"}, "encodingWire": {"linkDetails", "editorRects"}}
         assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
     emoji_log = pathlib.Path(result["emoji"]["logPath"])
     restore_id = result["restore"]["nativeCharacter"]
@@ -273,6 +328,20 @@ def run(phase):
     assert (OUT / "preview.png").stat().st_size > 1000, f"{phase}: no screenshot"
     for fixture in fixtures:
         fixture.finish()
+    for fixture in encodings:
+        fixture.finish()
+    encoded_a, encoded_utf8 = [bytes(value) for value in encodings[0].received]
+    encoded_b = bytes(encodings[1].received[0])
+    for text, encoding, own, others in [
+        ("encoding-link café € ÿ", "cp1252", encoded_a, encoded_b + encoded_utf8),
+        ("encoding-cp1252 café € ÿ", "cp1252", encoded_a, encoded_b + encoded_utf8),
+        ("encoding-cp437 café ╬ \u00a0", "cp437", encoded_b, encoded_a + encoded_utf8),
+        ("encoding-cp437-still café ╬ \u00a0", "cp437", encoded_b, encoded_a + encoded_utf8),
+        ("encoding-utf8 🐉 café", "utf-8", encoded_utf8, encoded_a + encoded_b),
+    ]:
+        wire = text.encode(encoding).replace(b"\xff", b"\xff\xff") + b"\r\n"
+        assert own.count(wire) == 1 and wire not in others, (text, own, others)
+    (OUT / f"{phase}-encoding-wire.json").write_text(json.dumps({"cp1252": encoded_a.hex(), "cp437": encoded_b.hex(), "utf8": encoded_utf8.hex()}, indent=2), encoding="utf-8")
     a, b = [bytes(f.received) for f in fixtures]
     pipeline_commands = ['/echo pipeline-literal-alpha', 'pipeline-escaped-alpha', 'pipeline-child-alpha', 'pipeline-parent-alpha', 'pipeline-send-alpha', 'pipeline-transmit-alpha', 'pipeline-order-one-alpha', 'pipeline-order-two-alpha', 'pipeline-trigger-alpha']
     for command in pipeline_commands:
@@ -281,6 +350,8 @@ def run(phase):
     assert b'pipeline-' not in b, b
     assert a.count(b'continuation-script-seen-ran-alpha\r\n') == 1, a
     assert b'continuation-' not in b, b
+    for wire, own, other in [(b'input-pane-first-alpha\r\n', a, b), (b'input-pane-second-alpha\r\n', a, b), (b'input-pane-beta-sticky\r\n', b, a)]:
+        assert own.count(wire) == 1 and wire not in other, (wire, a, b)
     assert a.count(b'daily-repeat-alpha\r\n') == 3, a
     assert b'daily-repeat-alpha' not in b, b
     assert len(result['dailyCommands']['grabWires']) == 4, result['dailyCommands']

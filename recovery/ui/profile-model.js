@@ -48,7 +48,7 @@
    if(!item||typeof item!=='object'||!ID.test(item.id))return null;
    const name=text(item.name,80).trim(),host=text(item.host,253).trim(),port=String(item.port??'').trim();
    if(!name||!host||/[\s|]/.test(host)||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)return null;
-   return {id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
+   return {...(typeof module==='object'&&module.exports?require('./encoding-model.js'):globalThis.BeipEncoding).normalizeWorld(item),id:item.id,name,host,port,tls:bool(item.tls),autoConnect:bool(item.autoConnect),openAtStartup:bool(item.openAtStartup),notes:text(item.notes,16384),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const worldIds=new Set(worlds.map(x=>x.id));
   const characters=unique(array(raw.characters,512).map(item=>{

@@ -1,13 +1,15 @@
 /* Persisted, profile-scoped pane layout. MIT. */
 (function(root,factory){
- const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipDockLayout=api;
-})(typeof globalThis==='object'?globalThis:this,function(){
+ const inputs=typeof module==='object'&&module.exports?require('./input-panes.js'):root.BeipInputPanes;const api=factory(inputs);if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipDockLayout=api;
+})(typeof globalThis==='object'?globalThis:this,function(inputs){
  'use strict';
  const TYPES=Object.freeze(['map','history','image','notes','split','spawn']);
  const EDGES=Object.freeze(['left','right','top','bottom']);
  const DEFAULT_EDGE=Object.freeze({map:'right',history:'bottom',image:'top',notes:'right',split:'right',spawn:'right'});
  const DEFAULT_SIZE=Object.freeze({left:280,right:320,top:170,bottom:150});
  const TYPE_SET=new Set(TYPES),EDGE_SET=new Set(EDGES);
+ function kindOf(raw,type){return TYPE_SET.has(type)?type:inputs.normalize(raw?.inputPanes).panes.some(pane=>pane.id===type)?'input':'';}
+ function defaultEdge(raw,type){return kindOf(raw,type)==='input'?'bottom':DEFAULT_EDGE[type];}
  function ratio(value){return Number.isFinite(value)?Math.max(.1,Math.min(.9,value)):.5;}
  function paneTypes(node){return !node?[]:node.kind==='tabs'?node.tabs.slice():[...paneTypes(node.first),...paneTypes(node.second)];}
  function groupFor(node,type){if(!node)return null;if(node.kind==='tabs')return node.tabs.includes(type)?node:null;return groupFor(node.first,type)||groupFor(node.second,type);}
@@ -29,19 +31,20 @@
  function dimension(value,edge){const number=value===null||value===undefined||value===''?NaN:Number(value),minimum=edge==='bottom'?50:edge==='top'?90:edge==='right'?220:180,maximum=edge==='bottom'?400:edge==='top'?500:700;return Number.isFinite(number)?Math.max(minimum,Math.min(maximum,Math.round(number))):DEFAULT_SIZE[edge];}
  function normalize(raw,{includeSpawn=false,rightWidth=320}={}){
   const source=Array.isArray(raw)?{order:raw}:raw&&typeof raw==='object'?raw:{};
-  const order=[];for(const type of Array.isArray(source.order)?source.order:[]){if(TYPE_SET.has(type)&&(includeSpawn||type!=='spawn')&&!order.includes(type))order.push(type);if(order.length===TYPES.length)break;}
-  const legacy=!source.edges&&order.length>0,edges={};for(const type of order)edges[type]=EDGE_SET.has(source.edges?.[type])?source.edges[type]:legacy?'right':DEFAULT_EDGE[type];
+  const inputPanes=inputs.normalize(source.inputPanes),allowed=new Set([...TYPES,...inputPanes.panes.map(pane=>pane.id)]);
+  const order=[];for(const type of Array.isArray(source.order)?source.order:[]){if(allowed.has(type)&&(includeSpawn||type!=='spawn')&&!order.includes(type))order.push(type);if(order.length===allowed.size)break;}
+  const legacy=!source.edges&&order.length>0,edges={};for(const type of order)edges[type]=EDGE_SET.has(source.edges?.[type])?source.edges[type]:type.startsWith('input:')?'bottom':legacy?'right':DEFAULT_EDGE[type];
   const sizes={};for(const edge of EDGES)sizes[edge]=dimension(source.sizes?.[edge]??(edge==='right'?rightWidth:undefined),edge);
-  const floating={};if(source.floating&&typeof source.floating==='object')for(const type of order){const rect=source.floating[type];if(!rect||typeof rect!=='object')continue;const {x,y,width,height}=rect;if([x,y,width,height].every(value=>Number.isFinite(value))){floating[type]={x:Math.max(-4000,Math.min(4000,Math.round(x))),y:Math.max(-4000,Math.min(4000,Math.round(y))),width:Math.max(240,Math.min(1400,Math.round(width))),height:Math.max(180,Math.min(1000,Math.round(height)))};}}
+  const floating={};if(source.floating&&typeof source.floating==='object')for(const type of order){if(type.startsWith('input:'))continue;const rect=source.floating[type];if(!rect||typeof rect!=='object')continue;const {x,y,width,height}=rect;if([x,y,width,height].every(value=>Number.isFinite(value))){floating[type]={x:Math.max(-4000,Math.min(4000,Math.round(x))),y:Math.max(-4000,Math.min(4000,Math.round(y))),width:Math.max(240,Math.min(1400,Math.round(width))),height:Math.max(180,Math.min(1000,Math.round(height)))};}}
   const activeByEdge={};for(const edge of EDGES){const available=order.filter(type=>edges[type]===edge&&!floating[type]);const candidate=source.activeByEdge?.[edge]??(source.active&&edges[source.active]===edge?source.active:'');activeByEdge[edge]=available.includes(candidate)?candidate:available[0]||'';}
   const trees={};for(const edge of EDGES){const available=order.filter(type=>edges[type]===edge&&!floating[type]),seen=new Set();trees[edge]=tree(source.trees?.[edge],new Set(available),seen);trees[edge]=appendTabs(trees[edge],available.filter(type=>!seen.has(type)),activeByEdge[edge]);if(!source.trees?.[edge]&&trees[edge])trees[edge].active=activeByEdge[edge];}
-  return {version:2,order,edges,sizes,activeByEdge,floating,trees};
+  return {version:inputPanes.panes.length?3:2,order,edges,sizes,activeByEdge,floating,trees,...(inputPanes.panes.length?{inputPanes}:{})};
  }
  function copyable(raw){return normalize(raw);}
  // Moving a group leaves native floating panes and their saved rectangles alone.
  function move(raw,type,edge,{group=false}={}){
   const result=normalize(raw,{includeSpawn:true});
-  if(!TYPE_SET.has(type)||!EDGE_SET.has(edge)||!result.order.includes(type)||result.floating[type])return result;
+  if(!kindOf(result,type)||!EDGE_SET.has(edge)||!result.order.includes(type)||result.floating[type])return result;
   const previous=result.edges[type],moving=group?result.order.filter(item=>result.edges[item]===previous&&!result.floating[item]):[type];
   const active=group?result.activeByEdge[previous]||type:type;
   const movedTree=tree(result.trees[previous],new Set(moving));
@@ -85,5 +88,5 @@
   for(const edge of EDGES){const rect=rects?.[edge];if(rect&&[rect.left,rect.right,rect.top,rect.bottom].every(Number.isFinite)&&x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom)return edge;}
   return '';
  }
- return {TYPES,EDGES,DEFAULT_EDGE,DEFAULT_SIZE,dimension,normalize,copyable,move,dropEdge,paneTypes,groupFor,select,place,resize,fromOriginal};
+ return {TYPES,EDGES,DEFAULT_EDGE,DEFAULT_SIZE,kindOf,defaultEdge,dimension,normalize,copyable,move,dropEdge,paneTypes,groupFor,select,place,resize,fromOriginal};
 });

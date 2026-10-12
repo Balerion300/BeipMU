@@ -5,7 +5,7 @@ function fixture(){
  const elements=new Map(),trace=[],owner={id:'alpha',connectionEpoch:1,connected:true,variables:{}};
  const api={sessions:new Map([['alpha',owner]]),state:{characters:[],worlds:[]},variablesForSession:s=>s.variables,
   commandPipeline:{effects:()=>assert.fail('Nested callback enqueued an owner FIFO'),drain:async(execution,effects)=>{trace.push(['drain',effects]);}}};
- const scope={window:{BeipPreview:api,addEventListener(){}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);},addEventListener(){}},ResizeObserver:class{observe(){}},getComputedStyle:n=>n.css||{}};
+ const scope={BeipInputScriptBridge:require('../ui/input-script-bridge.js'),window:{BeipPreview:api,BeipDockPanels:{inputModel:()=>({panes:new Map()})},addEventListener(){}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,{});return elements.get(id);},addEventListener(){}},ResizeObserver:class{observe(){}},getComputedStyle:n=>n.css||{}};
  vm.runInNewContext(fs.readFileSync(require.resolve('../ui/features.js'),'utf8'),scope);
  const execution={isCurrent:()=>true};
  owner.scripts={enabled:true,worker:{},dispatch:async(type,action,context,options)=>{trace.push([type,action,context,options]);return {handled:false,effects:[{type:'run',value:'/set x=1'}]};}};
@@ -13,7 +13,7 @@ function fixture(){
 }
 let count=0;async function test(name,fn){await fn();console.log('PASS '+name);count++;}
 (async()=>{
- await test('Captured trigger callback drains exactly once through its execution',async()=>{const f=fixture(),action={name:'Edit',text:'x',ranges:[0,1]};const r=await f.features.dispatchTriggerCaptured(f.owner,action,f.execution);assert.equal(f.trace.length,2);assert.equal(f.trace[0][0],'trigger');assert.equal(f.trace[0][3].captureEffects,true);assert.equal(f.trace[0][2].version,14);assert.equal(f.trace[1][0],'drain');assert.equal(r.effects.length,0);});
+ await test('Captured trigger callback drains exactly once through its execution',async()=>{const f=fixture(),action={name:'Edit',text:'x',ranges:[0,1]};const r=await f.features.dispatchTriggerCaptured(f.owner,action,f.execution);assert.equal(f.trace.length,2);assert.equal(f.trace[0][0],'trigger');assert.equal(f.trace[0][3].captureEffects,true);assert.equal(f.trace[0][2].version,15);assert.equal(f.trace[1][0],'drain');assert.equal(r.effects.length,0);});
  await test('Disabled script has no callback and no drain',async()=>{const f=fixture();f.owner.scripts.enabled=false;const r=await f.features.dispatchTriggerCaptured(f.owner,{},f.execution);assert.equal(r.handled,false);assert.equal(r.effects.length,0);assert.equal(f.trace.length,0);});
  await test('Epoch and worker replacement during callback reject before draining',async()=>{for(const change of [f=>f.owner.connectionEpoch++,f=>f.owner.scripts.worker={},f=>f.api.sessions.delete('alpha')]){const f=fixture();f.owner.scripts.dispatch=async()=>{change(f);return {effects:[{type:'send',value:'never',event:false}]};};await assert.rejects(f.features.dispatchTriggerCaptured(f.owner,{},f.execution),/changed/);assert.equal(f.trace.length,0);}});
  await test('Failed callback cannot emit partial effects',async()=>{const f=fixture();f.owner.scripts.dispatch=async()=>({failed:true,effects:[{type:'run',value:'never'}]});await assert.rejects(f.features.dispatchTriggerCaptured(f.owner,{},f.execution),/failed/);assert.equal(f.trace.length,0);});

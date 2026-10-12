@@ -13,14 +13,14 @@ as described in README. The original source stays intact.
 
 | Area and original evidence | Current coverage | Completion work |
 | --- | --- | --- |
-| Shell/Windows menu (`Wnd_Main`, direct menu) | Partial: tabs, named panes, four edges, nested splits/tabs, native floating, layout/appearance copy | Native drag between windows; multiple input/edit windows; multiple main windows; hidden captions; original saved arrangements |
+| Shell/Windows menu (`Wnd_Main`, direct menu) | Partial: tabs, named panes, four edges, nested splits/tabs, native floating, layout/appearance copy | Native drag between windows; floating input/edit windows; multiple main windows; hidden captions; original saved arrangements |
 | Worlds (`Dlg_Connect`, `Root.prp`) | Partial: worlds/characters, startup, TLS, credential vault, notes, reviewed connect templates | Complete import/export and per-character flags; puppets and transfer behavior; world samples |
 | General settings (`Dlg_Settings`, direct dialog) | Partial: inline images and height, avatar geometry, visible animation pause, sound enable | Voice/markup; activate-on-disconnect; close alerts; Ctrl-to-change-layout |
 | UI Theme settings | Partial: dark/light | Original theme elements, presets and all customizable colors |
-| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input, autosize and unknown-command setting | All cursor/history/selection rules; extra panes/prefixes; spell checking; tab completion; command prefix settings |
+| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input, autosize, unknown-command setting and docked additional panes with prefixes | All cursor/history/selection rules; floating input panes; spell checking; tab completion; command prefix settings |
 | Output Windows/settings (`Dlg_TextWindow`, `Wnd_Text`) | Partial: font/styles/colors/margins, paragraph spacing, wrapped indent, fanfold and fixed width | Exact selection/scrolling options; timestamps/line metadata; complete split behavior and preservation across every pane |
 | Logging/settings (`Logging`, `OM_Logging`) | Partial: reviewed filenames/date/environment tokens, local chooser, formatted text/HTML, typed/sent prefixes, start positions and character auto-start | Multiple concurrent files, midnight automatic rotation, complete original timestamp-flag import and per-character lifecycle |
-| Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP | Original encoding choices, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
+| Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP and manual UTF-8/CP1252/CP437 choices | Automatic CHARSET negotiation, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
 | Taskbar/settings (`Wnd_Taskbar`, `Dlg_Settings`) | Partial: activity, connection, unread and saved character tab colors | Exact theme blending, grouping, notification and taskbar options |
 | Keyboard Shortcuts (`Shortcuts.md`, `Dlg_Settings`) | Partial: remappable supported actions | New main window/input pane; context-sensitive history and output navigation; all original actions |
 | Auto Emoji (`Emoji.md`, assets and settings) | Implemented documented workflow: original default table, sections, append/replace, Unicode matching, copy/edit/import/save/reload/revert and enable | Original matching implementation is absent; exact undocumented boundary behavior remains an independent reconstruction |
@@ -61,9 +61,13 @@ Additional supported subsets in 0.11: `/autolog`, `/logtop`, `/stoplogs`, `/newt
 `/world` positive routing is unit-tested, while packaged tests check invalid
 character rejection. Idle time is bounded to 1–1440 minutes.
 
-Open original commands/options from documentation/source: `/debugnetwork`, `/debugtriggers`, `/exit`, `/gag`, `/grab`, full `/help`, `/map_addroom`, `/map_addexit`, `/newedit`, `/newinput`,
-`/opendialog`, `/ping`, `/puppet`, `/puppets`, `/quit`, `/resetscript`, `/roll`,
-`/script`, `/slist`, `/tabcolor`, `/ttype`, `/webview`.
+Additional supported subsets in 0.14-0.15: `/repeat`, `/gag`, `/grab`, `/tabcolor`,
+`/resetscript` and docked `/newinput`. Repeat is capped at 64, script reset is
+owner-scoped, and floating extra-input editing remains open.
+
+Open original commands/options from documentation/source: `/debugnetwork`, `/debugtriggers`, `/exit`, full `/help`, `/map_addroom`, `/map_addexit`, `/newedit`,
+`/opendialog`, `/ping`, `/puppet`, `/puppets`, `/quit`, `/roll`,
+`/script`, `/slist`, `/ttype`, `/webview`.
 Source-only commands and historical version differences must be reconciled
 before this ledger can be called exhaustive.
 
@@ -234,3 +238,9 @@ Tab colors use safe opaque colors with an active tint and readable text; the exa
 missing native named-color parser/theme behavior is not claimed. Script reset is
 per owner rather than original process-wide. /roll and /exit remain open, as do
 existing delay/recall differences and the complete command inventory.
+
+## Preview 0.15 implementation scope
+
+Additional input definitions use a bounded registry (16 panes per owner) and survive saved/copyable nested layouts; drafts remain per live owner and are not copied or saved. Original Type 0 InputWindow import, complete per-pane settings sharing, floating editing, exact shared primary/additional history navigation and multiline saved-history grouping remain open.
+
+World encodings are bound atomically at connection start. Outgoing ordinary text and native login/templates convert through Windows code pages before Telnet IAC escaping. Raw GMCP/Telnet bytes bypass conversion. Existing recovery worlds migrate to UTF-8; original Config and new worlds default CP1252. Unknown original encodings require review. Automatic CHARSET negotiation, original malformed-UTF8 diagnostic wording and exact original server-dialog placement remain open.

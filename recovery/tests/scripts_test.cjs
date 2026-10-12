@@ -71,7 +71,7 @@ function fakeTimers(){
   assert.deepEqual(Array.from(result.effects,x=>x.type),['output','input-set','input-select','output']);
   assert.equal(result.effects[0].value,'north:5:1:3');assert.equal(result.effects[1].value,'look');
   assert.deepEqual([result.effects[2].start,result.effects[2].end],[1,3]);assert.equal(result.effects[3].value,'look:1:3');
-  assert.match((await w.run('eval','window.Input.Set("x".repeat(8193));')).error,/too long/);
+  assert.match((await w.run('eval','window.Input.Set("x".repeat(65537));',{context})).error,/too long/);
  });
  await test('Debug output and slash-command hook use documented callbacks',async()=>{
   const w=worker();await w.run('eval','window.SetOnCommand(function(command,parameters,win){win.output.write(command+":"+parameters);return command==="mycmd";},window);');

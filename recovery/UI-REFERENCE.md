@@ -147,3 +147,7 @@ edited; future output uses the new palette. Character tab color paints the tab
 background, with a selected tint and contrasting text.
 
 0.14 packaged acceptance (`sessions-20261012-094157`) passed in fresh and persisted runs. The ANSI settings and rendered output screenshots were inspected: the custom orange bold line and following unstyled line match the asserted computed styles. This verifies the implemented surface, not every original ANSI action or native window gesture.
+
+## Preview 0.15 input and encoding surfaces
+
+Packaged fresh/persisted run `sessions-20261012-100046` verifies two alpha-owned input panes and a beta pane, nested placement, independent drafts, retained textarea identity/focus, settings Save/reopen/Cancel and script-driven title/prefix/selection. The additional-input screenshot was inspected. Input panes are dock-only in this preview. The world encoding selector uses the original three labels; exact original dialog placement is not claimed because CDlg_Server.h is absent. Screenshot review caught a collapsed selector; the corrected grid row and wrapped note pass full-value width and containment assertions. The corrected screenshot was inspected.

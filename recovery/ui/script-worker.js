@@ -60,14 +60,22 @@ function profileProperties(object,item,kind){
 function characterObject(item){if(!item)return null;return profileProperties({id:item.id,LastUsed:item.lastUsed?new Date(item.lastUsed):undefined,TimeCreated:item.timeCreated?new Date(item.timeCreated):undefined,get Connect(){return unsupported('Character.Connect (credential-sensitive)');},set Connect(value){unsupported('Character.Connect (credential-sensitive)');},get LogFileName(){return item.logFileName||'';},set LogFileName(value){unsupported('Character.LogFileName');},get Puppets(){return unsupported('Character.Puppets');},get Triggers(){return unsupported('Character.Triggers');},get Aliases(){return unsupported('Character.Aliases');}},item,'character');}
 function worldObject(item){if(!item)return null;const characters=collection((item.characters||[]).map(characterObject));return profileProperties({id:item.id,Characters:characters,get Triggers(){return unsupported('World.Triggers');},get Aliases(){return unsupported('World.Aliases');}},item,'world');}
 function windowSummary(item){if(item.id===context.sessionId)return windowObject;return expose({id:item.id,name:item.title,Title:item.title,get Connection(){return unsupported('Cross-session Connection');},Run:()=>unsupported('Cross-session Run')});}
-const input=expose({
- Get:()=>context.input?.text||'',get:()=>context.input?.text||'',
- Set(value){value=String(value);if(value.length>MAX_VALUE)throw Error('Input text is too long.');if(effects.length>=MAX_EFFECTS)throw Error('Script action limit exceeded.');effects.push({type:'input-set',value});context.input={text:value,start:value.length,end:value.length};},
- set(value){return input.Set(value);},
- SetSel(start,end){const length=context.input?.text?.length||0;start=Number(start);end=Number(end);if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end))throw Error('Invalid input selection.');start=Math.max(0,Math.min(length,start));end=Math.max(start,Math.min(length,end));if(effects.length>=MAX_EFFECTS)throw Error('Script action limit exceeded.');effects.push({type:'input-select',start,end});context.input={...context.input,start,end};},
- GetSelStart:()=>context.input?.start||0,GetSelEnd:()=>context.input?.end||0,
- get Length(){return context.input?.text?.length||0;}
-});
+function inputObject(id,generation){
+ const resolve=()=>{const value=id==='primary'?context.input:(context.inputs||[]).find(pane=>pane.id===id&&pane.generation===generation);if(!value)throw Error('Input pane is closed or was replaced.');return value;};
+ const target=value=>value.generation?{id,generation:value.generation}:{};
+ const text=value=>{value=bounded(value,65536);if(value.includes('\0'))throw Error('Invalid input text.');return value.replace(/\r\n?|\n/g,'\n');};
+ const property=(key,max,value)=>{const pane=resolve();if(!pane.generation)throw Error('Input metadata is unavailable.');value=bounded(value,max);if(/[\r\n\0]/.test(value))throw Error('Input '+key+' must be one line.');effect({type:'input-configure',key,value,...target(pane)});pane[key]=value;};
+ return expose({
+  Get:()=>resolve().text||'',
+  Set(value){const pane=resolve();value=text(value);effect({type:'input-set',value,...target(pane)});pane.text=pane.prefix&&value.startsWith(pane.prefix)?value.slice(pane.prefix.length):value;pane.start=pane.end=pane.text.length;},
+  SetSel(start,end){const pane=resolve(),length=pane.text?.length||0;start=Number(start);end=Number(end);if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end))throw Error('Invalid input selection.');start=Math.max(0,Math.min(length,start));end=Math.max(start,Math.min(length,end));effect({type:'input-select',start,end,...target(pane)});pane.start=start;pane.end=end;},
+  GetSelStart:()=>resolve().start||0,GetSelEnd:()=>resolve().end||0,
+  get Length(){return resolve().text?.length||0;},
+  get Prefix(){return resolve().prefix||'';},set Prefix(value){property('prefix',2048,value);},
+  get Title(){return resolve().title||'';},set Title(value){property('title',160,value);}
+ });
+}
+const input=inputObject('primary');
 const connection={
  send(value){value=bounded(value);if(!context.connected)return;effect({type:'send-event',value});if(!call('send',value))effect({type:'send',value,event:true});},
  Send(value){return connection.send(value);},
@@ -87,6 +95,7 @@ const connection={
 };
 expose(connection);
 const windowObject={output,Output:output,input,Input:input,connection,Connection:connection,
+ GetInput(title){title=bounded(title,160);const pane=(context.inputs||[]).find(pane=>pane.title===title);return pane?inputObject(pane.id,pane.generation):null;},
  SetOnCommand:(fn,data)=>hook('command',fn,data),Run:value=>emit('run',value),RunFile:()=>unsupported('Window_Main.RunFile'),
  SetOnActivate:(fn,data)=>hook('activate',fn,data),SetOnClose:(fn,data)=>hook('close',fn,data),Close:()=>emit('close',''),
  GetVariable(name){return Object.hasOwn(context.variables||{},String(name))?context.variables[String(name)]:null;},

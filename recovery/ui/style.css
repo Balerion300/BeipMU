@@ -139,6 +139,9 @@ footer #activityCounts{height:20px;line-height:20px;margin-left:1px;padding:0 5p
 #profilesDialog #worldFields fieldset label{justify-content:space-between}
 #profilesDialog #worldFields fieldset label.check,#profilesDialog #characterFields label.check{justify-content:flex-start}
 #profilesDialog #worldFields fieldset input:not([type=checkbox]){width:65%;min-width:0}
+#profileForm .encoding-row{display:grid;grid-template-columns:minmax(100px,auto) minmax(0,1fr);align-items:center;gap:9px;white-space:normal}
+#profileForm .encoding-row select{width:100%;min-width:0;max-width:100%}
+#profileForm .encoding-note{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:11px;line-height:1.35}
 #profilesDialog #characterFields{gap:8px}
 #profilesDialog #characterFields label{white-space:normal}
 #profilesDialog .dialog-actions{margin-top:8px}
