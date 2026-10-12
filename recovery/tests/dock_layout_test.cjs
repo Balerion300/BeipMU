@@ -129,8 +129,9 @@ Connections.Servers.Example
   }
  }
 }`);
-assert.deepEqual(plan.characters[0].dockLayout.order,['map','notes','image']);
-assert.equal(plan.characters[0].dockLayout.trees.right.ratio,.25);
+assert.deepEqual(plan.characters[0].dockLayout.order,['map','notes','input:import-1','image']);
+assert.equal(plan.characters[0].dockLayout.trees.right.ratio,200/801);
 assert.deepEqual(plan.characters[0].dockLayout.floating.image,{x:10,y:20,width:400,height:300});
-assert.equal(plan.report.skipped['Unsupported original docked window types'],1);
+assert.equal(plan.report.skipped['Unsupported original docked window types'],undefined);
+assert.equal(plan.characters[0].dockLayout.inputPanes.panes[0].inheritSource,'global');
 console.log('nested layout, migration, original import and floating identity checks passed.');

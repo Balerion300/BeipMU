@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),model=require('../ui/restore-model.js'),legacy=require('../ui/restore-legacy.js'),{Parser}=require('../ui/parser.js');
+const link={kind:'command',value:'/set osc=A|B\n/echo second',prompt:true,literal:true};
+const record={v:1,kind:'line',time:1,parts:[{type:'text',text:'Click only',link}]};
+assert.deepEqual(model.deserialize(model.serialize(record)),record);
+assert.throws(()=>model.normalizeRecord({...record,parts:[{type:'text',text:'Bad',link:{...link,literal:false}}]}));
+assert.throws(()=>model.normalizeRecord({...record,parts:[{type:'text',text:'Bad',link:{...link,value:'a\0b'}}]}));
+assert.equal(model.normalizeRecord({...record,parts:[{type:'text',text:'URL',link:{kind:'url',value:'https://example.org/',literal:true}}]}).parts[0].link.literal,undefined);
+const payload=new TextEncoder().encode('\x1b[7mReverse default\x1b[0m\n\x1b]8;;send:%2Fset%20osc%3DA%7CB%0A%2Fecho%20second\x07Click only\x1b]8;;\x07\x07');
+const converted=legacy.convert({characterId:'ansi-restore',format:{encoding:'utf-8',pueblo:false},records:[{kind:'received',timeMs:1,payload}]},{Parser,outputColors:{foreground:'#123456',background:'#abcdef'}});
+const parts=converted.records.flatMap(record=>record.parts||[]);
+assert.ok(parts.some(part=>part.text==='Reverse default'&&part.style.color==='#abcdef'&&part.style.background==='#123456'));
+assert.ok(parts.some(part=>part.link?.literal===true&&part.link.value==='/set osc=A|B\n/echo second'));
+assert.ok(!converted.warnings.some(w=>w.code==='record-conversion-failed'));
+assert.ok(!JSON.stringify(converted.records).includes('var(--ansi-'));
+console.log('PASS literal OSC restore metadata, ordinary-link validation, opaque reverse defaults and silent raw replay');

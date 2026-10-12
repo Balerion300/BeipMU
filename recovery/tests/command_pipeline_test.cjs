@@ -15,7 +15,7 @@ async function harness(aliases=[],settings={},source=''){
  const a={id:'a',epoch:1,connected:true,variables:{}},b={id:'b',epoch:1,connected:true,variables:{}};owners.set('a',a);owners.set('b',b);
  const context=owner=>({sessionId:owner.id,connected:owner.connected,variables:owner.variables});
  for(const owner of owners.values()){
-  owner.rules=new Rules.Runtime(e=>errors.push(e),BrowserWorker);owner.rules.start({aliases});
+  owner.rules=new Rules.Runtime(e=>errors.push(e),BrowserWorker,{startupTimeoutMs:3000});owner.rules.start({aliases});
   owner.scripts=new Scripts.Runtime(e=>{throw Error('Captured callback leaked effects.');},e=>errors.push(e),BrowserWorker);
   await owner.scripts.start(source,context(owner),{captureEffects:true});
  }

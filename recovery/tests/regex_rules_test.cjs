@@ -19,6 +19,12 @@ class NeverWorker extends FakeWorker{
  postMessage(job){if(job.type==='start')super.postMessage(job);}
 }
 async function main(){
+ await check('Cold-worker startup allowance never raises execution watchdog',async()=>{
+  class ColdNeverWorker{postMessage(job){if(job.type==='start')this.readyTimer=setTimeout(()=>this.onmessage?.({data:{type:'ready'}}),550);}terminate(){this.terminated=true;clearTimeout(this.readyTimer);}}
+  const errors=[],runtime=new Runtime(e=>errors.push(e),ColdNeverWorker,{startupTimeoutMs:1500,timeoutMs:20});runtime.start();const worker=runtime.worker;
+  const result=await runtime.expandCommand('runaway',scope);assert.ok(worker.terminated);assert.match(result.diagnostics[0],/pattern exceeded 20 ms/);assert.equal(errors.length,1);
+  assert.equal(new Runtime(()=>{},ColdNeverWorker).startupDeadline,500);assert.equal(new Runtime(()=>{},ColdNeverWorker,{startupTimeoutMs:3000,timeoutMs:9000}).deadline,500);
+ });
  await check('Synchronous engine does not opt into regex execution',()=>{
   const alias={id:'r',match:'^go (.*)$',matchType:'regex',replacement:'north \\1'};
   assert.deepEqual(createEngine({aliases:[alias],allowRegex:true}).expandCommand('go east',scope).commands,['go east']);

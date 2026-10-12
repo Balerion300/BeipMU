@@ -778,6 +778,9 @@ struct Application {
             auto split=text.find('|',4);if(split==text.npos)return;
             auto id=text.substr(4,split-4);auto it=sessions.find(id);
             if(validId(id)&&it!=sessions.end())it->second->logLine(std::string_view(text).substr(split+1));
+        }else if(text.starts_with("ansibell|")){
+            const auto id=text.substr(9);if(!validId(id)||!sessions.contains(id))return;
+            if(testMode)scoped(id,"ansibell:played");else MessageBeep(MB_OK);
         }else if(text.starts_with("telnetnop|")){
             auto id=text.substr(10);if(validId(id)&&sessions.contains(id))sessions.at(id)->telnetNop();
         }else if(text.starts_with("gmcp|")){
@@ -922,7 +925,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.15",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.16",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

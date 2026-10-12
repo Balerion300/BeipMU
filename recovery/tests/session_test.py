@@ -18,7 +18,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.15" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.16" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -261,7 +261,7 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation", "ansi", "ansiSettings", "dailyCommands", "inputPanes", "inputScripts", "encoding", "encodingWire"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation", "ansi", "ansiSettings", "dailyCommands", "inputPanes", "inputImport", "ansiActions", "inputScripts", "roll", "encoding", "encodingWire"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)

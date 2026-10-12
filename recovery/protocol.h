@@ -55,7 +55,7 @@ public:
                     if(c==91 && supported && changed) {flush();mxp(true);}
                     if(c==201 && supported && changed) {
                         flush();if(gmcpAvailable)gmcpAvailable(true);
-                        reply(subneg(201,"Core.Hello {\"client\":\"BeipMU-Recovery\",\"version\":\"0.15\"}"));
+                        reply(subneg(201,"Core.Hello {\"client\":\"BeipMU-Recovery\",\"version\":\"0.16\"}"));
                         reply(subneg(201,"Core.Supports.Set [\"Beip.Stats 1\",\"Beip.Tilemap 1\",\"Beip.Id 1\",\"Client.Media 1\"]"));
                     }
                 } else if(verb==252) {
