@@ -12,6 +12,9 @@
 #include <WebView2.h>
 #include "tls.h"
 #include "native-log-name.h"
+#include "native-image.h"
+#include "native-restore.h"
+#include <future>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -393,6 +396,14 @@ struct Application {
     }
     HWND window=nullptr;HMENU mainMenu=nullptr;std::unique_ptr<Client> legacyClient;std::unordered_map<std::string,std::unique_ptr<Client>> sessions;
     TriggerAudio triggerAudio;
+    struct ImageJob {std::string session,action;uint64_t generation;std::future<BeipNativeImage::Result> future;};
+    std::vector<ImageJob> imageJobs;
+    std::unordered_map<std::string,uint64_t> imageGenerations;
+    struct RestoreBinding {std::string character,epoch;size_t limit;bool enabled;};
+    std::unordered_map<std::string,RestoreBinding> restoreBindings;
+    std::unique_ptr<BeipRestore::Store> restoreStore;
+    bool restoreFlushScheduled=false;
+    int imageHttpPort=0;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
     std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,inspectMode=false,ready=false;std::vector<std::string> queued;
     std::unordered_map<std::string,std::string> testSecrets;
@@ -502,6 +513,62 @@ struct Application {
         if(safe)it->second->login(username,password);else scoped(session,"status:Saved password is invalid.");
         SecureZeroMemory(password.data(),password.size());
     }
+    void imageReply(const std::string& id,const std::string& action,std::string_view status,std::string_view detail={}){scoped(id,"imageaction:"+action+":"+std::string(status)+":"+base64(detail));}
+    void receiveImage(std::string_view text){
+        const auto first=text.find('|'),second=first==text.npos?text.npos:text.find('|',first+1);if(second==text.npos)return;
+        std::string action(text.substr(6,first-6)),id(text.substr(first+1,second-first-1)),url;
+        if((action!="save"&&action!="copy")||!validId(id)||!sessions.contains(id))return;
+        if(!unbase64(text.substr(second+1),url,8192)||!validUtf8(url)){imageReply(id,action,"error","Invalid image URL.");return;}
+        try{BeipNativeImage::parseURL(wide(url));}catch(const std::exception& e){imageReply(id,action,"error",e.what());return;}
+        if(imageJobs.size()>=4){imageReply(id,action,"error","Four image actions are already running.");return;}
+        const auto target=wide(url);imageJobs.push_back({id,action,imageGenerations[id],std::async(std::launch::async,[target]{return BeipNativeImage::fetch(target);})});SetTimer(window,3,50,nullptr);
+    }
+    void pollImages(){
+        for(size_t i=0;i<imageJobs.size();){
+            if(imageJobs[i].future.wait_for(std::chrono::seconds(0))!=std::future_status::ready){++i;continue;}
+            auto job=std::move(imageJobs[i]);imageJobs.erase(imageJobs.begin()+i);auto result=job.future.get();
+            if(!sessions.contains(job.session)||imageGenerations[job.session]!=job.generation)continue;
+            if(!result.error.empty()){imageReply(job.session,job.action,"error",result.error);continue;}
+            try{
+                if(job.action=="copy"){
+                    if(testMode&&!inspectMode){const auto data=BeipNativeImage::dib(result);const auto path=testPath/(L"image-copy-"+wide(job.session)+L".dib");std::ofstream file(path,std::ios::binary|std::ios::trunc);file.write(reinterpret_cast<const char*>(data.data()),std::streamsize(data.size()));file.flush();if(!file)throw std::runtime_error("Could not save image-copy test evidence.");imageReply(job.session,job.action,"copied",utf8(path.wstring()));}
+                    else if(BeipNativeImage::copy(window,result))imageReply(job.session,job.action,"copied","Copied the first decoded image frame.");
+                    else imageReply(job.session,job.action,"error","Could not place the image on the clipboard.");
+                }else{
+                    std::filesystem::path path;
+                    if(testMode&&!inspectMode)path=testPath/(L"image-save-"+wide(job.session)+L"."+result.extension);
+                    else{wchar_t filename[32768]{};const auto suggested=L"image."+result.extension;wcsncpy_s(filename,suggested.c_str(),_TRUNCATE);OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window;dialog.lpstrFile=filename;dialog.nMaxFile=32768;dialog.lpstrFilter=L"Image file\0*.*\0\0";dialog.lpstrDefExt=result.extension.c_str();dialog.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR|OFN_EXPLORER;if(!GetSaveFileNameW(&dialog)){imageReply(job.session,job.action,CommDlgExtendedError()?"error":"cancelled");continue;}path=filename;}
+                    std::ofstream file(path,std::ios::binary|std::ios::trunc);file.write(reinterpret_cast<const char*>(result.bytes.data()),std::streamsize(result.bytes.size()));file.flush();if(!file)throw std::runtime_error("Could not save the image file.");imageReply(job.session,job.action,"saved",utf8(path.wstring()));
+                }
+            }catch(const std::exception& e){imageReply(job.session,job.action,"error",e.what());}
+        }
+        if(imageJobs.empty())KillTimer(window,3);
+    }
+    void receiveRestore(std::string_view text){
+        std::vector<std::string> fields;size_t at=0;while(at<=text.size()){auto end=text.find('|',at);fields.emplace_back(text.substr(at,end==text.npos?text.npos:end-at));if(end==text.npos)break;at=end+1;}
+        if(fields.size()<4||!validId(fields[1])||!sessions.contains(fields[1])||!validId(fields[2])||fields[3].empty()||fields[3].size()>16||fields[3].find_first_not_of("0123456789")!=fields[3].npos)return;
+        const auto& id=fields[1];const auto& character=fields[2];const auto& epoch=fields[3];
+        try{
+            if(std::stoull(epoch)>9007199254740991ull||std::to_string(std::stoull(epoch))!=epoch)return;
+            if(!restoreStore)restoreStore=std::make_unique<BeipRestore::Store>(dataRoot()/L"Restore");
+            if(fields[0]=="restoreconfig"){
+                if(fields.size()!=6||(fields[4]!="0"&&fields[4]!="1")||fields[5].empty()||fields[5].size()>4||fields[5].find_first_not_of("0123456789")!=fields[5].npos)return;
+                const auto kib=std::stoul(fields[5]);if(kib<64||kib>4096||kib%64)return;
+                restoreBindings[id]={character,epoch,size_t(kib)*1024,fields[4]=="1"};return;
+            }
+            const auto binding=restoreBindings.find(id);if(binding==restoreBindings.end()||binding->second.character!=character||binding->second.epoch!=epoch)return;
+            if(fields[0]=="restoreclear"&&fields.size()==4){restoreStore->clear(character);scoped(id,"restorecleared:"+character+":"+epoch);return;}
+            if(!binding->second.enabled)return;
+            if(fields[0]=="restoreload"&&fields.size()==4){
+                const auto& buffer=restoreStore->load(character,binding->second.limit);const auto count=std::to_string(buffer.records.size());scoped(id,"restorebegin:"+character+":"+epoch+":"+count);size_t sequence=0;
+                for(const auto& record:buffer.records)scoped(id,"restoreitem:"+character+":"+epoch+":"+std::to_string(sequence++)+":"+base64(record));
+                scoped(id,"restoreend:"+character+":"+epoch+":"+count);
+            }else if(fields[0]=="restorewrite"&&fields.size()==5){std::string record;if(!unbase64(fields[4],record,BeipRestore::MaxRecord))throw std::runtime_error("Invalid restoration record.");restoreStore->append(character,binding->second.limit,std::move(record));if(!restoreFlushScheduled){restoreFlushScheduled=true;SetTimer(window,4,500,nullptr);}}
+        }catch(const std::exception& e){scoped(id,"restoreerror:"+character+":"+epoch+":"+base64(e.what()));}
+    }
+    void flushRestore(){
+        KillTimer(window,4);restoreFlushScheduled=false;if(restoreStore)restoreStore->flushAll([this](const std::string& character,const char* error){for(const auto& [id,binding]:restoreBindings)if(binding.character==character)scoped(id,"restoreerror:"+character+":"+binding.epoch+":"+base64(error));});
+    }
     void emojiCommand(std::string_view command){
         auto path=dataRoot()/L"Emoji.txt",original=uiRoot/L"Emoji.txt";std::error_code error;
         auto fail=[this](std::string_view reason){message("emoji:error:"+base64(reason));};
@@ -610,7 +677,9 @@ struct Application {
             !(text.starts_with("clipboard|")&&text.size()<=10+4*((ClipboardTextLimit+2)/3))){
             message(text.starts_with("clipboard|")?"ui:clipboard-failed":"settings:error:Message is too large.");return;
         }
-        if(text.starts_with("triggeraudio|"))receiveTriggerAudio(text);
+        if(text.starts_with("image:"))receiveImage(text);
+        else if(text.starts_with("restore"))receiveRestore(text);
+        else if(text.starts_with("triggeraudio|"))receiveTriggerAudio(text);
         else if(text.starts_with("float:"))floating(text);
         else if(text=="menu:open")openMainMenu();
         else if(text=="clipboard:read"){std::string value;if(readClipboardText(window,value))message("clipboard:text:"+base64(value));else message("clipboard:error:Clipboard text is unavailable or exceeds 1 MiB.");}
@@ -621,7 +690,7 @@ struct Application {
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
             else if(testCorePorts.size()==2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
-                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
+                auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"imageHttpBase\":"+jsonString("http://127.0.0.1:"+std::to_string(imageHttpPort)+"/")+",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
                 message("testcore:"+base64(config));SetTimer(window,1,25000,nullptr);
             }
         }else if(text.starts_with("sessionopen|")){
@@ -657,6 +726,7 @@ struct Application {
         }else if(text.starts_with("close|")){
             auto id=text.substr(6);if(!validId(id))return;
             triggerAudio.stop(id);
+            ++imageGenerations[id];restoreBindings.erase(id);
             sessions.erase(id);scoped(id,"closed:");
         }else if(text.starts_with("send|")){
             auto split=text.find('|',5);
@@ -814,8 +884,8 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
             if(LOWORD(w)==FileExit){PostMessageW(window,WM_CLOSE,0,0);return 0;}
             if(const char* action=menuAction(LOWORD(w))){app->message(action);return 0;}
         }
-        if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER&&w==2){app->captureFloating();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){app->triggerAudio.shutdown();*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER&&w==3){app->pollImages();return 0;}if(message==WM_TIMER&&w==4){app->flushRestore();return 0;}if(message==WM_TIMER&&w==2){app->captureFloating();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
+        if(message==WM_DESTROY){app->flushRestore();KillTimer(window,3);app->imageJobs.clear();app->triggerAudio.shutdown();*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
@@ -824,14 +894,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     if(argc==3&&std::wstring(argv[1])==L"--inspect"){app.inspectMode=true;app.testMode=true;app.testPath=argv[2];}
     if(argc==4&&(std::wstring(argv[1])==L"--test"||std::wstring(argv[1])==L"--test-tls")){
         app.testPort=_wtoi(argv[2]);app.testMode=app.testPort>0;app.testTls=std::wstring(argv[1])==L"--test-tls";app.testPath=argv[3];
-    }else if(argc==5&&std::wstring(argv[1])==L"--test-core"){
+    }else if((argc==5||argc==6)&&std::wstring(argv[1])==L"--test-core"){
         int first=_wtoi(argv[2]),second=_wtoi(argv[3]);
-        if(first>0&&first<=65535&&second>0&&second<=65535){app.testCorePorts={first,second};app.testMode=true;app.testPath=argv[4];}
+        if(first>0&&first<=65535&&second>0&&second<=65535){app.testCorePorts={first,second};app.testMode=true;app.testPath=argv[4];if(argc==6){const int port=_wtoi(argv[5]);if(port>0&&port<=65535)app.imageHttpPort=port;}}
     }
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.11",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.12",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

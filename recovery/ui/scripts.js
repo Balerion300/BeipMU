@@ -29,9 +29,9 @@ function validEffect(item){
  if(!item||typeof item!=='object')return null;
  if(['send','output','html','display'].includes(item.type))
   return typeof item.value==='string'&&item.value.length<=MAX_VALUE&&
-   (item.type!=='send'||!/[\r\n]/.test(item.value))?{type:item.type,value:item.value}:null;
+   (item.type!=='send'||(!/[\r\n]/.test(item.value)&&typeof item.event==='boolean'))?{type:item.type,value:item.value,...(item.type==='send'?{event:item.event}:{})}:null;
  if(item.type==='debug')return typeof item.value==='string'&&item.value.length<=512?{type:'debug',value:item.value}:null;
- if(['run','receive','reconnect','close','connect-dialog','log-write','play-sound','stop-sounds'].includes(item.type))return typeof item.value==='string'&&item.value.length<=MAX_VALUE?{type:item.type,value:item.value}:null;
+ if(['run','receive','reconnect','close','connect-dialog','log-write','play-sound','stop-sounds','send-event'].includes(item.type))return typeof item.value==='string'&&item.value.length<=MAX_VALUE?{type:item.type,value:item.value}:null;
  if(item.type==='title-prefix')return typeof item.value==='string'&&item.value.length<=160?{type:item.type,value:item.value}:null;
  if(item.type==='activity'&&typeof item.important==='boolean')return {type:item.type,important:item.important};
  if(item.type==='profile-set'&&['world','character'].includes(item.kind)&&typeof item.id==='string'&&/^[a-z0-9_-]{1,64}$/i.test(item.id)&&['name','notes',...(item.kind==='world'?['host']:[])].includes(item.key)&&typeof item.value==='string'&&item.value.length<=({name:160,notes:1024,host:256}[item.key])&&(item.key==='notes'||(item.value.trim()&&!/[\r\n\0]/.test(item.value))))return {type:item.type,kind:item.kind,id:item.id,key:item.key,value:item.value};
@@ -58,7 +58,7 @@ class Runtime{
   this.contextProvider=typeof timerAPI.contextProvider==='function'?timerAPI.contextProvider:null;
   this.serial=0;this.queue=[];this.current=null;this.worker=null;this.watchdog=null;this.enabled=false;this.context=contextOf();this.timers=new Map();
  }
- start(source,context={}){
+ start(source,context={},options={}){
   this.stop();
   if(typeof source!=='string'||source.length>MAX_SOURCE){this.onError('Script exceeds 64 KB.');return Promise.resolve(empty());}
   this.context=contextOf(context);this.enabled=true;
@@ -66,15 +66,15 @@ class Runtime{
   catch(error){this.fail('Script worker could not start: '+String(error?.message||error));return Promise.resolve(empty());}
   this.worker.onmessage=event=>this.result(event.data);
   this.worker.onerror=event=>{event.preventDefault?.();this.fail('Script failed: '+(event.message||'worker error'));};
-  return this.enqueue('eval',source);
+  return this.enqueue('eval',source,undefined,options);
  }
- evaluate(source,context){if(!this.enabled)return this.start(source,context||this.context);return this.enqueue('eval',source,context);}
- dispatch(type,value='',context){
+ evaluate(source,context,options={}){if(!this.enabled)return this.start(source,context||this.context,options);return this.enqueue('eval',source,context,options);}
+ dispatch(type,value='',context,options={}){
   if(!['send','line','gmcp','connect','disconnect','trigger','command','display','activate','close','pause'].includes(type))return Promise.resolve(empty());
-  return this.enqueue(type,value,context);
+  return this.enqueue(type,value,context,options);
  }
  setContextProvider(provider){this.contextProvider=typeof provider==='function'?provider:null;}
- enqueue(type,value='',context){
+ enqueue(type,value='',context,options={}){
   if(!this.enabled)return Promise.resolve(empty());
   if(this.queue.length+(this.current?1:0)>=MAX_QUEUE){this.fail('Script stopped: event queue exceeded its limit.');return Promise.resolve(empty());}
   if(context!==undefined)this.context=contextOf(context);
@@ -83,7 +83,7 @@ class Runtime{
    value={name:label(trigger.name,80),text:label(trigger.text,MAX_VALUE),ranges:Array.isArray(trigger.ranges)?trigger.ranges.slice(0,32).map(x=>Number.isSafeInteger(x)?x:0):[]};
   }else if(type==='display'&&value&&typeof value==='object'){value=validLine(value)||{text:label(value.text,MAX_VALUE),runs:[]};}
   else value=String(value).slice(0,type==='eval'?MAX_SOURCE:MAX_VALUE);
-  return new Promise(resolve=>{this.queue.push({id:++this.serial,type,value,context:this.context,resolve});this.next();});
+  return new Promise(resolve=>{this.queue.push({id:++this.serial,type,value,context:this.context,captureEffects:options.captureEffects===true,resolve});this.next();});
  }
  next(){
   if(this.current||!this.worker||!this.queue.length)return;
@@ -109,17 +109,18 @@ class Runtime{
  result(data){
   const job=this.current;if(!job||data?.id!==job.id)return;
   this.clearTimer(this.watchdog);this.watchdog=null;this.current=null;
-  if(data.error){this.fail('Script error: '+String(data.error).slice(0,512));job.resolve(empty());return;}
-  if(!Array.isArray(data.effects)||data.effects.length>MAX_EFFECTS){this.fail('Script action limit exceeded.');job.resolve(empty());return;}
+  if(data.error){this.fail('Script error: '+String(data.error).slice(0,512));job.resolve({...empty(),failed:true});return;}
+  if(!Array.isArray(data.effects)||data.effects.length>MAX_EFFECTS){this.fail('Script action limit exceeded.');job.resolve({...empty(),failed:true});return;}
   const effects=[];
   try{
    for(const raw of data.effects){const effect=validEffect(raw);if(!effect)continue;
-    if(effect.type==='timer-start')this.schedule(effect,job.context);
+    if(job.captureEffects)effects.push(effect);
+    else if(effect.type==='timer-start')this.schedule(effect,job.context);
     else if(effect.type==='timer-stop')this.cancelTimer(effect.id);
     else effects.push(effect);
    }
-   if(effects.length)this.onEffects(effects,{type:job.type,context:job.context});
-  }catch(error){this.fail('Script effect failed: '+String(error?.message||error));job.resolve(empty());return;}
+   if(effects.length&&!job.captureEffects)this.onEffects(effects,{type:job.type,context:job.context});
+  }catch(error){this.fail('Script effect failed: '+String(error?.message||error));job.resolve({...empty(),failed:true});return;}
   const line=validLine(data.line);job.resolve({handled:data.handled===true,effects,...(line?{line}:{})});this.next();
  }
  fail(message){this.stop();this.onError(message);}
@@ -128,7 +129,7 @@ class Runtime{
   for(const timer of this.timers.values())this.clearTimer(timer.handle);
   this.timers.clear();this.worker?.terminate?.();this.worker=null;this.enabled=false;
   const jobs=[this.current,...this.queue];this.current=null;this.queue=[];
-  for(const job of jobs)job?.resolve(empty());
+  for(const job of jobs)job?.resolve({...empty(),failed:true});
  }
 }
 const api={Runtime,contextOf,validEffect,validLine};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.BeipScripts=api;

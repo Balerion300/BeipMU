@@ -53,7 +53,7 @@ async function run(app=window.BeipPreview){
   await feed(alpha,'TEMP ARM');await feed(alpha,'TEMP CAPTURE START');await feed(alpha,'TEMP CAP BODY');
   check('captureChildrenOnly',variable('temporalCapture')==='BODY'&&variable('temporalWindow')===undefined&&variable('temporalOutside')===undefined);
   await feed(alpha,'TEMP CAP DONE');
-  check('filteredTerminal',variable('temporalCapture')==='DONE'&&[...alpha.view.querySelectorAll('.line')].some(line=>line.textContent==='TEMP END'));
+  check('filteredTerminal',variable('temporalCapture')==='DONE'&&[...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].some(line=>line.textContent==='TEMP END'));
   await feed(alpha,'TEMP CAP AFTER');check('captureReleased',variable('temporalCapture')==='DONE'&&variable('temporalOutside')==='AFTER'&&variable('temporalWindow')==='AFTER');
   BeipClassicDialogs.openTriggers();[...dialog.querySelectorAll('.classic-tree-item')].find(node=>node.textContent==='Capture children').click();
   check('captureEditor',field('captureOnlyChildren').checked&&field('captureUntil').value==='^TEMP END$');action('cancel').click();
@@ -62,7 +62,7 @@ async function run(app=window.BeipPreview){
    {id:'click-command',match:'^TEMP CLICK (send)$',matchType:'regex',sendText:'trigger-click-owner-alpha',sendOnClick:true,sendCaptureIndex:1},
    {id:'click-variable',match:'^TEMP CLICK (variable)$',matchType:'regex',sendText:'/set temporalClicked=alpha',sendOnClick:true,sendCaptureIndex:1}
   ]);
-  await feed(alpha,'TEMP STYLE red and blue');const colored=[...alpha.view.querySelectorAll('.line')].find(line=>line.textContent==='TEMP STYLE red and blue');
+  await feed(alpha,'TEMP STYLE red and blue');const colored=[...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].find(line=>line.textContent==='TEMP STYLE red and blue');
   check('captureGroupStyles',!!colored&&[...colored.querySelectorAll('.trigger-highlight')].map(node=>node.textContent).join('|')==='red|blue');
   // A real existing link keeps its identity and listener across force-off styling.
   const line=document.createElement('div'),existing=document.createElement('a');existing.href='#';existing.textContent='before middle after';existing.style.textDecoration='underline line-through';existing.style.fontWeight='bold';existing.style.fontStyle='italic';let clicks=0;existing.onclick=event=>{event.preventDefault();clicks++;};line.append(existing);alpha.view.append(line);
@@ -74,7 +74,7 @@ async function run(app=window.BeipPreview){
   existing.click();check('originalLinkPreserved',line.querySelector('a')===existing&&clicks===1);line.remove();
   await feed(alpha,'TEMP CLICK send');await feed(alpha,'TEMP CLICK variable');
   check('clickDoesNotSendAutomatically',variable('temporalClicked')===undefined);
-  const links=[...alpha.view.querySelectorAll('a[data-kind="command"]')];const wire=links.find(node=>node.dataset.value==='trigger-click-owner-alpha'),local=links.find(node=>node.dataset.value==='/set temporalClicked=alpha');
+  const links=[...alpha.view.querySelectorAll('a[data-kind="command"]')].filter(node=>!node.closest('[data-restore-replay]'));const wire=links.find(node=>node.dataset.value==='trigger-click-owner-alpha'),local=links.find(node=>node.dataset.value==='/set temporalClicked=alpha');
   check('clickRange',wire?.textContent==='send'&&local?.textContent==='variable');wire.click();local.click();await wait(()=>variable('temporalClicked')==='alpha','owner command click');
   check('clickOwner',app.variablesForSession(beta).temporalClicked===undefined);
   BeipClassicDialogs.openTriggers();field('appearance').checked=true;field('bold').value='off';field('underline').value='';field('colorWholeLine').checked=true;action('apply').click();action('cancel').click();BeipClassicDialogs.openTriggers();

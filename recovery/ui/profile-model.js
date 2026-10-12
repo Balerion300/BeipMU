@@ -18,6 +18,10 @@
  function text(value,max){return typeof value==='string'?value.slice(0,max):'';}
  function number(value,defaultValue,min,max){const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):defaultValue;}
  function bool(value){return value===true;}
+ function normalizeCommandSettings(value,legacy=false){
+  if(!value||typeof value!=='object')return {active:legacy,echo:!legacy,processCommands:false,sendUnknown:false,legacyVariableAliases:legacy};
+  return {active:bool(value.active),echo:value.echo!==false,processCommands:bool(value.processCommands),sendUnknown:bool(value.sendUnknown),legacyVariableAliases:bool(value.legacyVariableAliases)};
+ }
  function normalizeIdle(value){
   const minutes=Number(value?.minutes),command=value?.text;
   if(!Number.isSafeInteger(minutes)||minutes<0||minutes>1440||typeof command!=='string'||/[\r\n\x00]/.test(command)||new TextEncoder().encode(command).length>8192)return {enabled:false,minutes:1,text:''};
@@ -51,7 +55,7 @@
    if(!item||typeof item!=='object'||!ID.test(item.id)||!worldIds.has(item.worldId))return null;
    const name=text(item.name,80).trim();if(!name)return null;
    const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
-   return {id:item.id,worldId:item.worldId,name,loginName,logging:logging.normalizeCharacter(item.logging),...(item.idle?{idle:normalizeIdle(item.idle)}:{}),...templates.normalize(item),autoLogin:bool(item.autoLogin)&&!!loginName,
+   return {id:item.id,worldId:item.worldId,name,loginName,restore:(typeof module==='object'&&module.exports?require('./restore-model.js'):globalThis.BeipRestoreModel).normalizeCharacter(item.restore),logging:logging.normalizeCharacter(item.logging),...(item.idle?{idle:normalizeIdle(item.idle)}:{}),...templates.normalize(item),autoLogin:bool(item.autoLogin)&&!!loginName,
     allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const characterIds=new Map(characters.map(x=>[x.id,x]));
@@ -105,7 +109,7 @@
   const scriptSource=text(raw.scriptSource??raw.scripts?.source,65536);
   const scriptEnabled=bool(raw.scriptEnabled??raw.scripts?.enabled)&&!!scriptSource;
   const maps={};if(raw.maps&&typeof raw.maps==='object')for(const [id,value] of Object.entries(raw.maps).slice(0,16)){if(worldIds.has(id))try{maps[id]=mapper.normalize(value);}catch{}}
-  return {version:2,worlds,characters,preferences,maps,aliases:rules(raw.aliases,'alias'),triggers:rules(raw.triggers,'trigger'),macros:macroItems,scriptSource,scriptEnabled};
+  return {version:2,worlds,characters,preferences,maps,commandSettings:normalizeCommandSettings(raw.commandSettings,raw.version===2||Array.isArray(raw.aliases)&&raw.aliases.length>0),aliases:rules(raw.aliases,'alias'),triggers:rules(raw.triggers,'trigger'),macros:macroItems,scriptSource,scriptEnabled};
  }
  function serializeSettings(state){return normalizeSettings(state);}
  function startupPlan(settings){
@@ -121,5 +125,5 @@
   }
   return plan;
  }
- return {DEFAULTS,normalizeSettings,serializeSettings,startupPlan,normalizeIdle};
+ return {DEFAULTS,normalizeSettings,serializeSettings,startupPlan,normalizeIdle,normalizeCommandSettings};
 });

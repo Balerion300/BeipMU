@@ -14,13 +14,13 @@ $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.e
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if (!$vs) { throw 'Install Visual Studio Build Tools with Desktop development with C++.' }
 $buildDir = Join-Path $taskRoot 'build'
-$dist = Join-Path $taskRoot 'dist/BeipMU-Recovery-0.11'
+$dist = Join-Path $taskRoot 'dist/BeipMU-Recovery-0.12'
 New-Item -ItemType Directory -Force $buildDir,$dist | Out-Null
 $batch = @"
 @echo off
 call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /EHsc /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /I"$sdkDir\build\native\include" "$taskRoot\main.cpp" /Fo"$buildDir\main.obj" /Fe"$dist\BeipMU-Recovery.exe" "$sdkDir\build\native\x64\WebView2LoaderStatic.lib" /link /SUBSYSTEM:WINDOWS ws2_32.lib ole32.lib oleaut32.lib user32.lib gdi32.lib shell32.lib shlwapi.lib version.lib advapi32.lib secur32.lib comdlg32.lib
+cl /nologo /std:c++20 /EHsc /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /I"$sdkDir\build\native\include" "$taskRoot\main.cpp" /Fo"$buildDir\main.obj" /Fe"$dist\BeipMU-Recovery.exe" "$sdkDir\build\native\x64\WebView2LoaderStatic.lib" /link /SUBSYSTEM:WINDOWS ws2_32.lib ole32.lib oleaut32.lib user32.lib gdi32.lib shell32.lib shlwapi.lib version.lib advapi32.lib secur32.lib comdlg32.lib winhttp.lib windowscodecs.lib
 if errorlevel 1 exit /b 1
 cl /nologo /std:c++20 /EHsc /W4 /O2 /MT /utf-8 "$taskRoot\tests\telnet_test.cpp" /Fo"$buildDir\telnet_test.obj" /Fe"$buildDir\telnet_test.exe"
 if errorlevel 1 exit /b 1
@@ -33,6 +33,10 @@ if errorlevel 1 exit /b 1
 cl /nologo /std:c++20 /EHsc /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE "$taskRoot\tests\native-log-name-test.cpp" /Fo"$buildDir\native-log-name-test.obj" /Fe"$buildDir\native-log-name-test.exe"
 if errorlevel 1 exit /b 1
 "$buildDir\native-log-name-test.exe"
+if errorlevel 1 exit /b 1
+cl /nologo /std:c++20 /EHsc /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE "$taskRoot\tests\native-storage-test.cpp" /Fo"$buildDir\native-storage-test.obj" /Fe"$buildDir\native-storage-test.exe" /link ole32.lib user32.lib winhttp.lib windowscodecs.lib
+if errorlevel 1 exit /b 1
+"$buildDir\native-storage-test.exe" "$buildDir\native-storage-fixture" "$taskRoot\tests\animated-fixture.gif"
 if errorlevel 1 exit /b 1
 "@
 $batchPath = Join-Path $buildDir 'compile.cmd'
@@ -52,5 +56,5 @@ foreach ($testFile in Get-ChildItem -LiteralPath "$taskRoot/tests" -Filter "*_te
     & node $testFile.FullName
     if ($LASTEXITCODE -ne 0) { throw "JavaScript tests failed: $($testFile.Name)" }
 }
-Compress-Archive -Path "$dist/*" -DestinationPath "$taskRoot/dist/BeipMU-Recovery-0.11-x64.zip" -Force
+Compress-Archive -Path "$dist/*" -DestinationPath "$taskRoot/dist/BeipMU-Recovery-0.12-x64.zip" -Force
 Write-Output "Built: $dist/BeipMU-Recovery.exe"

@@ -25,7 +25,7 @@ body.append(categories,content);
 const scopeBar=document.createElement('label');scopeBar.className='classic-settings-scope';scopeBar.textContent='Settings for';
 const scopeChoice=document.createElement('select');scopeChoice.id='classicSettingsScope';scopeChoice.setAttribute('aria-label','Settings profile');scopeBar.append(scopeChoice);
 const definitions=[
- ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['logging','Logging'],['emoji','Auto Emoji']
+ ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['logging','Logging'],['restore','Restore Logs'],['emoji','Auto Emoji']
 ];
 const panels=new Map(),buttons=new Map();
 for(const [key,title] of definitions){
@@ -53,6 +53,7 @@ function setting(key,title,type='number',min=0,max=100){
  if(type==='checkbox'){label.textContent='';label.append(control,document.createTextNode(title));}else label.append(control);
  extraControls[key]=control;return label;
 }
+group('general','Images',setting('autoImageViewer','Show image viewer automatically','checkbox'),setting('inlineImageHeight','Inline image height (pixels)','number',0,4096),setting('animatedImagesStartPaused','Animated images start paused','checkbox'),setting('avatarWidth','Avatar width (pixels)','number',0,4096),setting('avatarHeight','Avatar minimum height (pixels)','number',0,4096),note('These image preferences apply to every profile. Right-click an image for viewing, saving, copying and animation controls.'));
 const fonts=document.createElement('datalist');fonts.id='classicFontFaces';for(const face of ['Courier New','Consolas','Cascadia Mono','Lucida Console','Segoe UI','Arial','Times New Roman']){const option=document.createElement('option');option.value=face;fonts.append(option);}settings.append(fonts);
 function sample(category){const sample=document.createElement('div');sample.className='classic-settings-sample';sample.textContent='AaBbCc — The quick brown fox\n0123456789  Sample text';samples[category]=sample;return sample;}
 function fontStyles(prefix){return ['Bold','Italic','Underline','Strikeout'].map(style=>setting(prefix+'Font'+style,style,'checkbox'));}
@@ -66,6 +67,7 @@ group('logging','New Sessions',fields.defaultLogging,
  note('When enabled, each new connected session starts a separate log file. Use Logging to start or stop a session manually.'));
 const loggingPreferences=window.BeipLoggingUI?.createPreferencesPanel(panels.get('logging'));
 const emojiPreferences=window.BeipEmojiUI?.createPanel(panels.get('emoji'));
+const restorePreferences=window.BeipRestoreUI?.createPreferencesPanel(panels.get('restore'));
 form.replaceChildren(caption,scopeBar,body,actions);
 settings.classList.add('classic-settings');
 function selectCategory(key){
@@ -106,6 +108,7 @@ function captureDraft(){
   for(const key of ['theme','mediaEnabled','defaultLogging'])target[key]=readControl(byId(key));
   if(loggingPreferences)target.logging=loggingPreferences.read();
   if(emojiPreferences)target.emojiEnabled=emojiPreferences.read();
+  if(restorePreferences)target.restore=restorePreferences.read();
  }else{
   for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
    // Capture editable values before applying a changed inheritance checkbox.
@@ -136,6 +139,7 @@ function renderScope(){
  const isGlobal=selected==='global',p=effective(selected),target=currentDraft(selected);
  loggingPreferences?.load(currentDraft('global').logging,!isGlobal);
  emojiPreferences?.load(currentDraft('global').emojiEnabled,!isGlobal);
+ restorePreferences?.load(currentDraft('global').restore,!isGlobal);
  for(const [key,control] of Object.entries(controls))writeControl(control,p[key]);
  for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
   const item=inheritance[group];item.label.hidden=isGlobal;item.explanation.hidden=isGlobal;
@@ -145,6 +149,7 @@ function renderScope(){
   for(const key of keys)controls[key].disabled=!isGlobal&&target[group].useParent;
  }
  for(const key of ['theme','mediaEnabled','defaultLogging']){writeControl(byId(key),currentDraft('global')[key]);byId(key).disabled=!isGlobal;}
+ for(const key of model().IMAGE_KEYS)controls[key].disabled=!isGlobal;
  caption.querySelector('h2').textContent=isGlobal?'Settings':'Settings — '+(profileFor(selected)?.name||'Profile');
  updateSamples();
 }

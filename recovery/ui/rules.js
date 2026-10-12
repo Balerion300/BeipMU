@@ -365,7 +365,7 @@
         if (typeof rule.sendText === 'string' && rule.sendText) {
           let command = interpolate(rule.sendText, hit.captures);
           if (rule.sendExpandVariables) command = expandVariables(command, context.variables, limits.maxCommand);
-          if (command !== null && command.length <= limits.maxCommand && !/[\r\n]/.test(command)) {
+          if (command !== null && command.length <= limits.maxCommand && (!rule.sendOnClick || !/[\r\n]/.test(command))) {
             if (rule.sendOnClick) {
               const index = Number.isSafeInteger(rule.sendCaptureIndex) && rule.sendCaptureIndex >= 0 ? rule.sendCaptureIndex : 1;
               const at = index * 2 < hit.ranges.length ? index * 2 : 0;
@@ -381,7 +381,7 @@
               const normalized = normalizeVariables(candidate);
               if (Object.hasOwn(normalized, set[1]) && Object.keys(candidate).length === Object.keys(normalized).length) context.variables = normalized;
             } else if (unset && !rule.sendOnClick) delete context.variables[unset[1]];
-          } else diagnostics.push('Trigger command exceeds one-line limit.');
+          } else diagnostics.push('Trigger command exceeds its text limit or clickable one-line limit.');
         }
         if (rule.spawnTitle && !spawnedThisLine && actions.length < limits.maxActions) {
           spawnedThisLine = true;

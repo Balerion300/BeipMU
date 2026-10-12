@@ -82,7 +82,7 @@
  const idle=createIdleController({
   isAlive:id=>!!getApi()?.sessions.get(id)?.connected,
   execute:(id,value)=>{const api=getApi(),session=api?.sessions.get(id);if(session)return api.command(value,false,session);},
-  sendNOP:id=>window.chrome?.webview?.postMessage('telnetnop|'+id),
+  sendNOP:id=>{const api=getApi(),session=api?.sessions.get(id);if(session)return api.commandPipeline.submit(session,'',{mode:'nop',source:'idle'});},
   report:(id,value)=>display(getApi()?.sessions.get(id),value)
  });
  let pasteDialog=null,pasteJob=null,wallPending=false,nextTab=1;
@@ -117,7 +117,7 @@
   }catch(error){display(session,error.message);}
   return true;
  }
- function handle(value,session){
+ function handle(value,session,execution){
   if(!browser||typeof value!=='string'||!value.startsWith('/')||value.startsWith('//'))return false;
   if(handleVariableCommand(value,session))return true;
   const match=/^(\/\S+)(?:\s+([\s\S]*))?$/.exec(value);if(!match)return false;
@@ -156,7 +156,7 @@
    else if(name==='/wall'){
     if(!arg)return true;if(wallPending)throw Error('A broadcast cannot start another broadcast.');if(/[\r\n]/.test(arg)||new TextEncoder().encode(arg).length>8192)throw Error('A broadcast must be one line, up to 8192 bytes.');
     wallPending=true;const targets=[...api.sessions.values()].filter(target=>target.kind==='world'&&target.connected);
-    Promise.allSettled(targets.map(target=>Promise.resolve().then(()=>{if(api.sessions.get(target.id)===target&&target.connected)return api.command(arg,false,target);}))).then(results=>{for(let index=0;index<results.length;index++)if(results[index].status==='rejected')display(targets[index],results[index].reason?.message||'Broadcast failed.');}).finally(()=>{wallPending=false;});
+    return (async()=>{try{for(const target of targets)if(api.sessions.get(target.id)===target&&target.connected)await api.command(arg,false,target,execution,{source:'wall'});return true;}finally{wallPending=false;}})();
    }
    else if(name==='/idle'){
     if(session.kind!=='world'||!session.connected)throw Error('Must be connected to set an idle timer.');const args=words(arg),character=api.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId);
@@ -206,8 +206,8 @@
      const lines=pasteLines(byId('smartPasteText').value,byId('smartPastePrefix').value,byId('smartPasteSuffix').value),delay=Number(byId('smartPasteDelay').value);
      if(!Number.isFinite(delay)||delay<0||delay>10000)throw new Error('Choose a delay from 0 to 10000 milliseconds.');
      Object.assign(api.state.preferences,{pastePrefix:byId('smartPastePrefix').value,pasteSuffix:byId('smartPasteSuffix').value,pasteDelay:delay});api.saveSettings();
-     cancelPaste();const job=pasteJob={sessionId:session.id,timer:null,index:0};const process=byId('smartPasteAliases').checked;
-     function next(){if(pasteJob!==job)return;if(api.sessions.get(session.id)!==session||!session.connected){cancelPaste();status('Paste stopped: session disconnected.');return;}const line=lines[job.index++];if(process)api.command(line,false,session);else api.sendRaw(session,line);status('Sent '+job.index+' of '+lines.length+' lines.');if(job.index<lines.length)job.timer=setTimeout(next,delay);else pasteJob=null;}
+     cancelPaste();const job=pasteJob={sessionId:session.id,epoch:session.connectionEpoch,timer:null,index:0};const process=byId('smartPasteAliases').checked;
+     async function next(){if(pasteJob!==job)return;if(api.sessions.get(session.id)!==session||session.connectionEpoch!==job.epoch||!session.connected){cancelPaste();status('Paste stopped: session disconnected.');return;}try{await api.commandPipeline.submit(session,lines[job.index++],{mode:process?'lines':'transmit',source:'paste'});}catch(error){cancelPaste();status(error.message);return;}if(pasteJob!==job)return;status('Sent '+job.index+' of '+lines.length+' lines.');if(job.index<lines.length)job.timer=setTimeout(next,delay);else pasteJob=null;}
      next();
     }catch(error){status(error.message);}
    };

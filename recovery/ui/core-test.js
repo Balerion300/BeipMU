@@ -22,6 +22,7 @@ window.BeipCoreTest=async function(config){
  let alpha,beta,persistenceLoaded=false,persistenceSaved=false;
  try{
   await wait(()=>app.settingsLoaded,'settings load');
+  app.state.commandSettings={active:true,echo:false,processCommands:false,sendUnknown:false,legacyVariableAliases:true};
   persistenceLoaded=config.phase==='persist'&&app.state.worlds.some(w=>w.id==='coreworld')&&app.state.characters.some(c=>c.id==='corecharA'&&c.notes==='Core alpha note'&&c.variables?.automationSaved==='persisted')&&app.state.preferences.fontSize===18&&app.state.preferences.inputHeight===120&&app.state.preferences.shortcuts?.clearInput==='Ctrl+K'&&app.state.aliases.length===2&&app.state.aliases.some(rule=>rule.description==='Core alias')&&app.state.triggers.some(rule=>rule.description==='Core trigger')&&app.state.triggers.some(rule=>rule.id==='corecapture'&&rule.captureUntil==='^WHO END$')&&app.state.triggers.some(rule=>rule.id==='corescripttrigger'&&rule.scriptName==='CoreTrigger')&&app.state.scriptEnabled===true&&app.state.scriptSource===scriptSource&&app.state.macros.some(macro=>macro.description==='Core macro');
   const header=document.querySelector('.app-header');
   const initialLayout=!visible('connection')&&!visible('connectDialog')&&!visible('profilesDialog')&&(!header||getComputedStyle(header).display==='none')&&el('sessionTabs').getBoundingClientRect().top>=el('command').getBoundingClientRect().bottom&&el('command').getBoundingClientRect().top>=el('output').getBoundingClientRect().bottom;
@@ -133,10 +134,10 @@ window.BeipCoreTest=async function(config){
   app.command('/@window.output.write("SCRIPT OK");window.connection.send("core-script-alpha");',false,alpha);
   await wait(()=>alpha.view.textContent.includes('CORE A COMPLETE')&&beta.view.textContent.includes('CORE B COMPLETE')&&alpha.view.textContent.includes('SCRIPT OK')&&alpha.gmcp.rows().length,'separate transcripts, script and GMCP');
   await wait(()=>alpha.view.textContent.includes('AVATAR TEST')&&alpha.tilemap?.get('Tiny')?.tiles?.[1]===1&&alpha.media?.snapshot().cached.includes('tone.wav'),'GMCP visual and media state');
-  await wait(()=>{const avatar=[...alpha.view.querySelectorAll('.line')].find(line=>line.textContent.includes('AVATAR TEST'))?.querySelector('img.avatar');return avatar?.complete&&avatar.naturalWidth===32;},'loaded GMCP avatar');
+  await wait(()=>{const avatar=[...alpha.view.querySelectorAll('.line')].find(line=>!line.dataset.restoreReplay&&line.textContent.includes('AVATAR TEST'))?.querySelector('img.avatar');return avatar?.complete&&avatar.naturalWidth===32;},'loaded GMCP avatar');
   await wait(()=>{const canvas=alpha.mapsPane?.querySelector('canvas');return canvas?.width===32&&canvas.height===16&&canvas.parentElement?.lastChild?.textContent==='';},'rendered GMCP tilemap');
   const tilemapRendered=alpha.tilemap.get('Tiny').tiles.join(',')==='0,1';
-  const avatar=[...alpha.view.querySelectorAll('.line')].find(line=>line.textContent.includes('AVATAR TEST')).querySelector('img.avatar');
+  const avatar=[...alpha.view.querySelectorAll('.line')].find(line=>!line.dataset.restoreReplay&&line.textContent.includes('AVATAR TEST')).querySelector('img.avatar');
   const avatarLoaded=avatar.complete&&avatar.naturalWidth===32;
   const mediaState=alpha.media.snapshot(),mediaDisabled=mediaState.enabled===false&&mediaState.cached.includes('tone.wav')&&mediaState.playing.length===0;
   app.selectSession('alpha');document.getElementById('mapperButton').click();
@@ -183,7 +184,7 @@ window.BeipCoreTest=async function(config){
   app.image(alpha,{url:alpha.tilemap.get('Tiny').url,alt:'Core dock image',height:32});
   const imagePane=await openDock('ui:window-image','Image Window','image');
   await wait(()=>imagePane.querySelector('.dock-image')?.complete&&imagePane.querySelector('.dock-image')?.naturalWidth===32,'docked image loaded');
-  const imageDock=imagePane.querySelector('.dock-image').alt==='Core dock image'&&imagePane.textContent.includes('Core dock image');
+  const imageDock=imagePane.querySelector('img.image-view-picture')?.alt==='Core dock image'&&imagePane.querySelector('.image-view-caption')?.textContent.includes('Core dock image')&&imagePane.querySelector('select[aria-label="Image history"]')?.options.length===1;
   const imagePlacement=edgeOf('image')==='top';
   const notesPane=await openDock('ui:window-character-notes','Character Notes','notes');
   const noteInput=notesPane.querySelector('.dock-notes');if(config.phase==='first')noteInput.value='Core alpha note';
@@ -305,11 +306,15 @@ window.BeipCoreTest=async function(config){
   result.settings=await BeipSettingsFixture.run(app);
   result.layouts=await BeipLayoutFixture.run(app);
   result.maps=await BeipMapFixture.run(app);
+  result.images=await BeipImageFixture.run(app,config.imageHttpBase);
+  result.puebloSpacing=await BeipPuebloSpacingFixture.run(app);
   result.everyday=await BeipEverydayFixture.run(app);
   result.temporal=await BeipTemporalTriggersFixture.run(app);
   result.loggingOptions=await BeipLoggingFixture.run(app);
   result.emoji=await BeipEmojiFixture.run(app);
+  result.restore=await BeipRestoreFixture.run(app,config);
   result.commands=await BeipCommandFixture.run(app,config);
+  result.pipeline=await BeipPipelineFixture.run(app);
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
   app.selectSession(closed);
   const closingPane=await openDock('ui:window-input-history','Input History','history');

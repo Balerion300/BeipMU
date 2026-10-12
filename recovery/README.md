@@ -1,4 +1,39 @@
-# BeipMU recovery preview 0.11
+# BeipMU recovery preview 0.12
+
+Preview 0.12 fixes doubled Pueblo line spacing in ordinary HTML output. The
+public Blood of Dragons login stream uses `<br>` followed by a transport newline;
+only the explicit tag now creates a displayed break outside PRE. Literal spaces
+and tabs keep MUSH columns aligned. PRE, plain-text regions and MXP retain their
+line semantics, including intentional blank lines. Fragmented parser and packaged
+login/WHO/link/image fixtures verify the correction.
+
+Command processing now has awaited per-session queues and cancels stale alias
+results after a reconnect. Original alias Active, Echo and Process Commands
+controls and unrecognized-command behavior are available. Escaped commands,
+nested script Run, send hooks, broadcast and idle events use the owner's command
+path. Existing recovery profiles retain an explicitly labeled compatibility
+setting until changed. Exact resumable trigger ordering remains open.
+
+Per-character restoration saves bounded structured output, history and GMCP state.
+Replaying saved output does not rerun triggers, scripts, sounds or sends; saved
+images require an explicit click to load. Global/character controls pause capture
+without deleting saved output; Clear is separate. Buffers are 64–4096 KiB, at most
+10,000 records, flushed atomically every 500 ms and at orderly shutdown. A forced
+exit can lose the newest unflushed records. Reviewed original Restore.dat import
+uses matching Config slot/size metadata and never changes the original file.
+Recovery snapshots and safe raw import do not reproduce original visual-trigger
+or spawn re-evaluation during replay.
+
+Image windows now share history, fit/100%/zoom/pan, visible animation pause and
+owned Save/Copy actions across docked and floating views. Inline height, avatar
+width/minimum height and initial animation settings are configurable. Save keeps
+original image bytes; Copy uses the first decoded frame. Native actions support
+direct HTTP/HTTPS PNG/JPEG/GIF/BMP/TIFF/ICO up to 16 MiB and 16 megapixels, without
+browser authentication. Redirects and other formats are not supported by these
+native actions. Visible pause uses a canvas snapshot; the hidden decoder may
+continue advancing. URL-based viewing retains the browser's image support.
+
+## Previous preview 0.11
 
 Preview 0.11 adds layered Atlas maps, richer trigger processing, original-style
 logging, Auto Emoji, and another set of everyday client commands.
@@ -145,7 +180,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.11-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.12-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in

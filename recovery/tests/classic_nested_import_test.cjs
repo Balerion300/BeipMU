@@ -29,7 +29,7 @@ check('Original activation differs between aliases and triggers without silently
   const disabledSource=source.replace(/(Aliases\r?\n \{\r?\n  Active=)true/,'$1false');
   assert.notEqual(disabledSource,source,'fixture activation must actually be changed');
   const disabled=core.parseConfig(disabledSource);
-  assert.ok(disabled.aliases.every(rule=>!rule.enabled));
+  assert.equal(disabled.commandSettings.active,false);assert.ok(disabled.aliases.every(rule=>rule.enabled),'global activation must not permanently disable individual rows');
  }
  const triggerDisabled=core.parseConfig(config('Triggers.Active=false\nShortcuts\n{\nTest\n{\nHost="example.org:1234"\nTriggers\n{\n'+action()+'\n}\nCharacters\n{\nAlice\n{\nTriggers\n{\n'+action()+'\n}\n}\n}\n}\n}'));
  assert.equal(triggerDisabled.triggers.length,2);assert.ok(triggerDisabled.triggers.every(rule=>!rule.enabled));
@@ -129,7 +129,7 @@ check('Review apply remaps parent identities, profile scopes, and repeated impor
  function run(importProfiles){
   const plan=core.parseConfig(fixture),state={worlds:[],characters:[],aliases:[],triggers:[],macros:[],preferences:{}};let serial=0,saved=0;
   const app={state,rebuildRules(){},applyPreferences(){},renderProfileChoices(){},saveSettings(){saved++;}};
-  const sandbox={configPlan:plan,app:()=>app,one:selector=>({checked:!selector.includes('profiles')||importProfiles}),unique:(prefix,used)=>{const id=prefix+(++serial);used.add(id);return id;},status(){},error(){},dialog:{close(){}}};
+  const sandbox={BeipRestoreImport:require('../ui/restore-import.js'),restorePanel:{loadPlan(plan){if(plan)assert.ok(plan.source.indices.every(item=>state.characters.some(character=>character.id===item.characterId)));}},BeipProfiles:require('../ui/profile-model.js'),configPlan:plan,app:()=>app,one:selector=>({checked:!selector.includes('profiles')||importProfiles}),unique:(prefix,used)=>{const id=prefix+(++serial);used.add(id);return id;},status(){},error(){},dialog:{close(){}}};
   vm.runInNewContext(apply+'\napplyConfig();\napplyConfig();',sandbox);
   assert.equal(saved,2);
   for(const kind of ['aliases','triggers']){

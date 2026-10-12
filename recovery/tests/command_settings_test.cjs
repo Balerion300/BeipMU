@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),profiles=require('../ui/profile-model.js'),imports=require('../ui/classic-import-core.js');
+const defaults={active:false,echo:true,processCommands:false,sendUnknown:false,legacyVariableAliases:false};
+assert.deepEqual(profiles.normalizeSettings({}).commandSettings,defaults);
+assert.deepEqual(profiles.normalizeSettings({version:2}).commandSettings,{active:true,echo:false,processCommands:false,sendUnknown:false,legacyVariableAliases:true});
+const configured={...defaults,active:true,processCommands:true,sendUnknown:true};
+assert.deepEqual(profiles.serializeSettings({commandSettings:configured}).commandSettings,configured);
+assert.deepEqual(profiles.normalizeCommandSettings({active:'yes',processCommands:'true',sendUnknown:1,legacyVariableAliases:'yes'}),defaults);
+const original='Version=400\nGlobal\n{\nSendUnrecognizedCommands=true\n}\nConnections\n{\nAliases\n{\nActive=true\nEcho=false\nProcessCommands=true\n}\n}';
+assert.deepEqual(imports.parseConfig(original).commandSettings,{active:true,echo:false,processCommands:true,sendUnknown:true,legacyVariableAliases:false});
+assert.deepEqual(imports.parseConfig('Version=400\nConnections\n{\n}').commandSettings,defaults);
+console.log('6 command settings checks passed.');

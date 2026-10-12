@@ -15,9 +15,9 @@ as described in README. The original source stays intact.
 | --- | --- | --- |
 | Shell/Windows menu (`Wnd_Main`, direct menu) | Partial: tabs, named panes, four edges, nested splits/tabs, native floating, layout/appearance copy | Native drag between windows; multiple input/edit windows; multiple main windows; hidden captions; original saved arrangements |
 | Worlds (`Dlg_Connect`, `Root.prp`) | Partial: worlds/characters, startup, TLS, credential vault, notes, reviewed connect templates | Complete import/export and per-character flags; puppets and transfer behavior; world samples |
-| General settings (`Dlg_Settings`, direct dialog) | Partial: inline images, sound enable | Voice/markup; inline height, avatar geometry, animated image pause; activate-on-disconnect; close alerts; Ctrl-to-change-layout |
+| General settings (`Dlg_Settings`, direct dialog) | Partial: inline images and height, avatar geometry, visible animation pause, sound enable | Voice/markup; activate-on-disconnect; close alerts; Ctrl-to-change-layout |
 | UI Theme settings | Partial: dark/light | Original theme elements, presets and all customizable colors |
-| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input and autosize | All cursor/history/selection rules; extra panes/prefixes; spell checking; tab completion; command prefix/unrecognized-command settings |
+| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input, autosize and unknown-command setting | All cursor/history/selection rules; extra panes/prefixes; spell checking; tab completion; command prefix settings |
 | Output Windows/settings (`Dlg_TextWindow`, `Wnd_Text`) | Partial: font/styles/colors/margins, paragraph spacing, wrapped indent, fanfold and fixed width | Exact selection/scrolling options; timestamps/line metadata; complete split behavior and preservation across every pane |
 | Logging/settings (`Logging`, `OM_Logging`) | Partial: reviewed filenames/date/environment tokens, local chooser, formatted text/HTML, typed/sent prefixes, start positions and character auto-start | Multiple concurrent files, midnight automatic rotation, complete original timestamp-flag import and per-character lifecycle |
 | Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP | Original encoding choices, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
@@ -25,12 +25,12 @@ as described in README. The original source stays intact.
 | Keyboard Shortcuts (`Shortcuts.md`, `Dlg_Settings`) | Partial: remappable supported actions | New main window/input pane; context-sensitive history and output navigation; all original actions |
 | Auto Emoji (`Emoji.md`, assets and settings) | Implemented documented workflow: original default table, sections, append/replace, Unicode matching, copy/edit/import/save/reload/revert and enable | Original matching implementation is absent; exact undocumented boundary behavior remains an independent reconstruction |
 | Scripting (`ScriptingAPI.md`, `OM.idl`, `*_OM`) | Partial: expanded API subset and member inventory | See SCRIPT-PARITY for exact object/member list; controlled native filesystem/COM, existing-script compatibility and script languages |
-| Restore Logs/settings (`Logging`, `Dlg_Settings`) | Open | Per-character restore buffers, startup recovery and controls |
+| Restore Logs/settings (`Logging`, `Dlg_Settings`) | Partial: bounded per-character snapshots, startup replay, pause/clear controls and reviewed original Restore.dat import | Exact original visual-trigger/spawn replay, raw native encoding and disable/deletion semantics |
 | ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: ANSI styles | Custom 16-color palette, bold policy, invisible-color policy, beep, flash, parse toggle and reset-on-newline |
 | AI/settings (`Dlg_Settings`, `Wnd_Input`) | Open | Original local-model integration, model configuration and input actions; no credentials or live service use in tests |
 | User Data/settings (`Dlg_Settings`) | Open | Original paths, backup/import/export/move behavior and dialogs |
-| Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order | Full internal-command ordering, echo/processing flags, debugger and exact compatibility limits |
-| Triggers (`Triggers.md`, `Connection`, `Dlg_Triggers`) | Partial: scoped/nested/repeated matches, multiline child windows, capture-only children, captured-group appearance, click-only commands, send/spawn/sound/script | Text-changing filter ordering, font/hash/flash/paragraph actions, multiline sends, untitled capture, full conditions/actions and debugger |
+| Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order, Active/Echo/ProcessCommands, owned awaited dispatch | Debugger, input prefixes and remaining exact compatibility limits |
+| Triggers (`Triggers.md`, `Connection`, `Dlg_Triggers`) | Partial: scoped/nested/repeated matches, multiline child windows, capture-only children, captured-group appearance, click-only commands, send/spawn/sound/script | Text-changing filter ordering, font/hash/flash/paragraph actions, exact multiline-send sequencing, untitled capture, full conditions/actions and debugger |
 | Find/history/editing (`Dlg_Find`, `Wnd_Input`) | Partial: direction/case/word/regex search and command replacement | Full history search/recall selection and editing semantics; editor windows |
 | Smart Paste (`Dlg_SmartPaste`) | Partial: text/file/clipboard preview, saved affixes, zero delay, pacing/cancel | Actual clipboard-read acceptance and exact scheduling/alias behavior |
 | Client commands (`CommandLine.md`, `Commands.cpp`) | Partial | Audit every command below; original source also has commands absent from the Markdown index |
@@ -38,9 +38,9 @@ as described in README. The original source stays intact.
 | Spawn windows (`SpawnWindows.md`) | Partial: grouping/capture/move/copy/log gag | Multiple independently positioned streams, formatting in all floating modes, original capture semantics |
 | Stats (`Stat Windows.md`, `GMCP`) | Partial: text/range/progress | Full GMCP styles/layout, window ownership/docking and script objects |
 | Tilemap (`TileMap.md`) | Partial: real rendered tiles, encodings and partial updates | Original size limits, windows and complete format behavior |
-| Images/avatars (`ImagePane`, `ImageBanner`) | Partial: inline/load/fallback/linked images, separate image pane | Original zoom/pan/save/copy/animation controls and geometry |
+| Images/avatars (`ImagePane`, `ImageBanner`) | Partial: inline/load/fallback/linked images, dock/float history, fit/zoom/pan, save/copy, visible pause, avatar geometry/live updates | Decoder-level animation pause and complete missing-renderer behavior; Save/Copy are recovery additions, not proven original ImagePane controls |
 | Client.Media (`GMCP.md`) | Partial: default/load/play/stop module | Actual audible playback and remaining formats/options |
-| Pueblo/MXP (`TextToLine`, parser evidence) | Partial: links/images/styles and WHO spacing protected | Full elements/entities/definitions, secure modes, sound/frames/image maps; conformance evidence |
+| Pueblo/MXP (`TextToLine`, parser evidence) | Partial: links/images/styles, ordinary Pueblo HTML line folding and PRE WHO spacing protected | Full elements/entities/definitions, secure modes, sound/frames/image maps; conformance evidence |
 | Web views (`WebViews.md`, `WebView`) | Open | Original named views/navigation/script surface with isolated web content |
 | MCP editing (`MCP_*`, `MCMP`) | Open | Negotiate, simpleedit, status, ping, userlist packages and editor integration |
 | Help/menu/documentation | Partial: About and subset command help | Complete local command help, original help actions and accurate shipped documentation |
@@ -143,3 +143,47 @@ checks passed; Pueblo/MXP image/link/WHO fixtures passed on the 0.11 executable.
 The source-derived command ordering audit identifies additional work for the next
 preview, including alias ProcessCommands controls, escaped-command hooks, awaited
 completion and cancellation after reconnection. These remain open in 0.11.
+
+## Preview 0.12 integration audit
+
+The screenshot-reported Pueblo login bug was reproduced from a fresh public
+BoD greeting (no account login): SAMP rows contain BR plus LF outside PRE. The
+parser now treats source line endings outside PRE as HTML whitespace while
+preserving literal spaces/tabs. Explicit consecutive BR tags retain blank rows.
+The Valyria parser provided the matching behavior; the MUSHclient chat confirmed
+its earlier correction concerned image indentation rather than this bug.
+
+Command dispatch now preserves full completion promises, owner FIFO/epochs,
+hook provenance and bounded nested Run. Global original alias controls and
+unknown-command behavior are imported and editable. Legacy recovery variable
+alias behavior is explicit. Trigger Send accepts bounded multiline text and
+awaits dispatch, but later rules are still precomputed: exact sound/send/filter/
+script ordering and resumable trigger decisions remain open. The silent prefix
+does not yet suppress every recovery handler's feedback. Raw script Send still
+has a one-line native bridge bound; input prefixes and prompt pseudo-receive are
+not complete original parity. Smart Paste keeps its reviewed processing checkbox.
+
+Restoration stores structured snapshots, history and GMCP per character in a
+separate bounded recovery format. Replay bypasses automation and automatic image
+loading. Native storage preserves corrupt files until explicit Clear; writes are
+atomic and batched within 500 ms. Original import requires exact current buffer
+size and mapped character indices from the reviewed Config. Original files are
+read-only. Original visual-rule/spawn replay is not implemented. Disabling pauses
+capture and retains stored output, whereas original disable may delete its store.
+
+Image history, shared dock/floating view controls, visible pause, inline geometry,
+avatar minimum height and live metadata updates are implemented. Native Save
+preserves original bytes and Copy produces the first-frame DIBV5. Supported direct
+HTTP/S formats and bounds are in README. This does not claim exact missing native
+ImageBanner/ImageAvatar internals or decoder-level animation suspension.
+
+### Preview 0.12 final package acceptance
+
+Fresh and persisted launches passed at `sessions-20261012-084624`. The Pueblo
+spacing screenshot was inspected: ordinary login rows are consecutive, intentional
+blank lines remain, and WHO columns and links are preserved. The image-viewer
+screenshot was inspected after correcting control contrast. The session suite
+checks command ownership/order, stale epoch cancellation, native saved-image and
+clipboard-format bytes, per-character restoration files, replay isolation, reviewed
+original import and settings persistence. The compiled Pueblo/MXP fixtures also
+passed with ordinary HTML spacing, inline images, clickable commands and WHO rows.

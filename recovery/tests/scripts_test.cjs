@@ -7,7 +7,7 @@ function worker(){
  vm.runInContext(fs.readFileSync(require.resolve('../ui/script-worker.js'),'utf8'),context);
  let id=0;
  return {context,run:async(type,value,extra={})=>{
-  context.onmessage({data:{id:++id,type,value,...extra}});
+  context.onmessage({data:{id:++id,type,value,context:{connected:true},...extra}});
   for(let i=0;i<4&&!results.length;i++)await Promise.resolve();
   assert.ok(results.length,'worker did not answer '+type);
   return results.pop();
@@ -35,7 +35,7 @@ function fakeTimers(){
   const handled=await w.run('send','@@practice'),normal=await w.run('send','look');
   assert.equal(handled.handled,true);assert.equal(handled.effects[0].value,'Handled');assert.equal(normal.handled,false);
   const direct=await w.run('eval','window.connection.Transmit("raw");window.connection.Send("@@practice");');
-  assert.deepEqual(Array.from(direct.effects,x=>x.type),['send','output']);
+  assert.deepEqual(Array.from(direct.effects,x=>x.type),['send','send-event','output']);assert.equal(direct.effects[0].event,false);
  });
  await test('GMCP hook receives documented raw package string and userdata',async()=>{
   const w=worker();await w.run('eval','window.connection.SetOnGMCP(function(raw,win){let at=raw.indexOf(" ");win.output.write(raw.slice(0,at)+":"+JSON.parse(raw.slice(at+1)).hp);},window);');
@@ -159,7 +159,7 @@ function fakeTimers(){
   const safe=contextOf({sessionId:'alpha',world:{id:'w',name:'World',password:'secret',characters:[{id:'c',name:'Alice',password:'hidden'}]},worlds:[{id:'w',name:'World'}],input:{text:'draft',start:2,end:4},token:'secret'});
   assert.equal(safe.world.name,'World');assert.equal('password' in safe.world,false);assert.equal('token' in safe,false);
   assert.equal('password' in safe.world.characters[0],false);assert.deepEqual(safe.input,{text:'draft',start:2,end:4});
-  assert.equal(validEffect({type:'send',value:'look'}).value,'look');assert.equal(validEffect({type:'send',value:'one\ntwo'}),null);assert.equal(validEffect({type:'file',value:'bad'}),null);
+  assert.equal(validEffect({type:'send',value:'look',event:true}).value,'look');assert.equal(validEffect({type:'send',value:'look'}),null);assert.equal(validEffect({type:'send',value:'one\ntwo',event:true}),null);assert.equal(validEffect({type:'file',value:'bad'}),null);
   assert.equal(validEffect({type:'input-set',value:'look'}).value,'look');assert.equal(validEffect({type:'input-select',start:1,end:3}).end,3);
   assert.equal(validEffect({type:'input-select',start:3,end:1}),null);assert.equal(validEffect({type:'debug',value:'x'.repeat(513)}),null);
  });

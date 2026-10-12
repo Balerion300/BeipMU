@@ -26,15 +26,15 @@ async function run(app=window.BeipPreview){
   check('ownerVariables',app.variablesForSession(alpha).scriptObjectTarget==='friend'&&JSON.stringify(app.variablesForSession(beta))===betaVariables);
   check('ownerCommand',alpha.view.textContent.includes('SCRIPT OBJECT COMMAND original-command-pipeline')&&!beta.view.textContent.includes('SCRIPT OBJECT COMMAND'));
   check('titlePrefix',document.getElementById('sessionTabs').textContent.includes('[Script]'));
-  const created=[...alpha.view.querySelectorAll('.line')].find(x=>x.textContent==='SCRIPT OBJECT LINE');
+  const created=[...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].find(x=>x.textContent==='SCRIPT OBJECT LINE');
   check('createdLine',!!created&&[...created.querySelectorAll('span')].some(x=>x.textContent==='SCRIPT'&&x.style.color==='rgb(255, 0, 0)')&&[...created.querySelectorAll('span')].some(x=>x.style.fontStyle==='italic'));
   const untouched=document.createElement('div'),link=document.createElement('a');link.href='https://example.invalid/';link.textContent='unchanged linked text';untouched.append(link);
   check('unchangedDOM',!await BeipFeatures.beforeDisplay(alpha,untouched)&&untouched.firstChild===link);
   alpha.parser.feed('\x1b[31mSCRIPT OBJECT RED\x1b[0m\r\nSCRIPT OBJECT HIDE\r\n');await alpha.pendingLineWork;
-  const changed=[...alpha.view.querySelectorAll('.line')].find(x=>x.textContent==='[checked] SCRIPT OBJECT RED');
+  const changed=[...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].find(x=>x.textContent==='[checked] SCRIPT OBJECT RED');
   check('displayMutation',!!changed&&changed.firstElementChild.style.fontWeight==='bold');
   check('originalStylePreserved',!!changed&&[...changed.querySelectorAll('span')].some(x=>x.textContent.includes('SCRIPT OBJECT RED')&&x.style.color==='rgb(230, 107, 107)'));
-  check('displayGag',![...alpha.view.querySelectorAll('.line')].some(x=>x.textContent==='SCRIPT OBJECT HIDE'));
+  check('displayGag',![...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].some(x=>x.textContent==='SCRIPT OBJECT HIDE'));
   const unsupported=await alpha.scripts.evaluate('try{app.ActiveXObject("WScript.Shell");}catch(e){window.output.write("SCRIPT OBJECT NATIVE BLOCKED");}',BeipFeatures.context(alpha));
   check('nativeCapabilityBoundary',unsupported.effects.some(x=>x.value==='SCRIPT OBJECT NATIVE BLOCKED'));
   check('workerAlive',alpha.scripts.enabled&&beta.connected);

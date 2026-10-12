@@ -137,7 +137,7 @@ Connections
 }`;
 async function run(){
  if(!window.BeipCoreTesting)throw new Error('Import fixture is available only in test mode.');
- const api=window.BeipPreview,state=api.state,save={worlds:state.worlds,characters:state.characters,aliases:state.aliases,triggers:state.triggers,macros:state.macros,preferences:state.preferences,maps:state.maps};
+ const api=window.BeipPreview,state=api.state,save={commandSettings:state.commandSettings,worlds:state.worlds,characters:state.characters,aliases:state.aliases,triggers:state.triggers,macros:state.macros,preferences:state.preferences,maps:state.maps};
  const initialSaves=state.saveCount||0;let importSaves=0,nestedSession=null;
  state.worlds=JSON.parse(JSON.stringify(save.worlds));state.characters=JSON.parse(JSON.stringify(save.characters));state.aliases=JSON.parse(JSON.stringify(save.aliases));state.triggers=JSON.parse(JSON.stringify(save.triggers));state.macros=JSON.parse(JSON.stringify(save.macros));state.preferences={...save.preferences};state.maps=JSON.parse(JSON.stringify(save.maps));
  const result={configPreview:false,reviewBeforeApply:false,credentialsOmitted:false,scriptOmitted:false,configApplied:false,nestedConfigApplied:false,nestedConfigWorker:false,atlasPreview:false,zipDecompression:false,atlasApplied:false,restorationSaved:false,error:''};

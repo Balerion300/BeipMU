@@ -92,19 +92,21 @@ check('Import review preference category controls both global and scoped setting
  const script=fs.readFileSync(path.join(__dirname,'../ui/classic-import.js'),'utf8');
  const apply=script.slice(script.indexOf('function applyConfig(){'),script.indexOf('function applyAtlas(){'));
  assert.ok(apply.startsWith('function applyConfig(){'));
- const plan={worlds:[{...world,name:'Imported',host:'example.org',port:'1234'}],characters:[{...character,name:'Imported Alice'}],preferences:{fontSize:27},aliases:[],triggers:[],macros:[]};
+ const plan={worlds:[{...world,name:'Imported',host:'example.org',port:'1234'}],characters:[{...character,name:'Imported Alice',restore:{enabled:false}}],preferences:{fontSize:27,restore:{enabled:false,bufferKiB:128}},aliases:[],triggers:[],macros:[]};
  function run(categories){
   const state={worlds:[],characters:[],preferences:{...prefs.DEFAULTS},aliases:[],triggers:[],macros:[]};let saved=null,serial=0;
   const app={state,rebuildRules(){},applyPreferences(){},renderProfileChoices(){},renderProfileLists(){},saveSettings(){saved=profiles.normalizeSettings(state);}};
-  const sandbox={configPlan:JSON.parse(JSON.stringify(plan)),app:()=>app,one:selector=>({checked:!!categories[/data-part="(.*?)"/.exec(selector)?.[1]]}),unique:(prefix,used)=>{const id=prefix+(++serial);used.add(id);return id;},status(){},error(){},dialog:{close(){}}};
+  const sandbox={restorePanel:{loadPlan(value){assert.equal(value,null);}},BeipRestoreImport:require('../ui/restore-import.js'),configPlan:JSON.parse(JSON.stringify(plan)),app:()=>app,one:selector=>({checked:!!categories[/data-part="(.*?)"/.exec(selector)?.[1]]}),unique:(prefix,used)=>{const id=prefix+(++serial);used.add(id);return id;},status(){},error(){},dialog:{close(){}}};
   vm.runInNewContext(apply+'\napplyConfig();',sandbox);return saved;
  }
  const profilesOnly=run({profiles:true});
  assert.equal(profilesOnly.preferences.fontSize,prefs.DEFAULTS.fontSize);
+ assert.equal(profilesOnly.preferences.restore.enabled,true);assert.equal(profilesOnly.characters[0].restore.enabled,true);
  assert.equal(profilesOnly.worlds[0].preferences.output.useParent,true);assert.equal(profilesOnly.characters[0].preferences.output.useParent,true);
  const all=run({profiles:true,preferences:true});
  assert.equal(all.preferences.fontSize,27);assert.equal(all.worlds[0].preferences.output.values.fontSize,18);assert.equal(all.characters[0].preferences.output.values.fontSize,24);
  assert.equal(all.characters[0].worldId,all.worlds[0].id);
+ assert.deepEqual(all.preferences.restore,{enabled:false,bufferKiB:128});assert.equal(all.characters[0].restore.enabled,false);
  const preferencesOnly=run({preferences:true});assert.equal(preferencesOnly.worlds.length,0);assert.equal(preferencesOnly.characters.length,0);assert.equal(preferencesOnly.preferences.fontSize,27);
 });
 console.log(`${checks} profile preference checks passed.`);

@@ -42,11 +42,31 @@ for(const [input,expected] of [
  ['<pre>a<BR><BR>\r\nb</pre>','a\n\nb'],
  ['<pre>a<BR>&#10;\nb</pre>','a\n\n\nb'],
  ['<pre>a<BR><b>\nb</b></pre>','a\n\nb'],
- ['a<BR>\nb','a\n\nb'],
+ ['a<BR>\nb','a\nb'],
  ['<pre>a<BR> \nb</pre>','a\n \nb'],
- ['<pre>a<BR></pre>\nb','a\n\nb'],
+ ['<pre>a<BR></pre>\nb','a\nb'],
  ['<pre>a<BR><xch_mudtext>\nb','a\n\nb'],
  ['<pre>a\t  b<BR>\r\nc</pre>','a\t  b\nc']
 ])check('Preserve intentional spacing '+JSON.stringify(input),()=>assert.equal(parse('</xch_mudtext>'+input,{split:true}).text,expected));
+for(const ending of ['\n','\r\n','\r']){
+ const source='</xch_mudtext><img xch_mode=purehtml>'+ending+'<SAMP>Use <a xch_cmd="connect Guest Guest">connect Guest Guest</a> to connect.<br>'+ending+'Use \x1b[31mwho\x1b[0m to list players.<br>'+ending+'<br>'+ending+'  Keep\tcolumns  aligned.<br>'+ending+'</SAMP>';
+ for(let split=0;split<=source.length;split++){
+  const events=[],p=new Parser(e=>events.push(e),()=>{});p.feed(source.slice(0,split));p.feed(source.slice(split));p.finish();
+  assert.equal(events.filter(e=>e.type==='text').map(e=>e.text).join(''),'Use connect Guest Guest to connect.\nUse who to list players.\n\n  Keep\tcolumns  aligned.\n');
+  assert.ok(events.some(e=>e.link?.value==='connect Guest Guest'));
+  assert.ok(!events.some(e=>e.type==='warning'));
+ }
+ check('Pueblo login source whitespace across every split '+JSON.stringify(ending),()=>{});
+}
+for(const [input,expected] of [
+ ['a<BR><b>\r\nb</b>','a\nb'],
+ ['a<BR>\x1b[31m\r\nb','a\nb'],
+ ['a\r\nb','a b'],
+ ['a  \r\n  b','a    b'],
+ ['a<BR>\r\n<BR>\r\nb','a\n\nb'],
+ ['a<BR>\n\n\nb','a\nb'],
+ ['<pre>a\r\n\r\nb</pre>','a\n\nb'],
+ ['<xch_mudtext>a\r\n\r\nb','a\n\nb']
+])check('Pueblo HTML versus literal spacing '+JSON.stringify(input),()=>assert.equal(parse('</xch_mudtext>'+input,{split:true}).text,expected));
 check('Reset clears paired newline state',()=>{let text='';const p=new Parser(e=>{if(e.type==='text')text+=e.text;},()=>{});p.feed('</xch_mudtext><pre>a<BR>');p.reset();p.feed('\nb');assert.equal(text,'a\n\nb');});
 console.log(`${count} parser checks passed.`);

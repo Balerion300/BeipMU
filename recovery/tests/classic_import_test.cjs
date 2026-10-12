@@ -34,7 +34,7 @@ async function check(name,fn){await fn();console.log('PASS '+name);checks++;}
  await check('Preferences map only supported settings and secret values are discarded',()=>{
   const source='Version=400\nInlineImages=false\nTheme=0\nWindows\n{\n MainWindowSettings\n {\n InputSize=88\n Output\n {\n Font.Size=18\n Font.Name="Courier New"\n History=5000\n }\n Input.LocalEcho=true\n }\n}\nConnections\n{\n Shortcuts\n {\n Test\n {\n Host="example.org:1234"\n Characters\n {\n Alice.Password="secret-token-984"\n Alice.Connect="connect Alice secret-token-984"\n }\n }\n }\n}\n';
   const plan=core.parseConfig(source);
-  assert.deepEqual(plan.preferences,{fontSize:18,outputFontFace:'Courier New',scrollback:5000,localEcho:true,inputHeight:88,inlineImages:false,theme:'light'});
+  assert.deepEqual(plan.preferences,{restore:{enabled:true,bufferKiB:256},fontSize:18,outputFontFace:'Courier New',scrollback:5000,localEcho:true,inputHeight:88,inlineImages:false,theme:'light'});
   assert.equal(JSON.stringify(plan).includes('secret-token-984'),false);
  });
  await check('Plain XML Atlas preserves room centers and directed commands',async()=>{

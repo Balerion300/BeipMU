@@ -17,7 +17,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.11" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.12" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -37,14 +37,28 @@ class Assets:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path != "/tiles.png":
+                route = self.path.split("?", 1)[0]
+                if route == "/redirect-image":
+                    self.send_response(302)
+                    self.send_header("Location", "/animated-fixture.gif")
+                    self.end_headers()
+                    return
+                if route == "/animated-fixture.gif":
+                    body, mime = (ROOT / "tests" / "animated-fixture.gif").read_bytes(), "image/gif"
+                elif route == "/avatar-fixture.png":
+                    body, mime = (ROOT / "tests" / "avatar-fixture.png").read_bytes(), "image/png"
+                elif route == "/invalid-image":
+                    body, mime = b"This is not an image.", "text/plain"
+                elif route == "/tiles.png":
+                    body, mime = image, "image/png"
+                else:
                     self.send_error(404)
                     return
                 self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                self.send_header("Content-Length", str(len(image)))
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(image)
+                self.wfile.write(body)
 
             def log_message(self, *_):
                 pass
@@ -123,7 +137,7 @@ def run(phase):
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = 4
     app = subprocess.Popen(
-        [str(EXE), "--test-core", str(fixtures[0].port), str(fixtures[1].port), str(OUT)],
+        [str(EXE), "--test-core", str(fixtures[0].port), str(fixtures[1].port), str(OUT), str(assets.server.server_port)],
         startupinfo=startup,
     )
     try:
@@ -184,13 +198,34 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)
-        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}}
+        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}}
         assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
     emoji_log = pathlib.Path(result["emoji"]["logPath"])
+    restore_id = result["restore"]["nativeCharacter"]
+    assert restore_id == "restore-fixture-char"
+    restore_data = (OUT / "Restore" / (restore_id + ".restore")).read_bytes()
+    assert restore_data[:9] == b"BEIPRST1\n" and len(restore_data) <= 65536 + 9
+    restore_records, offset = [], 9
+    while offset < len(restore_data):
+        size = struct.unpack_from("<I", restore_data, offset)[0]
+        offset += 4
+        assert 0 < size <= 60 * 1024 and offset + size <= len(restore_data)
+        restore_records.append(json.loads(restore_data[offset:offset + size].decode("utf-8")))
+        offset += size
+    assert all(value in json.dumps(restore_records) for value in result["restore"]["nativeRequired"])
+    image_saved = pathlib.Path(result["images"]["savePath"])
+    image_copied = pathlib.Path(result["images"]["copyPath"])
+    assert all(path.resolve().is_relative_to(OUT.resolve()) and path.is_file() for path in (image_saved, image_copied))
+    assert image_saved.read_bytes() == (ROOT / "tests" / "animated-fixture.gif").read_bytes()
+    dib = image_copied.read_bytes()
+    assert len(dib) == 124 + 32 * 16 * 4
+    assert struct.unpack_from("<IiiHH", dib) == (124, 32, -16, 1, 32)
+    assert struct.unpack_from("<IIII", dib, 40) == (0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000)
+    assert dib[124:] == bytes((0, 0, 255, 255)) * (32 * 16), "Copy must contain the first red GIF frame"
     assert emoji_log.resolve().is_relative_to(OUT.resolve()) and emoji_log.is_file(), emoji_log
     emoji_text = emoji_log.read_text(encoding="utf-8")
     assert "fox dog face  warning :)" in emoji_text and "🦊" not in emoji_text, emoji_text
@@ -228,6 +263,15 @@ def run(phase):
     for fixture in fixtures:
         fixture.finish()
     a, b = [bytes(f.received) for f in fixtures]
+    pipeline_commands = ['/echo pipeline-literal-alpha', 'pipeline-escaped-alpha', 'pipeline-child-alpha', 'pipeline-parent-alpha', 'pipeline-send-alpha', 'pipeline-transmit-alpha', 'pipeline-order-one-alpha', 'pipeline-order-two-alpha', 'pipeline-trigger-alpha']
+    for command in pipeline_commands:
+        expected = (command + '\r\n').encode()
+        assert a.count(expected) == 1 and expected not in b, (command, a, b)
+    assert b'pipeline-' not in b, b
+    for marker in [b'pipeline-stale-alpha', b'pipeline-stale-queued-alpha', b'pipeline-blocked-alpha', b'pipeline-drop', b'pipeline-local']:
+        assert marker not in a + b, (marker, a, b)
+    assert a.index(b'pipeline-child-alpha') < a.index(b'pipeline-parent-alpha')
+    assert a.index(b'pipeline-order-one-alpha') < a.index(b'pipeline-order-two-alpha')
     assert a.count(b"temporal-next-alpha\r\n") == 2 and b"temporal-next-alpha\r\n" not in b, (phase, a, b)
     assert a.count(b"trigger-click-owner-alpha\r\n") == 1 and b"trigger-click-owner-alpha\r\n" not in b, (phase, a, b)
     for command, own, other in ((b"command-wall-alpha\r\n", a, b), (b"command-wall-beta\r\n", b, a), (b"command-idle-reset-alpha\r\n", a, b)):

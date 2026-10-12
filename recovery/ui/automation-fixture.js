@@ -4,13 +4,13 @@
 async function run(app,config){
  if(!window.BeipCoreTesting)throw Error('Test mode required.');
  const clone=x=>JSON.parse(JSON.stringify(x)),state=app.state,alpha=app.sessions.get('alpha'),beta=app.sessions.get('beta');
- const saved={aliases:clone(state.aliases),triggers:clone(state.triggers),preferences:clone(state.preferences),characters:clone(state.characters)},selected=app.current.id;
+ const saved={commandSettings:state.commandSettings,aliases:clone(state.aliases),triggers:clone(state.triggers),preferences:clone(state.preferences),characters:clone(state.characters)},selected=app.current.id;
  const result={},check=(key,value,details)=>{result[key]=!!value;if(!value)throw Error('Automation check failed: '+key+(details?' '+JSON.stringify(details):''));};
  const wait=async(fn,label)=>{const end=Date.now()+12000;while(!fn()){if(Date.now()>end)throw Error('Timed out: '+label);await new Promise(r=>setTimeout(r,30));}};
  const feed=async(session,text)=>{session.parser.feed(text+'\r\n');await session.pendingLineWork;};
  const scope={level:'character',serverId:alpha.worldId,characterId:alpha.characterId};
  try{
-  state.preferences.mediaEnabled=false;app.applyPreferences();
+  state.commandSettings={active:true,echo:false,processCommands:true,sendUnknown:false,legacyVariableAliases:false};state.preferences.mediaEnabled=false;app.applyPreferences();
   app.selectSession(beta.id);
   BeipClientCommands.handle('/set target=friend',alpha);BeipClientCommands.handle('/set target=other',beta);
   state.aliases=[{id:'automation-alias',scope,match:'^automation alias$',matchType:'regex',replacement:'automation-alias-%target%',expandVariables:true}];
@@ -50,14 +50,14 @@ async function run(app,config){
   staleAudio.stop();await wait(()=>staleStops()>oldStaleStops,'disconnected playback barrier');
   check('audioEpochIsolation',staleAudio.snapshot().events.every(e=>!['api-accepted','queued'].includes(e.status)));
   app.closeSession(stale.id);
-  beforeStop=stops();audio.speak('This queued speech is stopped when playback is disabled.');state.preferences.mediaEnabled=false;app.applyPreferences();
+  beforeStop=stops();audio.speak('This queued speech is stopped when playback is disabled.');state.commandSettings={active:true,echo:false,processCommands:true,sendUnknown:false,legacyVariableAliases:false};state.preferences.mediaEnabled=false;app.applyPreferences();
   await wait(()=>stops()>beforeStop,'audio stopped');
   check('audioDisabled',!audio.snapshot().enabled&&!audio.speak('Should never be queued.'));
   result.audioEvents=audio.snapshot().events;
  }finally{
   if(app.sessions.has('automation-stale'))app.closeSession('automation-stale');
   for(const id of ['classicTriggersDialog','classicAliasesDialog'])document.getElementById(id)?.close();
-  state.aliases=saved.aliases;state.triggers=saved.triggers;state.preferences=saved.preferences;state.characters=saved.characters;
+  state.commandSettings=saved.commandSettings;state.aliases=saved.aliases;state.triggers=saved.triggers;state.preferences=saved.preferences;state.characters=saved.characters;
   // Keep one synthetic value to verify persistence on the fixture's second launch.
   state.characters.find(c=>c.id===alpha.characterId).variables={automationSaved:'persisted'};
   app.applyPreferences();app.rebuildRules();app.selectSession(selected);const before=state.saveCount||0;app.saveSettings();await wait(()=>(state.saveCount||0)>before,'automation restoration save');

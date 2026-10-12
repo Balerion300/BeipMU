@@ -48,6 +48,7 @@ function editor(kind){
   <div class="classic-save-actions"><button type="button" data-action="apply">Apply</button><button type="button" data-action="ok">OK</button><button type="button" data-action="cancel">Cancel</button></div></div>`;
  document.body.append(dialog);
  const one=selector=>dialog.querySelector(selector);
+ if(alias){const settings=document.createElement('div');settings.className='classic-command-settings';settings.style.cssText='display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-bottom:1px solid var(--border)';settings.innerHTML='<label><input type="checkbox" data-command-setting="active"> Aliases active</label><label><input type="checkbox" data-command-setting="echo"> Echo expansion</label><label><input type="checkbox" data-command-setting="processCommands"> Process commands in aliases</label><label><input type="checkbox" data-command-setting="sendUnknown"> Send unknown commands</label><label><input type="checkbox" data-command-setting="legacyVariableAliases"> Preserve earlier recovery variable aliases</label>';one('.classic-title').after(settings);}
  let draft=[],selected=-1;
  const treeEditor=alias?BeipRuleTreeEditor.create({dialog,getItems:()=>draft,setItems:items=>{draft=items;},getSelected:()=>selected,setSelected:index=>{selected=index;},flush,renderEditor,choices:scopeChoices,scopeValue,scopeFrom,error:setError,prefix:'a'}):null;
  function field(name){return one('.classic-'+name);}
@@ -122,12 +123,13 @@ function editor(kind){
  }
  function apply(){
   if(!validate())return false;
-  if(alias){app().state.aliases=clone(draft);app().rebuildRules();}
+  if(alias){app().state.aliases=clone(draft);app().state.commandSettings=BeipProfiles.normalizeCommandSettings(Object.fromEntries([...dialog.querySelectorAll('[data-command-setting]')].map(input=>[input.dataset.commandSetting,input.checked])));app().rebuildRules();}
   else app().state.macros=clone(draft);
   app().saveSettings();setError('');return true;
  }
  function open(){
   draft=clone(alias?app().state.aliases:app().state.macros);selected=draft.length?0:-1;
+  if(alias){const settings=BeipProfiles.normalizeCommandSettings(app().state.commandSettings,true);for(const input of dialog.querySelectorAll('[data-command-setting]'))input.checked=!!settings[input.dataset.commandSetting];}
   fillScope();renderTree();renderEditor();if(!dialog.open)dialog.showModal();
  }
  one('.classic-close').onclick=()=>dialog.close();

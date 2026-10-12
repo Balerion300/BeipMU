@@ -110,3 +110,23 @@ Atlas shows room rectangles, exit polylines and background drawings in a shared
 layer canvas, with zoom, fit and owner-specific tracking. Packaged native floating
 map readiness/rendering is checked. The actual native titlebar-drop gesture
 remains unverified; successful floating-window creation is a narrower claim.
+
+## 0.12 comparison
+
+The original image pane's history, previous/next, clear, source and animation
+controls are represented in the shared dock/floating image view. Fit/100%, zoom,
+pan and native Save/Copy are recovery additions. Avatar width and minimum height
+preserve the image aspect ratio; live GMCP metadata changes update paused images.
+Visible pause is a snapshot, not a decoder stop. Original missing renderer code
+does not establish every original image control's exact behavior.
+
+Aliases expose original Active/Echo/ProcessCommands controls and an explicit
+legacy recovery setting. Restore Logs provides global/character enable, KiB buffer
+size rounded to 64 KiB, separate Clear, and reviewed original-file import with
+mapped character selection. These are functional counterparts to the original
+categories, with the replay and disable semantics documented in README.
+
+The reported Pueblo login screenshot was matched to actual public BR+LF input.
+A dedicated packaged rendering checks ordinary row adjacency, deliberate blank
+rows, columns, styled command links and PRE WHO output. The corrected screenshot
+is part of the packaged session evidence.

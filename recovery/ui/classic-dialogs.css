@@ -1,6 +1,10 @@
 /* Compact Windows-style editors for saved aliases and keyboard macros. */
 .classic-dialog{width:min(700px,calc(100vw - 20px));height:min(430px,calc(100vh - 28px));max-height:none;padding:0;border:1px solid #666;border-radius:0;background:#f0f0f0;color:#111;box-shadow:0 14px 32px #0006;font:12px "Segoe UI",Tahoma,sans-serif;overflow:hidden}
 .classic-dialog.classic-macros{width:min(650px,calc(100vw - 20px));height:min(420px,calc(100vh - 28px))}
+.classic-dialog.classic-aliases[open]{display:flex;flex-direction:column;height:min(500px,calc(100vh - 28px))}
+.classic-aliases .classic-title,.classic-aliases .classic-command-settings,.classic-aliases .classic-footer{flex-shrink:0}
+.classic-dialog.classic-aliases .classic-workspace{flex:1;height:auto;min-height:0}
+.classic-aliases .classic-editor{min-height:0;overflow:auto}
 .classic-dialog .classic-title{height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:#fff;border-bottom:1px solid #dedede}
 .classic-dialog .classic-title h2{margin:0;font:13px "Segoe UI",Tahoma,sans-serif;color:#111}
 .classic-dialog .classic-close{width:28px;height:26px;border:0;background:transparent;font:20px/1 "Segoe UI",sans-serif;padding:0}

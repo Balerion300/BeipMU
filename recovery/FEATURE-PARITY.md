@@ -293,3 +293,20 @@ Temporal, appearance, logging, emoji and command fixture details are maintained
 with the packaged session acceptance. They establish specific supported behavior,
 not exhaustive parity with the original executable. Restore.dat, image controls,
 full command/alias flag ordering and other open rows remain separate work.
+
+## Preview 0.12 source comparison
+
+Pueblo HTML now folds source newlines outside PRE; BR retains the visible break,
+literal spaces/tabs retain columns, and PRE/plain/MXP line handling stays separate.
+This fixes the reproduced public BoD login spacing reported by the user.
+
+Command queues carry session identity and connection epoch through awaited alias
+workers and hooks, with explicit nested continuation contexts. Source comparison
+follows Wnd_Main::SendLines/SendLine, ParseCommand and Connection::Send rather
+than treating every string as the same send path. Original global alias flags are
+available; remaining trigger continuation and native script gaps stay open.
+
+Restoration and image controls are implemented subsets as described in the current
+COMPLETION-CHECKLIST. Recovery snapshot replay intentionally avoids automation,
+and original Restore.dat import is read-only and requires reviewed slot metadata.
+Image native Save/Copy uses bounded system decoding and preserves session ownership.

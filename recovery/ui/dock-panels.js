@@ -113,7 +113,7 @@ function richNodes(nodes,depth,budget){
 function richLine(line){return {parts:richNodes(line.childNodes,0,{nodes:128,chars:8192})};}
 function floatData(session,type,model){
  if(type==='history')return {rows:session.history.slice(-200).reverse().map(x=>String(x).slice(0,2048))};
- if(type==='image')return {images:model.images.slice(-100),selected:Math.max(0,model.imageIndex)};
+ if(type==='image')return {images:model.images.slice(-100),state:{animate:!api().preferencesForSession(session).animatedImagesStartPaused,...model.imageState,selected:Math.max(0,model.imageIndex)},messageText:model.imageMessage||''};
  if(type==='notes'){const character=api().state.characters.find(x=>x.id===session.characterId),world=api().state.worlds.find(x=>x.id===session.worldId),profile=character||world,key=profile?(character?'character:':'world:')+profile.id:'';return {profileId:profile?.id||'',profileKind:character?'character':'world',name:profile?.name||'',text:key?(model.notesDrafts.get(key)??profile?.notes??''):''};}
  if(type==='map'){let graph;try{graph=BeipMapSessions.graph(session);}catch{graph=BeipMapper.createWorld();}const view=BeipMapSessions.get(session);return {worldId:session.worldId,graph:graph.serialize(),layerId:view.layerId,currentRoom:graph.currentRoom(),tracking:view.tracking,view:view.view,routeText:model.floatRoute||''};}
  if(type==='split')return {lines:(model.splitLines.length?model.splitLines:[...session.view.querySelectorAll('.line')]).slice(-200).map(richLine)};
@@ -121,7 +121,7 @@ function floatData(session,type,model){
  return {};
 }
 function floatAppearance(session){const prefs=api().preferencesForSession(session);return {font:prefs.outputFontFace||(prefs.fontFamily==='system'?'Segoe UI':'Courier New'),size:prefs.fontSize,foreground:prefs.outputForeground||'#c0c0c0',background:prefs.outputBackground||'#000000',bold:!!prefs.outputFontBold,italic:!!prefs.outputFontItalic,link:prefs.linkColor||'#67adff'};}
-function floatSnapshot(session,type,model){const data=floatData(session,type,model),snapshot={sessionId:session.id,type,edge:edgeFor(model,type),title:floatTitle(session,type),appearance:floatAppearance(session),data};let serialized=JSON.stringify(snapshot);while(new TextEncoder().encode(serialized).length>245760){const lists=[data.rows,data.lines,data.rooms,data.exits,data.images].filter(x=>Array.isArray(x)&&x.length>1).sort((a,b)=>b.length-a.length),list=lists[0];if(!list){snapshot.data={message:'This pane has too much content to display in a floating window.'};serialized=JSON.stringify(snapshot);break;}list.splice(0,Math.ceil(list.length/2));serialized=JSON.stringify(snapshot);}return serialized;}
+function floatSnapshot(session,type,model){const data=floatData(session,type,model),snapshot={sessionId:session.id,type,edge:edgeFor(model,type),title:floatTitle(session,type),appearance:floatAppearance(session),data};let serialized=JSON.stringify(snapshot);while(new TextEncoder().encode(serialized).length>245760){const lists=[data.rows,data.lines,data.rooms,data.exits,data.images].filter(x=>Array.isArray(x)&&x.length>1).sort((a,b)=>b.length-a.length),list=lists[0];if(!list){snapshot.data={message:'This pane has too much content to display in a floating window.'};serialized=JSON.stringify(snapshot);break;}const removed=Math.ceil(list.length/2);if(list===data.images)data.offset=(data.offset||0)+removed;list.splice(0,removed);serialized=JSON.stringify(snapshot);}return serialized;}
 function updateFloat(session,type){const model=sessionPanels.get(session?.id),id=model?.floatIds.get(type);if(!id)return;nativePost('float:update|'+id+'|'+encode64(floatSnapshot(session,type,model)));}
 function openFloat(session,type){const model=ensure(session);if(model.floatIds.has(type)){updateFloat(session,type);return;}if(floatOwners.size>=12){session.status='Floating window limit reached (12).';if(current()?.id===session.id)$('status').textContent=session.status;model.floating.delete(type);remember(session);queueMicrotask(()=>{if(current()?.id===session.id)render();});return;}
  const rect=model.floating.get(type)||{x:Math.max(40,innerWidth-500),y:80,width:420,height:400},id='fp'+Date.now().toString(36)+'_'+(nextFloatId++).toString(36);model.floatIds.set(type,id);floatOwners.set(id,{sessionId:session.id,type,profileKey:model.profileKey,ready:false,rendered:false});
@@ -168,9 +168,9 @@ function pasteAllWindowSettings(session=current()){
 }
 function selected(session=current()){cancelPaneDrag();if(session)ensure(session);render();}
 function closed(session){if(paneDrag?.session===session)cancelPaneDrag();const model=sessionPanels.get(session.id);if(model)for(const id of model.floatIds.values()){nativePost('float:close|'+id);floatOwners.delete(id);}sessionPanels.delete(session.id);}
-function clear(session){const model=session&&sessionPanels.get(session.id);if(!model)return;model.splitLines=[];model.images=[];for(const type of ['split','image'])updateFloat(session,type);if(current()?.id===session.id){for(const type of ['split','image'])if(paneVisible(model,type))refreshPane(type,session,model);}}
+function clear(session){const model=session&&sessionPanels.get(session.id);if(!model)return;model.splitLines=[];model.images=[];model.imageIndex=-1;model.imageState=undefined;for(const type of ['split','image'])updateFloat(session,type);if(current()?.id===session.id){for(const type of ['split','image'])if(paneVisible(model,type))refreshPane(type,session,model);}}
 function addHistory(session,text){const model=ensure(session);model.history.push(text);if(model.history.length>500)model.history.shift();updateFloat(session,'history');if(current()?.id===session.id&&paneVisible(model,'history'))refreshPane('history',session,model);}
-function addImage(session,event){if(!event?.url)return;const model=ensure(session),wasLatest=model.imageIndex<0||model.imageIndex===model.images.length-1;model.images.push({url:event.url,alt:String(event.alt||'Image').slice(0,160)});if(model.images.length>100){model.images.shift();if(!wasLatest)model.imageIndex=Math.max(0,model.imageIndex-1);}if(wasLatest)model.imageIndex=model.images.length-1;updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))refreshPane('image',session,model);}
+function addImage(session,event){if(!event?.url)return;const model=ensure(session),wasLatest=model.imageIndex<0||model.imageIndex===model.images.length-1;model.images.push({url:event.url,alt:String(event.alt||'Image').slice(0,160)});if(model.images.length>100){model.images.shift();if(!wasLatest)model.imageIndex=Math.max(0,model.imageIndex-1);}if(wasLatest){model.imageIndex=model.images.length-1;model.imageState={animate:model.imageState?.animate??!api().preferencesForSession(session).animatedImagesStartPaused};}if(!session.suppressAutomation&&api().preferencesForSession(session).autoImageViewer&&!model.order.includes('image')&&!model.floating.has('image'))open('image',session);updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))refreshPane('image',session,model);}
 function recordLine(session,line){const model=ensure(session);model.splitLines.push(line);if(model.splitLines.length>500)model.splitLines.shift();updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
 function refreshLine(session){const model=sessionPanels.get(session?.id);if(!model)return;updateFloat(session,'split');if(current()?.id===session.id&&paneVisible(model,'split'))refreshPane('split',session,model);}
 function removeLine(session,line){const model=sessionPanels.get(session?.id);if(!model)return;model.splitLines=model.splitLines.filter(item=>item!==line);refreshLine(session);}
@@ -203,12 +203,11 @@ function renderHistory(body,session,model){
  const draw=()=>{list.replaceChildren();for(const text of rows){if(!text.toLowerCase().includes(search.value.toLowerCase()))continue;const row=button(text,()=>{const input=$('input');input.value=text;input.focus();input.setSelectionRange(text.length,text.length);});row.className='dock-history-row';row.title='Place command in input';list.append(row);}};
  search.addEventListener('input',()=>{model.historyQuery=search.value;draw();});body.append(search);if(!rows.length)status(body,'Commands sent in this session appear here.');body.append(list);draw();
 }
-function renderImages(body,model){
- if(!model.images.length){status(body,'Images received in this session appear here.');return;}
- let at=Math.max(0,Math.min(model.images.length-1,model.imageIndex));const img=document.createElement('img');img.className='dock-image';const caption=document.createElement('p');caption.className='dock-hint';const show=()=>{model.imageIndex=at;const item=model.images[at];img.src=item.url;img.alt=item.alt;caption.textContent=`${at+1} / ${model.images.length} · ${item.alt}`;};
- const toolbar=document.createElement('div');toolbar.className='dock-toolbar';toolbar.append(button('Previous',()=>{at=Math.max(0,at-1);show();}),button('Next',()=>{at=Math.min(model.images.length-1,at+1);show();}),button('Open source',()=>window.chrome?.webview?.postMessage('external|'+model.images[at].url)));
- body.append(toolbar,img,caption);show();
+function renderImages(body,model,session){
+ const viewer=BeipImageView.mount(body,model.images,{state:{animate:!api().preferencesForSession(session).animatedImagesStartPaused,...model.imageState,selected:model.imageIndex},canSave:true,canCopy:true,onState:state=>{model.imageState=state;model.imageIndex=state.selected;},onAction:(action,item)=>BeipImageRuntime.request(session,action,model.images[item.index]?.url)});viewer.picture.classList.add('dock-image');viewer.root.imageViewer=viewer;
+ if(model.imageMessage)status(body,model.imageMessage);
 }
+function disposeImages(parent){for(const root of parent.querySelectorAll('.image-view'))root.imageViewer?.destroy();}
 function renderNotes(body,session,model){
  const character=api().state.characters.find(x=>x.id===session.characterId),world=api().state.worlds.find(x=>x.id===session.worldId),profile=character||world;
  if(!profile){status(body,'Select a saved character or world to keep notes.');return;}
@@ -246,14 +245,14 @@ function arrangementControl(type,session){
 }
 function renderPane(type,parent,session,model){
  const {section,body}=pane(type,type==='spawn'?(model.spawn.keys().next().value||kinds.spawn):kinds[type],session);parent.append(section);
- if(type==='map')renderMap(body,session);else if(type==='history')renderHistory(body,session,model);else if(type==='image')renderImages(body,model);else if(type==='notes')renderNotes(body,session,model);else if(type==='split')renderSplit(body,session,model);else if(type==='spawn')renderSpawn(body,model);
+ if(type==='map')renderMap(body,session);else if(type==='history')renderHistory(body,session,model);else if(type==='image')renderImages(body,model,session);else if(type==='notes')renderNotes(body,session,model);else if(type==='split')renderSplit(body,session,model);else if(type==='spawn')renderSpawn(body,model);
  if(type==='split'&&model.splitScroll){const next=section.querySelector('.dock-output-copy');if(next)next.scrollTop=model.splitScroll.bottom?next.scrollHeight:model.splitScroll.top;}
 }
 function refreshPane(type,session,model){
  const old=edgeNodes[edgeFor(model,type)].content.querySelector('[data-dock="'+type+'"]');if(!old)return;
  const focused=old.contains(document.activeElement)?document.activeElement:null,historyFocused=focused?.classList.contains('dock-history-search'),selection=historyFocused?{start:focused.selectionStart,end:focused.selectionEnd}:null;
  if(type==='split'){const scroll=old.querySelector('.dock-output-copy');if(scroll)model.splitScroll={top:scroll.scrollTop,bottom:scroll.scrollHeight-scroll.clientHeight-scroll.scrollTop<4};}
- const parent=document.createElement('div');renderPane(type,parent,session,model);const next=parent.firstElementChild;old.replaceWith(next);
+ const parent=document.createElement('div');renderPane(type,parent,session,model);const next=parent.firstElementChild;disposeImages(old);old.replaceWith(next);
  if(historyFocused){const field=next.querySelector('.dock-history-search');field?.focus();if(field&&selection)try{field.setSelectionRange(selection.start,selection.end);}catch{}}
 }
 function renderTree(node,parent,session,model,edge,path=[]){
@@ -275,7 +274,7 @@ function renderEdge(edge,session,model){
  const {host:sideHost,splitter:sideSplitter,tabs:sideTabs,content:sideContent}=edgeNodes[edge];if(model)normalizeModel(model);
  const visible=!!model?.trees[edge],historySearchFocused=document.activeElement?.classList?.contains('dock-history-search')&&sideContent.contains(document.activeElement),historySelection=historySearchFocused?{start:document.activeElement.selectionStart,end:document.activeElement.selectionEnd}:null;
  const previous=sideContent.querySelector('[data-dock="split"] .dock-output-copy'),previousModel=sessionPanels.get(sideContent.dataset.session);if(previous&&previousModel)previousModel.splitScroll={top:previous.scrollTop,bottom:previous.scrollHeight-previous.clientHeight-previous.scrollTop<4};
- sideHost.hidden=!visible;sideSplitter.hidden=!visible;sideTabs.replaceChildren();sideTabs.hidden=true;sideContent.replaceChildren();sideContent.dataset.session=session?.id||'';if(!visible)return;
+ sideHost.hidden=!visible;sideSplitter.hidden=!visible;sideTabs.replaceChildren();sideTabs.hidden=true;disposeImages(sideContent);sideContent.replaceChildren();sideContent.dataset.session=session?.id||'';if(!visible)return;
  renderTree(model.trees[edge],sideContent,session,model,edge);if(historySearchFocused){const input=sideContent.querySelector('.dock-history-search');input?.focus();if(input&&historySelection)try{input.setSelectionRange(historySelection.start,historySelection.end);}catch{}}
 }
 function render(){
@@ -317,6 +316,9 @@ function handleFloatEvent(id,event){
  if(action==='map-edit'&&type==='map'){api().selectSession(session.id);$('mapperButton')?.click();return true;}
  if(action==='link-command'&&type==='split'){if(typeof event.value!=='string'||event.value.length>4096)return false;const first=event.value.split('|')[0];if(!first)return false;api().command(first,event.prompt===true,session);return true;}
  if(action==='link-url'&&type==='split'){if(typeof event.value!=='string'||event.value.length>4096||!/^https?:\/\//i.test(event.value))return false;nativePost('external|'+event.value);return true;}
+ if(action==='image-loaded'&&type==='image'){if(event.index!==model.imageIndex||!Number.isFinite(event.width)||event.width<1||!Number.isFinite(event.height)||event.height<1)return false;owner.imageLoaded={width:event.width,height:event.height,paused:event.paused===true};return true;}
+ if(action==='image-state'&&type==='image'){model.imageState=BeipImageView.normalizeState(event.state,model.images.length);model.imageIndex=model.imageState.selected;return true;}
+ if(action==='image-action'&&type==='image'){const index=Number(event.index);if(!Number.isInteger(index)||!model.images[index])return false;return BeipImageRuntime.request(session,event.name,model.images[index].url);}
  if(action==='image-select'&&type==='image'){const at=Number(event.index);if(!Number.isInteger(at)||at<0||at>=model.images.length)return false;model.imageIndex=at;updateFloat(session,type);return true;}
  if(action==='image-open'&&type==='image'){const at=Number(event.index);if(!Number.isInteger(at)||at<0||at>=model.images.length)return false;nativePost('external|'+model.images[at].url);return true;}
  if(action==='spawn-select'&&type==='spawn'){if(typeof event.name!=='string'||!model.spawn.has(event.name))return false;model.spawnSelected=event.name;updateFloat(session,type);return true;}
@@ -344,7 +346,7 @@ function handleNative(message){
  if(message.startsWith('float:closed|')){const id=message.slice(13),owner=floatOwners.get(id),session=owner&&api().sessions.get(owner.sessionId);if(!session)return true;const model=ensure(session);if(floatOwners.get(id)!==owner||owner.profileKey!==model.profileKey)return true;model.floatIds.delete(owner.type);model.floating.delete(owner.type);model.order=model.order.filter(x=>x!==owner.type);floatOwners.delete(id);remember(session);if(current()?.id===session.id)render();return true;}
  return false;
 }
-function floatingStatus(session=current()){const model=session&&sessionPanels.get(session.id);if(!model)return [];return [...model.floatIds].map(([type,id])=>({type,id,ready:!!floatOwners.get(id)?.ready,rendered:!!floatOwners.get(id)?.rendered}));}
+function floatingStatus(session=current()){const model=session&&sessionPanels.get(session.id);if(!model)return [];return [...model.floatIds].map(([type,id])=>({type,id,ready:!!floatOwners.get(id)?.ready,rendered:!!floatOwners.get(id)?.rendered,...(type==='image'?{imageLoaded:floatOwners.get(id)?.imageLoaded}: {})}));}
 for(const edge of layout.EDGES){
  const sideSplitter=edgeNodes[edge].splitter;let drag=null;
  sideSplitter.addEventListener('pointerdown',event=>{if(event.button!==0)return;const session=current();if(!session)return;drag={session,startX:event.clientX,startY:event.clientY,size:ensure(session).sizes[edge]};sideSplitter.setPointerCapture(event.pointerId);event.preventDefault();});
@@ -353,6 +355,7 @@ for(const edge of layout.EDGES){
  sideSplitter.addEventListener('keydown',event=>{const grow=edge==='left'?'ArrowRight':edge==='right'?'ArrowLeft':edge==='top'?'ArrowDown':'ArrowUp',shrink=edge==='left'?'ArrowLeft':edge==='right'?'ArrowRight':edge==='top'?'ArrowUp':'ArrowDown';if(![grow,shrink,'Home','End'].includes(event.key))return;const session=current();if(!session)return;event.preventDefault();const model=ensure(session),minimum=edge==='bottom'?50:edge==='top'?90:edge==='right'?220:180,maximum=edge==='bottom'?400:edge==='top'?500:700;model.sizes[edge]=layout.dimension(event.key==='Home'?minimum:event.key==='End'?maximum:model.sizes[edge]+(event.key===grow?10:-10),edge);sideSplitter.setAttribute('aria-valuenow',String(model.sizes[edge]));document.documentElement.style.setProperty('--dock-'+edge+'-size',model.sizes[edge]+'px');remember(session);});
  sideSplitter.setAttribute('aria-valuenow',String(layout.DEFAULT_SIZE[edge]));
 }
+window.addEventListener('beip-image-action',event=>{const session=api()?.sessions.get(event.detail?.sessionId);if(!session)return;const model=ensure(session);model.imageMessage=session.status;updateFloat(session,'image');if(current()?.id===session.id&&paneVisible(model,'image'))refreshPane('image',session,model);});
 window.addEventListener('beip-map-position',event=>{const session=api()?.sessions.get(event.detail?.sessionId);if(!session)return;const model=ensure(session);if(current()?.id===session.id&&paneVisible(model,'map'))refreshPane('map',session,model);updateFloat(session,'map');});
 window.addEventListener('beip-map-updated',()=>{const session=current();if(!session)return;const model=ensure(session);if(paneVisible(model,'map'))refreshPane('map',session,model);updateFloat(session,'map');});
 window.BeipDockPanels={open,toggle,closePane,floatPane,dockPane,movePane,moveGroup,arrangePane,copyAllWindowSettings,pasteAllWindowSettings,selected,closed,clear,addHistory,addImage,recordLine,refreshLine,removeLine,routeSpawn,handleNative,floatingStatus,render};

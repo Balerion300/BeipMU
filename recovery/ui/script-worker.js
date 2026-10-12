@@ -68,9 +68,9 @@ const input=expose({
  get Length(){return context.input?.text?.length||0;}
 });
 const connection={
- send(value){value=String(value);if(!call('send',value))emit('send',value);},
+ send(value){value=bounded(value);if(!context.connected)return;effect({type:'send-event',value});if(!call('send',value))effect({type:'send',value,event:true});},
  Send(value){return connection.send(value);},
- transmit:value=>emit('send',value),Transmit:value=>emit('send',value),
+ transmit(value){if(context.connected)effect({type:'send',value:bounded(value),event:false});},Transmit(value){return connection.transmit(value);},
  display:value=>emit('display',value),Display:value=>emit('display',value),
  Receive(value){if(eventType==='line')throw Error('Receive during a Receive callback is not allowed; use Display.');emit('receive',value);},
  SetOnDisplay:(fn,data)=>hook('display',fn,data),

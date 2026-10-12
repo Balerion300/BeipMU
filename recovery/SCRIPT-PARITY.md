@@ -5,6 +5,12 @@ Audited 2026-10-12 against the checked-in original `Documentation/Scripting.md`,
 `src/OM_Props.idl`, and original object implementations. This is a living gap
 inventory, not a declaration of complete original compatibility.
 
+Preview 0.12 routes Run and hooked sends through an awaited, owner/epoch-bound
+dispatcher, carrying hook provenance so Send is not hooked twice and Transmit
+continues to bypass OnSend. Nested Run effects finish before their parent resumes;
+old alias worker results cannot send after reconnection. Full original native
+COM/filesystem compatibility and resumable trigger rule evaluation remain open.
+
 ## Evidence and discrepancies
 
 The complete original automation surface contains 33 IDL interfaces. The inventory
