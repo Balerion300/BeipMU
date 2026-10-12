@@ -17,7 +17,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.12" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.13" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -198,11 +198,11 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)
-        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}}
+        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}}
         assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
     emoji_log = pathlib.Path(result["emoji"]["logPath"])
     restore_id = result["restore"]["nativeCharacter"]
@@ -268,6 +268,8 @@ def run(phase):
         expected = (command + '\r\n').encode()
         assert a.count(expected) == 1 and expected not in b, (command, a, b)
     assert b'pipeline-' not in b, b
+    assert a.count(b'continuation-script-seen-ran-alpha\r\n') == 1, a
+    assert b'continuation-' not in b, b
     for marker in [b'pipeline-stale-alpha', b'pipeline-stale-queued-alpha', b'pipeline-blocked-alpha', b'pipeline-drop', b'pipeline-local']:
         assert marker not in a + b, (marker, a, b)
     assert a.index(b'pipeline-child-alpha') < a.index(b'pipeline-parent-alpha')

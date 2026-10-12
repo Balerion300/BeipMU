@@ -30,7 +30,7 @@ as described in README. The original source stays intact.
 | AI/settings (`Dlg_Settings`, `Wnd_Input`) | Open | Original local-model integration, model configuration and input actions; no credentials or live service use in tests |
 | User Data/settings (`Dlg_Settings`) | Open | Original paths, backup/import/export/move behavior and dialogs |
 | Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order, Active/Echo/ProcessCommands, owned awaited dispatch | Debugger, input prefixes and remaining exact compatibility limits |
-| Triggers (`Triggers.md`, `Connection`, `Dlg_Triggers`) | Partial: scoped/nested/repeated matches, multiline child windows, capture-only children, captured-group appearance, click-only commands, send/spawn/sound/script | Text-changing filter ordering, font/hash/flash/paragraph actions, exact multiline-send sequencing, untitled capture, full conditions/actions and debugger |
+| Triggers (`Triggers.md`, `Connection`, `Dlg_Triggers`) | Partial: scoped/nested/repeated matches, multiline child windows, capture-only children, captured-group appearance, click-only commands, resumable send/filter/script order and incremental text edits | Font/hash/flash/paragraph actions, reentrant receive and synchronous host-read behavior, untitled capture, full conditions/actions and debugger |
 | Find/history/editing (`Dlg_Find`, `Wnd_Input`) | Partial: direction/case/word/regex search and command replacement | Full history search/recall selection and editing semantics; editor windows |
 | Smart Paste (`Dlg_SmartPaste`) | Partial: text/file/clipboard preview, saved affixes, zero delay, pacing/cancel | Actual clipboard-read acceptance and exact scheduling/alias behavior |
 | Client commands (`CommandLine.md`, `Commands.cpp`) | Partial | Audit every command below; original source also has commands absent from the Markdown index |
@@ -187,3 +187,33 @@ checks command ownership/order, stale epoch cancellation, native saved-image and
 clipboard-format bytes, per-character restoration files, replay isolation, reviewed
 original import and settings persistence. The compiled Pueblo/MXP fixtures also
 passed with ordinary HTML spacing, inline images, clickable commands and WHO rows.
+
+## Preview 0.13 integration audit
+
+Trigger evaluation yields at send/script boundaries and refreshes live variables,
+away state and mutated text before child/later matching. Source order follows
+Connection.cpp: sound/speech, Send, toast, filter, script. Full-match replacement
+ranges update as in FindString; original captured-group ranges remain unchanged.
+Spawn output uses final processed text. Owner/epoch/worker changes cancel pending
+actions. Filters and explicit script edit records preserve unaffected links,
+images and listeners; prose offsets exclude image captions and avatar decorations.
+
+Remaining gaps include reentrant receive, synchronous cross-host script reads,
+prompt pseudo-receive, all original actions, COM/filesystem/language compatibility
+and original UTF-8 versus recovery UTF-16 indexing. Dynamic rule changes cancel
+pending work. Safe snapshot restoration does not use the raw replay capability.
+
+### Preview 0.13 final acceptance
+
+Fresh and persisted packaged sessions passed at sessions-20261012-092530,
+including the actual rule/script workers, exact native wire ownership, script
+range styling, link/image identity, intercepted commands, alias/script Run effects
+on later matching, and reconnect cancellation. The trigger-continuation screenshot
+was inspected. The expanded suite retains individual worker/operation deadlines;
+its total native watchdog is now 60 seconds.
+
+Restart testing also exposed and corrected historical GMCP avatar instructions
+leaking into a new live line. Snapshot replay now consumes historical one-line
+instructions and restores any pre-existing live pending instruction/request state.
+The image and restoration fixtures assert this boundary and decoded avatar geometry.
+Native/module builds and compiled Pueblo/MXP image/link/WHO fixtures passed.

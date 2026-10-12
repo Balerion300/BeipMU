@@ -18,10 +18,10 @@ async function run(app=window.BeipPreview){
   state.triggers=[{id:'parity-trigger-folder',folder:true,description:'Parity triggers',scope:{level:'server',serverId:world.id}},{id:'parity-trigger-parent',parentId:'parity-trigger-folder',match:'Game> ',filterText:'Event> ',stopProcessing:true,sendText:'parent'},{id:'parity-trigger-child',parentId:'parity-trigger-parent',match:'Event> bounty',sendText:'child'},{id:'parity-trigger-later',match:'bounty',sendText:'wrong',scope:{level:'server',serverId:world.id}}];
   const engine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers,workerEngine:true,allowRegex:true});
   const trigger=engine.processLine('Game> bounty',scope);
-  requireCheck('hierarchyEngine',engine.expandCommand('go east',scope).commands.join('|')==='run east'&&trigger.text==='Event> bounty'&&trigger.actions.map(action=>action.text).join('|')==='parent|child'&&engine.expandCommand('go east',{serverId:'other'}).commands[0]==='go east');
+  requireCheck('hierarchyEngine',engine.expandCommand('go east',scope).commands.join('|')==='run east'&&trigger.text==='Event> bounty'&&trigger.actions.filter(action=>action.type==='command').map(action=>action.text).join('|')==='parent|child'&&trigger.actions.map(action=>action.type).join('|')==='command|filter|command'&&trigger.actions.find(action=>action.type==='filter').text==='Event> '&&engine.expandCommand('go east',{serverId:'other'}).commands[0]==='go east');
   runtime=new BeipRegexRules.Runtime();runtime.start({aliases:state.aliases,triggers:state.triggers});
   const workerAlias=await runtime.expandCommand('go east',scope),workerTrigger=await runtime.processLine('Game> bounty',scope);
-  requireCheck('hierarchyWorker',workerAlias.commands.join('|')==='run east'&&workerTrigger.actions.map(action=>action.text).join('|')==='parent|child');runtime.stop();runtime=null;
+  requireCheck('hierarchyWorker',workerAlias.commands.join('|')==='run east'&&workerTrigger.actions.filter(action=>action.type==='command').map(action=>action.text).join('|')==='parent|child'&&workerTrigger.actions.map(action=>action.type).join('|')==='command|filter|command');runtime.stop();runtime=null;
   BeipClassicDialogs.openAliases();const aliases=document.getElementById('classicAliasesDialog');
   const row=label=>[...aliases.querySelectorAll('.classic-tree-item')].find(item=>item.textContent===label);
   row('Parity child').click();const selected=aliases.querySelector('.classic-tree-item[aria-selected=true]');

@@ -1,4 +1,20 @@
-# BeipMU recovery preview 0.12
+# BeipMU recovery preview 0.13
+
+Preview 0.13 runs triggers in original action order, suspending at sends and script
+callbacks before matching later rules. Alias expansion, intercepted commands and
+script variable/text edits therefore affect subsequent decisions. Filters and
+validated script edits update text ranges without replacing unaffected Pueblo/MXP
+links or image nodes. Caption/loading text is excluded from prose offsets.
+Queued work is cancelled if its session, connection or rule worker changes.
+Restored historical avatar instructions no longer attach to new live lines.
+
+This remains bounded recovery behavior: synchronous script-to-host reads, reentrant
+receive ordering, all trigger actions, Unicode index equivalence and native
+COM/filesystem compatibility remain open. Rule-tree changes cancel pending work;
+completed effects are not rolled back. Transcript snapshot replay remains separate
+and does not rerun automation.
+
+## Previous preview 0.12
 
 Preview 0.12 fixes doubled Pueblo line spacing in ordinary HTML output. The
 public Blood of Dragons login stream uses `<br>` followed by a transport newline;
@@ -12,7 +28,7 @@ results after a reconnect. Original alias Active, Echo and Process Commands
 controls and unrecognized-command behavior are available. Escaped commands,
 nested script Run, send hooks, broadcast and idle events use the owner's command
 path. Existing recovery profiles retain an explicitly labeled compatibility
-setting until changed. Exact resumable trigger ordering remains open.
+setting until changed. Preview 0.13 integrates resumable trigger ordering.
 
 Per-character restoration saves bounded structured output, history and GMCP state.
 Replaying saved output does not rerun triggers, scripts, sounds or sends; saved
@@ -180,7 +196,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.12-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.13-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in
@@ -315,3 +331,9 @@ The Sound editor screenshot was inspected. The standalone native audio fixture
 also passed queue bounds and owner-specific stopping. Pueblo/MXP image, command
 link and WHO-spacing fixtures passed. TLS code is unchanged; no fresh complete
 TLS verification or subjective listening verification is claimed.
+
+Preview 0.13 acceptance: fresh and persisted sessions passed at
+`sessions-20261012-092530`, including live interactive-node preservation, native
+wire ownership, callback cancellation and avatar replay isolation. Native/module
+checks and compiled Pueblo/MXP fixtures passed. The continuation screenshot was
+inspected. These checks establish the listed subset, not complete original parity.

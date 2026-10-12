@@ -21,6 +21,7 @@ async function run(app=window.BeipPreview,config={phase:'first'}){
    session.restoreController.capture({v:1,kind:'history',time:1700000000000,text:'restore fixture history'});
    session.restoreController.capture({v:1,kind:'line',time:1700000000001,parts:[{type:'image',url:'https://restore.invalid/never-fetched.png',alt:'Restored image placeholder',height:150}]});
    session.restoreController.capture({v:1,kind:'gmcp',time:1700000000002,package:'Beip.Stats',data:'{"Restore":{"values":{"saved":{"int":12}}}}'});
+   session.restoreController.capture({v:1,kind:'gmcp',time:1700000000003,package:'beip.line.id',data:'"historical-avatar-request"'});
    app.closeSession(session.id);
    armReplayTrap();
    session=app.createSession('restore-fixture-reopen',{worldId:world.id,characterId:character.id});await wait(()=>session.restoreController?.mode==='live','same-launch restored snapshot');
@@ -30,6 +31,7 @@ async function run(app=window.BeipPreview,config={phase:'first'}){
   const link=session.view.querySelector('a[data-kind=command]');check('linksStylesSpacing',link?.dataset.value==='/set restore_unexpected=true'&&link.textContent==='RESTORE FIXTURE  Name  Idle'&&link.style.color==='rgb(17, 170, 238)'&&link.style.fontWeight==='bold');
   check('imagesDoNotFetch',session.view.querySelectorAll('img').length===0&&session.view.querySelector('.restore-image')?.textContent.includes('Restored image placeholder'));
   check('noCommandSideEffects',app.variablesForSession(session).restore_unexpected===undefined&&!session.connected&&session.gmcp.rows().some(row=>JSON.stringify(row).includes('12')));
+  check('historicalAvatarDoesNotLeak',session.gmcp.nextLine===null&&!session.gmcp.requests.has('historical-avatar-request'));
   check('restoredCaptureSkipped',BeipRestoreRuntime.fromLine(session.view.querySelector('[data-restore-replay]'))===null);
   const length=session.view.querySelectorAll('[data-restore-replay]').length;session.connectionEpoch=1;app.configureRestore(session);await wait(()=>session.restoreController?.mode==='live','epoch rebound');check('reconnectDoesNotDuplicate',session.view.querySelectorAll('[data-restore-replay]').length===length);
   const oldController=session.restoreController;session.connectionEpoch=2;app.configureRestore(session);oldController.message('restorebegin:'+character.id+':1:0');check('staleEpochIgnored',oldController.mode==='cancelled');

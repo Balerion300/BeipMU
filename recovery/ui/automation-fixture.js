@@ -40,9 +40,9 @@ async function run(app,config){
   check('soundEditor',result.soundEditorDetails.speechBottom<=result.soundEditorDetails.editorBottom&&field('soundEnabled').checked&&field('soundPath').value===config.audioPath&&field('speechEnabled').checked&&field('speechText').value==='Saved voice text'&&field('awayCondition').value==='away'&&field('awayOnce').checked&&!field('oncePerLine').checked,result.soundEditorDetails);
   dialog.querySelector('[data-action="cancel"]').click();
   const stale=app.createSession('automation-stale',{worldId:alpha.worldId,characterId:alpha.characterId,label:'Stale audio test'});
-  const originalProcess=stale.ruleRuntime.processLine.bind(stale.ruleRuntime);let release,started=false;
+  const originalProcess=stale.ruleRuntime.beginLine.bind(stale.ruleRuntime);let release,started=false;
   const gate=new Promise(resolve=>{release=resolve;});
-  stale.ruleRuntime.processLine=async(...args)=>{const value=await originalProcess(...args);started=true;await gate;return value;};
+  stale.ruleRuntime.beginLine=async(...args)=>{const value=await originalProcess(...args);started=true;await gate;return value;};
   stale.parser.feed('AUTOMATION AUDIO\r\n');await wait(()=>started,'delayed real worker result');
   stale.parser.feed('AUTOMATION AUDIO'); // A partial final line must not restart audio on disconnect.
   app.incoming('session:'+stale.id+':ended:');release();await stale.pendingLineWork;

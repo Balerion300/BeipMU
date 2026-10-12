@@ -2,7 +2,7 @@
 'use strict';
 (function(){
 const post=postMessage.bind(self),MAX_EFFECTS=32,MAX_VALUE=8192,MAX_TIMERS=16;
-let effects=[],context={},windowData=null,nextTimer=1,clientGMCP=null,eventType='',resultLine=null;
+let effects=[],context={},windowData=null,nextTimer=1,clientGMCP=null,eventType='',resultLine=null,resultEdits=null;
 const hooks=new Map(),timers=new Map();
 function expose(object){for(const key of Object.getOwnPropertyNames(object)){const lower=key.toLowerCase();if(!(lower in object))Object.defineProperty(object,lower,Object.getOwnPropertyDescriptor(object,key));}return Object.freeze(object);}
 function effect(item){if(effects.length>=MAX_EFFECTS)throw Error('Script action limit exceeded.');effects.push(item);}
@@ -12,16 +12,17 @@ const lineData=new WeakMap();
 function htmlEscape(value){return value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function color(value){value=Number(value);if(!Number.isInteger(value)||value<0||value>0xffffff)throw Error('Color must be a Windows RGB value.');return '#'+[value&255,(value>>>8)&255,(value>>>16)&255].map(x=>x.toString(16).padStart(2,'0')).join('');}
 function lineObject(text,html=false){
- const state={chars:[],changed:false};let style={};text=bounded(text);
+ const state={chars:[],changed:false,edits:[]};let style={};text=bounded(text);
  const add=value=>{for(const char of value.split(''))state.chars.push({char,style:{...style}});};
  if(html){const stack=[];for(const token of text.match(/<[^>]*>|[^<]+|</g)||[]){if(token[0]!=='<'){add(token.replace(/&(amp|lt|gt|quot|apos|nbsp|#\d+|#x[\da-f]+);/gi,(all,key)=>{const named={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};if(named[key])return named[key];const n=key[1]?.toLowerCase()==='x'?parseInt(key.slice(2),16):Number(key.slice(1));return Number.isSafeInteger(n)&&n>=0&&n<=0x10ffff?String.fromCodePoint(n):all;}));continue;}
   const m=/^<\s*(\/?)\s*([a-z]+)\b([^>]*)>/i.exec(token);if(!m)continue;const name=m[2].toLowerCase();if(m[1]){const at=stack.map(x=>x.name).lastIndexOf(name);if(at>=0){style=stack[at].style;stack.splice(at);}continue;}if(name==='br'){add('\n');continue;}if(['b','strong','i','em','u','s','strike','font'].includes(name)){stack.push({name,style:{...style}});const attr={b:'bold',strong:'bold',i:'italic',em:'italic',u:'underline',s:'strike',strike:'strike'}[name];if(attr)style[attr]=true;if(name==='font'){const c=/\bcolor\s*=\s*["']?(#[\da-f]{6}|[a-z]+)\b/i.exec(m[3]);if(c)style.color=c[1];}}
  }}else add(text);
  const range=(start,end)=>{start=Number(start);end=Number(end);if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>state.chars.length)throw Error('Invalid text range.');return [start,end];};
- const set=(key,start,end,value)=>{[start,end]=range(start,end);for(let i=start;i<end;i++)state.chars[i].style[key]=value;state.changed=true;};
+ const record=edit=>{if(state.edits.length>=128)throw Error('Line edit limit exceeded.');state.edits.push(edit);};
+ const set=(key,start,end,value)=>{[start,end]=range(start,end);record({type:'style',start,end,style:{[key]:value}});for(let i=start;i<end;i++)state.chars[i].style[key]=value;state.changed=true;};
  const object={get String(){return state.chars.map(x=>x.char).join('');},get Length(){return state.chars.length;},get HTMLString(){return lineHTML(object);},
-  Delete(start,end){[start,end]=range(start,end);state.chars.splice(start,end-start);state.changed=true;},
-  Insert(position,line){range(position,position);const source=lineData.get(line);if(!source||source===state)throw Error('Insert expects a different TextWindowLine.');if(state.chars.length+source.chars.length>MAX_VALUE)throw Error('Text line is too long.');state.chars.splice(position,0,...source.chars.map(x=>({char:x.char,style:{...x.style}})));state.changed=true;},
+  Delete(start,end){[start,end]=range(start,end);record({type:'delete',start,end});state.chars.splice(start,end-start);state.changed=true;},
+  Insert(position,line){range(position,position);const source=lineData.get(line);if(!source||source===state)throw Error('Insert expects a different TextWindowLine.');if(state.chars.length+source.chars.length>MAX_VALUE)throw Error('Text line is too long.');record({type:'insert',at:position,line:lineSnapshot(line)});state.chars.splice(position,0,...source.chars.map(x=>({char:x.char,style:{...x.style}})));state.changed=true;},
   Color:(start,end,value=0)=>set('color',start,end,color(value)),BgColor:(start,end,value=0)=>set('background',start,end,color(value)),
   Bold:(start,end,value=true)=>set('bold',start,end,!!value),Italic:(start,end,value=true)=>set('italic',start,end,!!value),Underline:(start,end,value=true)=>set('underline',start,end,!!value),Strikeout:(start,end,value=true)=>set('strike',start,end,!!value),
   Flash:()=>unsupported('TextWindowLine.Flash'),FlashMode:()=>unsupported('TextWindowLine.FlashMode'),Blink:()=>unsupported('TextWindowLine.Blink')};
@@ -145,7 +146,7 @@ function triggerRanges(values){
 async function run(type,value){
  if(type==='eval'){const result=(0,eval)(String(value));if(result&&typeof result.then==='function')await result;return false;}
  if(type==='line')return call('receive',String(value));
- if(type==='display'){const line=fromSnapshot(value);const handled=call('display',line);if(lineData.get(line).changed)resultLine=lineSnapshot(line);return handled;}
+ if(type==='display'){const line=fromSnapshot(value);const handled=call('display',line);if(lineData.get(line).changed){resultLine=lineSnapshot(line);resultEdits=lineData.get(line).edits;}return handled;}
  if(type==='activate')return call('activate',value==='true'||value===true);
  if(type==='close')return call('close');
  if(type==='pause')return call('pause',output,value==='true'||value===true);
@@ -167,17 +168,17 @@ async function run(type,value){
   const name=String(value?.name||'');if(!/^[A-Za-z_$][\w$]{0,79}$/.test(name))throw Error('Trigger script name is invalid.');
   const fn=self[name];if(typeof fn!=='function')throw Error('Trigger script '+name+' was not found.');
   const text=String(value?.text||'');
-  const line=lineObject(text);const handled=fn(windowObject,line,triggerRanges(value?.ranges))===true;
-  if(lineData.get(line).changed)resultLine=lineSnapshot(line);return handled;
+  const line=value?.line?fromSnapshot(value.line):lineObject(text);const handled=fn(windowObject,line,triggerRanges(value?.ranges))===true;
+  if(lineData.get(line).changed){resultLine=lineSnapshot(line);resultEdits=lineData.get(line).edits;}return handled;
  }
  return false;
 }
 self.onmessage=async event=>{
- const {id,type,value}=event.data||{};effects=[];resultLine=null;eventType=type;
+ const {id,type,value}=event.data||{};effects=[];resultLine=null;resultEdits=null;eventType=type;
  try{
   if(event.data?.context&&typeof event.data.context==='object')context=event.data.context;
   const handled=await run(type,value);
-  post({id,handled,effects,...(resultLine?{line:resultLine}:{})});
+  post({id,handled,effects,...(resultLine?{line:resultLine,lineEdits:resultEdits}:{})});
  }catch(error){
   // No partial commands or display updates escape a failed script event.
   effects=[];post({id,handled:false,effects,error:String(error?.message||error).slice(0,512)});

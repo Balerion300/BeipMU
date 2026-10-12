@@ -17,6 +17,12 @@ self.onmessage=event=>{
    ?engine.expandCommand(job.value,job.scope)
    :job.type==='line'
     ?engine.processLine(job.value,job.scope,job.nowMs)
+    :job.type==='begin-line'
+     ?engine.beginLine(job.value.text,job.scope,job.nowMs,job.value.flags)
+    :job.type==='continue-line'
+     ?engine.continueLine(job.value.continuationId,job.value.response)
+    :job.type==='cancel-line'
+     ?engine.cancelLine(job.value.continuationId)
     :job.type==='cancel-capture'
      ?engine.cancelCapture(job.scope)
     :job.type==='reset-temporal'

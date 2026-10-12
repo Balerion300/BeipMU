@@ -48,6 +48,30 @@ function validEffect(item){
  if(item.type==='timer-stop'&&Number.isSafeInteger(item.id)&&item.id>0)return {type:item.type,id:item.id};
  return null;
 }
+function validLineEdits(input,edits,output){
+ const initial=typeof input==='string'?validLine({text:input,runs:[{text:input,style:{}}]}):validLine(input);
+ if(!initial||!output||!Array.isArray(edits)||edits.length>128)return null;
+ const chars=line=>line.runs.flatMap(run=>run.text.split('').map(char=>({char,style:{...run.style}}))),values=chars(initial),safe=[];
+ const range=(start,end)=>Number.isSafeInteger(start)&&Number.isSafeInteger(end)&&start>=0&&end>=start&&end<=values.length;
+ for(const edit of edits){
+  if(!edit||typeof edit!=='object')return null;
+  if(edit.type==='delete'){if(!range(edit.start,edit.end))return null;values.splice(edit.start,edit.end-edit.start);safe.push({type:'delete',start:edit.start,end:edit.end});}
+  else if(edit.type==='insert'){const line=validLine(edit.line);if(!range(edit.at,edit.at)||!line||values.length+line.text.length>MAX_VALUE)return null;values.splice(edit.at,0,...chars(line));safe.push({type:'insert',at:edit.at,line});}
+  else if(edit.type==='style'){
+   if(!range(edit.start,edit.end)||!edit.style||typeof edit.style!=='object')return null;const style={};
+   for(const [key,value] of Object.entries(edit.style)){
+    if(['bold','italic','underline','strike'].includes(key)&&typeof value==='boolean')style[key]=value;
+    else if(['color','background'].includes(key)&&typeof value==='string'&&/^(#[\da-f]{6}|[a-z]{1,20})$/i.test(value))style[key]=value;
+    else return null;
+   }
+   for(let i=edit.start;i<edit.end;i++)for(const [key,value] of Object.entries(style)){if(value===false)delete values[i].style[key];else values[i].style[key]=value;}
+   safe.push({type:'style',start:edit.start,end:edit.end,style});
+  }else return null;
+ }
+ const expected=chars(output),keys=['bold','italic','underline','strike','color','background'];
+ if(values.length!==expected.length||values.some((item,i)=>item.char!==expected[i].char||keys.some(key=>item.style[key]!==expected[i].style[key])))return null;
+ return safe;
+}
 class Runtime{
  constructor(onEffects,onError,WorkerClass=root.Worker,timerAPI={}){
   this.onEffects=typeof onEffects==='function'?onEffects:()=>{};
@@ -80,7 +104,8 @@ class Runtime{
   if(context!==undefined)this.context=contextOf(context);
   if(type==='trigger'){
    const trigger=value&&typeof value==='object'?value:{};
-   value={name:label(trigger.name,80),text:label(trigger.text,MAX_VALUE),ranges:Array.isArray(trigger.ranges)?trigger.ranges.slice(0,32).map(x=>Number.isSafeInteger(x)?x:0):[]};
+   const snapshot=validLine(trigger.line);
+   value={name:label(trigger.name,80),text:label(trigger.text,MAX_VALUE),ranges:Array.isArray(trigger.ranges)?trigger.ranges.slice(0,32).map(x=>Number.isSafeInteger(x)?x:0):[],...(snapshot&&snapshot.text===trigger.text?{line:snapshot}:{})};
   }else if(type==='display'&&value&&typeof value==='object'){value=validLine(value)||{text:label(value.text,MAX_VALUE),runs:[]};}
   else value=String(value).slice(0,type==='eval'?MAX_SOURCE:MAX_VALUE);
   return new Promise(resolve=>{this.queue.push({id:++this.serial,type,value,context:this.context,captureEffects:options.captureEffects===true,resolve});this.next();});
@@ -111,6 +136,9 @@ class Runtime{
   this.clearTimer(this.watchdog);this.watchdog=null;this.current=null;
   if(data.error){this.fail('Script error: '+String(data.error).slice(0,512));job.resolve({...empty(),failed:true});return;}
   if(!Array.isArray(data.effects)||data.effects.length>MAX_EFFECTS){this.fail('Script action limit exceeded.');job.resolve({...empty(),failed:true});return;}
+  const line=validLine(data.line),initial=job.type==='trigger'?(job.value.line||job.value.text):job.value;
+  const lineEdits=line?validLineEdits(initial,data.lineEdits,line):null;
+  if(data.line!==undefined&&(!line||!lineEdits)){this.fail('Script line edits did not match the validated result.');job.resolve({...empty(),failed:true});return;}
   const effects=[];
   try{
    for(const raw of data.effects){const effect=validEffect(raw);if(!effect)continue;
@@ -121,7 +149,7 @@ class Runtime{
    }
    if(effects.length&&!job.captureEffects)this.onEffects(effects,{type:job.type,context:job.context});
   }catch(error){this.fail('Script effect failed: '+String(error?.message||error));job.resolve({...empty(),failed:true});return;}
-  const line=validLine(data.line);job.resolve({handled:data.handled===true,effects,...(line?{line}:{})});this.next();
+  job.resolve({handled:data.handled===true,effects,...(line?{line,lineEdits}:{})});this.next();
  }
  fail(message){this.stop();this.onError(message);}
  stop(){
@@ -132,5 +160,5 @@ class Runtime{
   for(const job of jobs)job?.resolve({...empty(),failed:true});
  }
 }
-const api={Runtime,contextOf,validEffect,validLine};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.BeipScripts=api;
+const api={Runtime,contextOf,validEffect,validLine,validLineEdits};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.BeipScripts=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

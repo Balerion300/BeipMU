@@ -5,13 +5,39 @@ const byId=id=>document.getElementById(id),send=value=>window.chrome?.webview?.p
 const api=()=>window.BeipPreview;
 function base64(value){const bytes=new TextEncoder().encode(value);let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);}
 function decode(value){return new TextDecoder().decode(Uint8Array.from(atob(value),x=>x.charCodeAt(0)));}
-function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),input:{text:active?input.value:s.draft||'',start:active?input.selectionStart:s.draftSelection?.start||0,end:active?input.selectionEnd:s.draftSelection?.end||0},buildNumber:10,version:10};}
+function context(s){const a=api(),input=byId('input'),active=a.current===s,characters=new Map();for(const c of a.state.characters){const list=characters.get(c.worldId)||[];list.push({id:c.id,name:c.name,notes:c.notes});characters.set(c.worldId,list);}const worlds=a.state.worlds.map(w=>({...w,characters:characters.get(w.id)||[]}));return {sessionId:s.id,title:s.label,titlePrefix:s.scriptTitlePrefix||'',variables:a.variablesForSession(s),paused:!!s.paused,canReconnect:!!a.reconnectSession&&!!(s.worldId||s.host),logFileName:s.logPath||'',connected:s.connected,logging:s.logging,world:worlds.find(w=>w.id===s.worldId),character:a.state.characters.find(c=>c.id===s.characterId),worlds,windows:[...a.sessions.values()].map(w=>({id:w.id,title:w.label})),input:{text:active?input.value:s.draft||'',start:active?input.selectionStart:s.draftSelection?.start||0,end:active?input.selectionEnd:s.draftSelection?.end||0},buildNumber:13,version:13};}
 function applyLine(node,snapshot){const line=BeipScripts.validLine(snapshot);if(!line)return;const fragment=document.createDocumentFragment();for(const run of line.runs){const span=document.createElement('span');span.textContent=run.text;const st=run.style;if(st.color)span.style.color=st.color;if(st.background)span.style.backgroundColor=st.background;if(st.bold)span.style.fontWeight='bold';if(st.italic)span.style.fontStyle='italic';span.style.textDecoration=[st.underline?'underline':'',st.strike?'line-through':''].filter(Boolean).join(' ');fragment.append(span);}node.replaceChildren(fragment);}
-function snapshotLine(node){const runs=[],walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let textNode;while((textNode=walker.nextNode())){if(runs.length>=512)return node.textContent;const css=getComputedStyle(textNode.parentElement),style={};for(const [key,property] of [['color','color'],['background','backgroundColor']]){const match=/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(css[property]);if(match)style[key]='#'+match.slice(1).map(x=>Number(x).toString(16).padStart(2,'0')).join('');}if(Number(css.fontWeight)>=600||css.fontWeight==='bold')style.bold=true;if(css.fontStyle==='italic')style.italic=true;if(css.textDecorationLine.includes('underline'))style.underline=true;if(css.textDecorationLine.includes('line-through'))style.strike=true;runs.push({text:textNode.data,style});}return {text:node.textContent,runs};}
-async function beforeDisplay(s,line){if(!s.scripts?.enabled)return false;const epoch=s.connectionEpoch,result=await dispatch(s,'display',snapshotLine(line));if(api().sessions.get(s.id)!==s||s.connectionEpoch!==epoch)return true;if(result.line)applyLine(line,result.line);return result.handled;}
+function snapshotLine(node){
+ const runs=[],nodes=window.BeipLineEdits?.textNodes(node)||(()=>{const values=[],walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let text;while((text=walker.nextNode()))values.push(text);return values;})();
+ const text=nodes.map(n=>n.data).join('');
+ for(const textNode of nodes){
+  if(runs.length>=512)return text;
+  const css=getComputedStyle(textNode.parentElement),style={};
+  for(const [key,property] of [['color','color'],['background','backgroundColor']]){const match=/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/.exec(css[property]);if(match)style[key]='#'+match.slice(1).map(x=>Number(x).toString(16).padStart(2,'0')).join('');}
+  if(Number(css.fontWeight)>=600||css.fontWeight==='bold')style.bold=true;if(css.fontStyle==='italic')style.italic=true;
+  // Decorations propagate from ancestors even when the computed leaf value is none.
+  for(let parent=textNode.parentElement;parent;parent=parent.parentElement){const decoration=getComputedStyle(parent).textDecorationLine||'';if(decoration.includes('underline'))style.underline=true;if(decoration.includes('line-through'))style.strike=true;if(parent===node)break;}
+  runs.push({text:textNode.data,style});
+ }
+ return {text,runs};
+}
+async function beforeDisplay(s,line){if(!s.scripts?.enabled)return false;const epoch=s.connectionEpoch,result=await dispatch(s,'display',snapshotLine(line));if(api().sessions.get(s.id)!==s||s.connectionEpoch!==epoch)return true;if(result.line){if(!window.BeipLineEdits||!Array.isArray(result.lineEdits))throw Error('Script line editing is unavailable.');window.BeipLineEdits.applyScriptEdits(line,result.lineEdits);}return result.handled;}
 function followEffects(s,fn){const worker=s.scripts?.worker,epoch=s.connectionEpoch;queueMicrotask(()=>{if(api().sessions.get(s.id)===s&&s.scripts?.worker===worker&&s.connectionEpoch===epoch)fn();});}
 function allowChainedAction(s){const now=Date.now();if(!s.scriptActionWindow||now-s.scriptActionWindow.start>1000)s.scriptActionWindow={start:now,count:0};if(++s.scriptActionWindow.count>128){s.scripts.fail('Script stopped: recursive command or display limit exceeded.');return false;}return true;}
-async function dispatch(s,type,value){initialize(s);const epoch=s.connectionEpoch,result=await s.scripts.dispatch(type,value,context(s),{captureEffects:true});if(api().sessions.get(s.id)!==s||s.connectionEpoch!==epoch)return {handled:true,effects:[]};if(result.failed)throw Error('Script callback failed or was stopped.');if(result.effects.length)await api().commandPipeline.effects(s,result.effects,{source:'script-'+type});return result;}
+async function dispatch(s,type,value){initialize(s);const epoch=s.connectionEpoch,runtime=s.scripts,worker=runtime.worker,valid=()=>api().sessions.get(s.id)===s&&s.connectionEpoch===epoch&&s.scripts===runtime&&runtime.worker===worker;const result=await runtime.dispatch(type,value,context(s),{captureEffects:true});if(!valid())return {handled:true,effects:[]};if(result.failed)throw Error('Script callback failed or was stopped.');if(result.effects.length)await api().commandPipeline.effects(s,result.effects,{source:'script-'+type,validate:valid});return valid()?result:{handled:true,effects:[]};}
+async function dispatchTriggerCaptured(s,action,execution){
+ if(!execution?.isCurrent())throw Error('Trigger execution is no longer current.');
+ if(!s.scripts?.enabled)return {handled:false,effects:[]};
+ const runtime=s.scripts,worker=runtime.worker,epoch=s.connectionEpoch;
+ const valid=()=>api().sessions.get(s.id)===s&&s.connectionEpoch===epoch&&s.scripts===runtime&&runtime.worker===worker&&execution.isCurrent();
+ if(!valid())throw Error('Trigger script owner or worker changed.');
+ const result=await runtime.dispatch('trigger',action,context(s),{captureEffects:true});
+ if(!valid())throw Error('Trigger script owner or worker changed.');
+ if(result.failed)throw Error('Trigger script callback failed or was stopped.');
+ await api().commandPipeline.drain(execution,result.effects);
+ if(!valid())throw Error('Trigger script owner or worker changed.');
+ return {...result,effects:[]};
+}
 function applyEffects(s,effects,execution){
  if(api().sessions.get(s.id)!==s||execution&&!execution.isCurrent())return;for(const e of effects){if(e.type==='input-set'){
   s.draft=e.value;s.draftSelection={start:e.value.length,end:e.value.length};if(api().current===s){byId('input').value=e.value;byId('input').setSelectionRange(e.value.length,e.value.length);}
@@ -80,7 +106,7 @@ async function handleCommand(value,s,execution,options={}){
 let found=[],foundAt=-1;
 function findReset(){for(const node of found)node.classList.remove('find-hit');found=[];foundAt=-1;byId('findCount').textContent='';}
 function findNext(step){findReset();const value=byId('findText').value.toLocaleLowerCase();if(!value)return;const session=api().current;if(!session)return;found=[...session.view.querySelectorAll('.line')].filter(e=>e.textContent.toLocaleLowerCase().includes(value));for(const node of found)node.classList.add('find-hit');foundAt=step<0?found.length-1:0;if(found.length)found[foundAt].scrollIntoView({block:'center'});byId('findCount').textContent=found.length+' matching lines';}
-window.BeipFeatures={initialize,attachLine,incoming,completeLine,selected,closed,handleCommand,dispatch,context,applyLine,applyEffects,beforeDisplay};
+window.BeipFeatures={initialize,attachLine,incoming,completeLine,selected,closed,handleCommand,dispatch,dispatchTriggerCaptured,context,applyLine,applyEffects,beforeDisplay,snapshotLine};
 byId('findButton').onclick=()=>{byId('findBar').hidden=!byId('findBar').hidden;if(!byId('findBar').hidden)byId('findText').focus();else findReset();};
 byId('findForm').onsubmit=e=>{e.preventDefault();const query=byId('findText').value.toLocaleLowerCase();const s=api().current;if(!s)return;const next=[...s.view.querySelectorAll('.line')].filter(e=>query&&e.textContent.toLocaleLowerCase().includes(query));if(!next.length){findReset();byId('findCount').textContent='No matches';return;}if(next.length!==found.length||next.some((n,i)=>n!==found[i]))findNext(1);else{foundAt=(foundAt+1)%found.length;found[foundAt].scrollIntoView({block:'center'});byId('findCount').textContent=(foundAt+1)+' / '+found.length;}};
 byId('exportButton').onclick=()=>{const s=api().current;if(s)send('export|'+(s.kind==='spawn'?s.parentId:s.id)+'|'+base64([...s.view.querySelectorAll('.line')].map(e=>e.textContent).join('\r\n')));};

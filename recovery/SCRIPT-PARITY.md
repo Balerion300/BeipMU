@@ -9,7 +9,8 @@ Preview 0.12 routes Run and hooked sends through an awaited, owner/epoch-bound
 dispatcher, carrying hook provenance so Send is not hooked twice and Transmit
 continues to bypass OnSend. Nested Run effects finish before their parent resumes;
 old alias worker results cannot send after reconnection. Full original native
-COM/filesystem compatibility and resumable trigger rule evaluation remain open.
+COM/filesystem compatibility remains open; preview 0.13 integrates resumable
+trigger rule evaluation and validated incremental line edits.
 
 ## Evidence and discrepancies
 
@@ -60,7 +61,7 @@ disagreement instead of silently advertising both contracts:
 | Connection | Send/Transmit, Receive/Display, hooks, connection/log status, World/Character/Window_Main, null Puppet, Log, Reconnect eligibility | Receive injects decoded parser text, not original raw telnet bytes. Receive from its own receive callback fails. Reconnect returns eligibility, actual connection completes asynchronously. Display requires host pipeline integration to run triggers without repeating Receive. |
 | Window_Input | Get/Set, SetSel, GetSelStart/GetSelEnd, Length | Prefix/Title and secondary inputs remain gaps; negative EM_SETSEL semantics remain different. |
 | Window_Text | Write/WriteHTML, Create/CreateHTML/Add, Paused, pause hook registration, Properties.Title read | CreateHTML supports basic safe emphasis/font/entity text only; does not create images, links, complete original HTML or native window properties. Host must dispatch pause changes. |
-| TextWindowLine | String/Length/HTMLString, Insert/Delete, Color/BgColor, Bold/Italic/Underline/Strikeout | Windows COLORREF interpreted as BGR integer, end-exclusive ranges. 8192 UTF-16 units, 512 style runs. Flash/FlashMode/Blink explicitly fail. Mutating incoming lines replaces links/images with safe text runs. |
+| TextWindowLine | String/Length/HTMLString, Insert/Delete, Color/BgColor, Bold/Italic/Underline/Strikeout | Windows COLORREF interpreted as BGR integer, end-exclusive ranges. 8192 UTF-16 units, 512 style runs. Flash/FlashMode/Blink explicitly fail. Incoming trigger/display edits preserve unaffected links/images through validated insert/delete/style operations. Trigger matching is bounded to 4096 UTF-16 units. |
 | Timer | CreateTimeout/CreateInterval, UserData, Kill, Active | 16 timers per owner, 100–3600000 ms, stop on true; cleared on disconnect/close/runtime stop. |
 | ArrayUInt | Callable Item/Count trigger capture ranges | 32 integer entries; invalid indexes currently return zero. |
 | Log | Write/WriteLine/FileName, null when not logging | Writes only to existing owner log; WriteLine serializes plain text, no original rich log modes. |
@@ -192,3 +193,17 @@ WHO. The unchanged documented receive/send patterns remain in the existing suite
 | Characters | `Item`, `Count` |
 | World | `Shortcut`, `Name`, `Info`, `Host`, `Characters`, `Triggers`, `Aliases` |
 | Worlds | `Item`, `Count` |
+
+## Preview 0.13 continuation limits
+
+Trigger callbacks use captured effects within the same owned command transaction.
+The host checks session, connection epoch, rule worker and script runtime identity
+before and after waits. Updated variables, away state and line text feed later
+matching. OnDisplay finalization runs after the trigger transaction, avoiding a
+nested queue deadlock. Script edits are validated against the returned final text
+and styles before they reach the incremental DOM renderer.
+
+Synchronous reads immediately after a deferred host Run/Set effect still do not
+reproduce COM calls. Reentrant Receive, original prompt pseudo-receive, all original
+native APIs/languages and UTF-8 indexing remain separate work. Pending work is
+cancelled on rule-tree replacement rather than resumed in a different tree.

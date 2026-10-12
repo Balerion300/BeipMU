@@ -280,14 +280,33 @@
       return { commands, matched, diagnostics };
     }
 
-    function processLine(input, scope, nowMs) {
+    function* lineSteps(input, scope, nowMs, flags = {}) {
       const diagnostics = [], actions = [], matches = [];
+      let emittedCount = 0;
+      function addAction(action) {
+        if(emittedCount+actions.length>=limits.maxActions){if(!diagnostics.includes('Trigger action limit reached.'))diagnostics.push('Trigger action limit reached.');stopped=true;return false;}
+        actions.push(action);return true;
+      }
       if (typeof input !== 'string' || input.length > limits.maxLine)
         return { text: input, actions, matches, gagged: false, logGagged: false,
           diagnostics: ['Line exceeds rule processing limit.'] };
       const context = { ...(scope || {}), variables: normalizeVariables(scope?.variables) };
       const now = Number.isFinite(nowMs) ? nowMs : Date.now();
       let text = input, gagged = false, logGagged = false;
+      function* boundary() {
+        const batch = actions.splice(0); emittedCount += batch.length;
+        const response = yield { done: false, text, actions: batch, flags: { replay: flags.replay === true, prompt: flags.prompt === true, inSend: true } };
+        if (response && Object.hasOwn(response, 'variables')) context.variables = normalizeVariables(response.variables);
+        if (typeof response?.away === 'boolean') {
+          context.away=response.away;context.awayEpoch=response.awayEpoch;
+          if(awayState.away!==context.away||awayState.epoch!==context.awayEpoch){awayState={epoch:context.awayEpoch,away:context.away,notified:false};awayStates.set(captureKey,awayState);}
+        }
+        if (response && Object.hasOwn(response, 'text')) {
+          if (typeof response.text !== 'string' || response.text.length > limits.maxLine) throw Error('Continuation line exceeds limit.');
+          text = response.text;
+        }
+      }
+
       const captureKey = contextKey(context);
       let awayState = awayStates.get(captureKey);
       if (!awayState || awayState.epoch !== context.awayEpoch || awayState.away !== !!context.away) {
@@ -302,7 +321,7 @@
         diagnostics.push('Spawn capture limit reached; output returned to the main window.');
       }
       if (activeCapture) {
-        actions.push({ type: 'spawn', title: activeCapture.title, group: activeCapture.group, text });
+        addAction({ type: 'spawn', title: activeCapture.title, group: activeCapture.group, text });
         if (!activeCapture.copy) gagged = true;
         if (activeCapture.gagLog) logGagged = true;
         activeCapture.lines++;
@@ -323,12 +342,12 @@
         pendingWindows.delete(entry);
         pendingWindows.set(entry, { entry, remaining: lines, expiresAt: time ? now + time : 0 });
       }
-      function visit(list) { for (const entry of list) {
+      function* visit(list) { for (const entry of list) {
         if (stopped) break;
-        if (actions.length >= limits.maxActions) { diagnostics.push('Trigger action limit reached.'); break; }
+        if ((emittedCount + actions.length) >= limits.maxActions) { diagnostics.push('Trigger action limit reached.'); break; }
         const rule = entry.rule, id = makeId(rule, entry.index, 'trigger-');
         if (rule.enabled === false) continue;
-        if (rule.folder) { if (rule.multiline) activateChildren(entry); else if (rule.processChildren !== false) visit(entry.children); continue; }
+        if (rule.folder) { if (rule.multiline) activateChildren(entry); else if (rule.processChildren !== false) yield* visit(entry.children); continue; }
         if (rule.awayCondition === 'away' && (!context.away || rule.awayOnce && awayState.notified) || rule.awayCondition === 'present' && context.away) continue;
         const key = [id, context.serverId || '', context.characterId || ''].join('\u0000');
         if (rule.once && firedOnce.has(key)) continue;
@@ -338,7 +357,7 @@
         while ((hit = findMatch(text, rule, from, limits, allowRegex, diagnostics))) {
         if (hit.start === hit.end) { if (sawEmpty) break; sawEmpty = true; }
         thisRuleMatched = true;
-        if (++occurrences > limits.maxReplacements || actions.length >= limits.maxActions) { diagnostics.push('Trigger match/action limit reached.'); break; }
+        if (++occurrences > limits.maxReplacements || (emittedCount + actions.length) >= limits.maxActions) { diagnostics.push('Trigger match/action limit reached.'); break; }
         matches.push({ triggerId: id, start: hit.start, end: hit.end, captures: hit.captures.slice() });
         const detail = { triggerId: id };
         if (rule.highlight && typeof rule.highlight === 'object') {
@@ -350,9 +369,9 @@
           const add = (value, wholeLine) => {
             if (!Object.keys(value).length) return;
             const selected = wholeLine ? [0, text.length] : ranges;
-            for (let index = 0; index < selected.length && actions.length < limits.maxActions; index += 2) {
+            for (let index = 0; index < selected.length && (emittedCount + actions.length) < limits.maxActions; index += 2) {
               const start = selected[index], end = selected[index + 1];
-              if (start >= 0 && end > start) actions.push({ type: 'highlight', start, end, style: value, ...detail });
+              if (start >= 0 && end > start) addAction({ type: 'highlight', start, end, style: value, ...detail });
             }
           };
           const colorWholeLine = highlight.colorWholeLine ?? highlight.wholeLine;
@@ -362,7 +381,16 @@
         }
         if (rule.gag) gagged = true;
         if (rule.logGag) logGagged = true;
-        if (typeof rule.sendText === 'string' && rule.sendText) {
+        if (!flags.replay && rule.sound?.enabled && typeof rule.sound.path === 'string') {
+          const path = expandVariables(rule.sound.path, context.variables, 1024);
+          if (path) addAction({ type: 'sound', path, ...detail });
+        }
+        if (!flags.replay && rule.speech?.enabled) {
+          const spoken = rule.speech.wholeLine ? text : interpolate(rule.speech.text || '', hit.captures);
+          if (spoken && spoken.length <= 2048) addAction({ type: 'speech', text: spoken, ...detail });
+          else if (spoken) diagnostics.push('Speech text exceeds the 2048-character limit.');
+        }
+        if (!flags.replay && typeof rule.sendText === 'string' && rule.sendText) {
           let command = interpolate(rule.sendText, hit.captures);
           if (rule.sendExpandVariables) command = expandVariables(command, context.variables, limits.maxCommand);
           if (command !== null && command.length <= limits.maxCommand && (!rule.sendOnClick || !/[\r\n]/.test(command))) {
@@ -370,24 +398,16 @@
               const index = Number.isSafeInteger(rule.sendCaptureIndex) && rule.sendCaptureIndex >= 0 ? rule.sendCaptureIndex : 1;
               const at = index * 2 < hit.ranges.length ? index * 2 : 0;
               const start = hit.ranges[at], end = hit.ranges[at + 1];
-              if (start >= 0 && end > start) actions.push({ type: 'commandLink', start, end, text: command, ...detail });
-            } else actions.push({ type: 'command', text: command, ...detail });
-            // A following rule on this same line sees a successful original
-            // /set or /unset action; the caller later persists those effects.
-            const set = /^\/set\s+([^=]+)=([^\r\n]*)$/i.exec(command);
-            const unset = /^\/unset\s+(.+)$/i.exec(command);
-            if (set && !rule.sendOnClick) {
-              const candidate = Object.assign(Object.create(null), context.variables, { [set[1]]: set[2] });
-              const normalized = normalizeVariables(candidate);
-              if (Object.hasOwn(normalized, set[1]) && Object.keys(candidate).length === Object.keys(normalized).length) context.variables = normalized;
-            } else if (unset && !rule.sendOnClick) delete context.variables[unset[1]];
+              if (start >= 0 && end > start) addAction({ type: 'commandLink', start, end, text: command, ...detail });
+            } else addAction({ type: 'command', text: command, ...detail });
+            if (!rule.sendOnClick) yield* boundary();
           } else diagnostics.push('Trigger command exceeds its text limit or clickable one-line limit.');
         }
-        if (rule.spawnTitle && !spawnedThisLine && actions.length < limits.maxActions) {
+        if (rule.spawnTitle && !spawnedThisLine && (emittedCount + actions.length) < limits.maxActions) {
           spawnedThisLine = true;
           const title = interpolate(String(rule.spawnTitle), hit.captures).slice(0, 80);
           const group = interpolate(String(rule.spawnGroup || ''), hit.captures).slice(0, 80);
-          actions.push({ type: 'spawn', title, group, text, ...detail });
+          addAction({ type: 'spawn', title, group, text, ...detail });
           if (!rule.spawnCopy) gagged = true;
           if (rule.spawnGagLog) logGagged = true;
           if (rule.captureUntil) {
@@ -404,47 +424,40 @@
             }
           }
         }
-        if (rule.notify) actions.push({ type: 'notification', text, ...detail });
-        if (rule.sound?.enabled && typeof rule.sound.path === 'string') {
-          const path = expandVariables(rule.sound.path, context.variables, 1024);
-          if (path) actions.push({ type: 'sound', path, ...detail });
-        }
-        if (rule.speech?.enabled) {
-          const spoken = rule.speech.wholeLine ? text : interpolate(rule.speech.text || '', hit.captures);
-          if (spoken && spoken.length <= 2048) actions.push({ type: 'speech', text: spoken, ...detail });
-          else if (spoken) diagnostics.push('Speech text exceeds the 2048-character limit.');
-        }
-        if (typeof rule.scriptName === 'string' && rule.scriptName) {
-          if (!/^[A-Za-z_$][\w$]{0,79}$/.test(rule.scriptName))diagnostics.push('Invalid trigger script name in rule ' + id + '.');
-          else if(actions.length < limits.maxActions)
-            actions.push({ type: 'script', name: rule.scriptName, text, ranges: hit.ranges.slice(0, 32), ...detail });
-        }
+        if (!flags.replay && rule.notify) addAction({ type: 'notification', text, ...detail });
         let nextFrom = hit.end;
         if (typeof rule.filterText === 'string') {
           let replacement = interpolate(rule.filterText, hit.captures);
           if (rule.filterExpandVariables) replacement = expandVariables(replacement, context.variables, limits.maxLine);
           const next = replacement === null ? null : text.slice(0, hit.start) + replacement + text.slice(hit.end);
-          if (next !== null && next.length <= limits.maxLine) { text = next; nextFrom = hit.start + replacement.length; }
+          if (next !== null && next.length <= limits.maxLine) { addAction({type:'filter',start:hit.start,end:hit.end,text:replacement,...detail});text = next; nextFrom = hit.start + replacement.length;hit.end=nextFrom;hit.ranges[1]=nextFrom; }
           else diagnostics.push('Filtered line exceeds length limit.');
+        }
+        if (!flags.replay && typeof rule.scriptName === 'string' && rule.scriptName) {
+          if (!/^[A-Za-z_$][\w$]{0,79}$/.test(rule.scriptName))diagnostics.push('Invalid trigger script name in rule ' + id + '.');
+          else if((emittedCount + actions.length) < limits.maxActions) {
+            addAction({ type: 'script', name: rule.scriptName, text, ranges: hit.ranges.slice(0, 32), ...detail });
+            yield* boundary();
+          }
         }
         if (rule.once) firedOnce.add(key);
         if (cooldown) lastFire.set(key, now);
         if (rule.awayOnce) awayState.notified = true;
         if (rule.oncePerLine !== false || rule.matchType === 'exact' || rule.matchType === 'wildcard') break;
-        from = nextFrom + (hit.start === hit.end ? 1 : 0);
+        from = nextFrom;
         if (from > text.length) break;
         }
         if (!thisRuleMatched) continue;
         if (rule.multiline) activateChildren(entry);
-        else if (rule.processChildren !== false) visit(entry.children);
+        else if (rule.processChildren !== false) yield* visit(entry.children);
         if (rule.stopProcessing) stopped = true;
       } }
       const roots = rootsFor(triggerTree, context, diagnostics);
       // Original capture-only children have priority over every other trigger
       // family. Like the original, this uses the stored child list directly.
-      if (activeCapture?.onlyChildren) { visit(activeCapture.entry.children); stopped = true; }
-      for (const window of activeWindows) if (!pendingWindows.has(window.entry)) visit(window.entry.children);
-      visit(roots);
+      if (activeCapture?.onlyChildren) { yield* visit(activeCapture.entry.children); stopped = true; }
+      for (const window of activeWindows) if (!pendingWindows.has(window.entry)) yield* visit(window.entry.children);
+      yield* visit(roots);
       const surviving = activeWindows.filter(window => !pendingWindows.has(window.entry) &&
         (window.remaining === 0 || --window.remaining > 0));
       const nextWindows = [...pendingWindows.values()].reverse().concat(surviving);
@@ -453,17 +466,43 @@
       // text, including filters from capture children, as in Connection.cpp.
       if (activeCapture && activeCapture.until.test(text)) captures.delete(captureKey);
       for (const action of actions) if (action.type === 'spawn') action.text = text;
-      return { text, actions: actions.slice(0, limits.maxActions), matches, gagged, logGagged, diagnostics };
+      return { done:true,text,actions:actions.slice(0,Math.max(0,limits.maxActions-emittedCount)),matches,gagged,logGagged,diagnostics,flags:{replay:flags.replay===true,prompt:flags.prompt===true,inSend:flags.inSend===true} };
+    }
+    const continuations = new Map(); let continuationSerial = 0;
+    function nextLine(id, response) {
+      const pending = continuations.get(id); if (!pending) throw Error('Unknown or expired trigger continuation.');
+      if (Date.now() - pending.started > 10000 || ++pending.steps > 64) { continuations.delete(id);throw Error('Trigger continuation limit exceeded.'); }
+      try {
+        const result = pending.iterator.next(response);
+        if (result.done) continuations.delete(id);
+        return { ...result.value, done: result.done, continuationId: result.done ? null : id };
+      } catch (error) { continuations.delete(id);throw error; }
+    }
+    function beginLine(input,scope,nowMs,flags={}) {
+      for(const [pendingId,pending] of continuations)if(Date.now()-pending.started>10000)cancelLine(pendingId);
+      if (continuations.size >= 4) throw Error('Too many pending trigger lines.');
+      const id=++continuationSerial;
+      continuations.set(id,{iterator:lineSteps(input,scope,nowMs,flags),scope:contextKey(scope||{}),started:Date.now(),steps:0});
+      return nextLine(id);
+    }
+    function continueLine(id,response) { return nextLine(id,response); }
+    function cancelLine(id) { const pending=continuations.get(id);if(pending)pending.iterator.return();return {cancelled:continuations.delete(id)}; }
+    function processLine(input,scope,nowMs) {
+      // Side-effect-free preview only. Runtime processing uses begin/continue.
+      const iterator=lineSteps(input,scope,nowMs),actions=[];let result=iterator.next();
+      while(!result.done){actions.push(...result.value.actions);result=iterator.next();}
+      return {...result.value,actions:actions.concat(result.value.actions)};
     }
     function cancelCapture(scope) {
       return { cancelled: captures.delete(contextKey(scope || {})) };
     }
     function resetTemporal(scope) {
+      for(const [id,pending] of continuations)if(scope===undefined||pending.scope===contextKey(scope||{}))cancelLine(id);
       if (scope === undefined) { captures.clear(); multilineStates.clear(); }
       else { const key = contextKey(scope || {}); captures.delete(key); multilineStates.delete(key); }
       return { reset: true };
     }
-    return { expandCommand, processLine, cancelCapture, resetTemporal };
+    return { expandCommand, processLine, beginLine, continueLine, cancelLine, cancelCapture, resetTemporal };
   }
   return { createEngine, interpolate, expandVariables, normalizeVariables, hierarchy, normalizeHierarchy, DEFAULT_LIMITS };
 });

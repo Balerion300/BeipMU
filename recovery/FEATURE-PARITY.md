@@ -310,3 +310,13 @@ Restoration and image controls are implemented subsets as described in the curre
 COMPLETION-CHECKLIST. Recovery snapshot replay intentionally avoids automation,
 and original Restore.dat import is read-only and requires reviewed slot metadata.
 Image native Save/Copy uses bounded system decoding and preserves session ownership.
+
+## Preview 0.13 source comparison
+
+Connection.cpp 1826–1948 supplies trigger action order. FindString.h 20–24 updates
+only the full-match end after a replacement; captured-group ranges are unchanged.
+Connection.cpp 1304 onward supplies spawn's final processed line. Recovery now
+uses resumable rules and awaited command/script effects instead of precomputing
+all later matches or simulating variable commands. Incremental range edits retain
+unaffected interactive nodes. This does not close the scripting architecture gaps
+listed in SCRIPT-PARITY.

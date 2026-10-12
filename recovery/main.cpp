@@ -691,7 +691,7 @@ struct Application {
             else if(testCorePorts.size()==2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
                 auto config="{\"ports\":["+std::to_string(testCorePorts[0])+","+std::to_string(testCorePorts[1])+"],\"phase\":\""+(persisted?"persist":"first")+"\",\"imageHttpBase\":"+jsonString("http://127.0.0.1:"+std::to_string(imageHttpPort)+"/")+",\"audioPath\":"+jsonString(utf8(std::filesystem::absolute(testPath/L"test-tone.wav").wstring()))+"}";
-                message("testcore:"+base64(config));SetTimer(window,1,25000,nullptr);
+                message("testcore:"+base64(config));SetTimer(window,1,60000,nullptr);
             }
         }else if(text.starts_with("sessionopen|")){
             auto id=text.substr(12);if(!validId(id)||sessions.find(id)!=sessions.end())return;
@@ -901,7 +901,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     LocalFree(argv);
     WNDCLASSW wc{};wc.hInstance=instance;wc.lpszClassName=L"BeipMURecoveryPreview";wc.lpfnWndProc=windowProc;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);wc.hIcon=LoadIconW(nullptr,IDI_APPLICATION);RegisterClassW(&wc);
     app.mainMenu=createMainPopup();
-    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.12",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
+    auto window=CreateWindowExW(0,wc.lpszClassName,L"BeipMU Recovery 0.13",WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,1080,820,nullptr,nullptr,instance,&app);
     if(!window&&app.mainMenu)DestroyMenu(app.mainMenu);
     if(!window)return 1;ShowWindow(window,show);app.start();MSG msg;while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
     // Drain queued network events after the worker has stopped.

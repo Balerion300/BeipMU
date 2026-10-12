@@ -16,9 +16,12 @@ test('variables reject invalid names, multiline values, excessive count and expa
  assert.equal(Object.getPrototypeOf(values),null);assert.equal(values.__proto__,'safe');assert.equal(values.ok,'yes');assert.equal(values.bad,undefined);
  assert.equal(Object.keys(rules.normalizeVariables(Object.fromEntries(Array.from({length:140},(_,i)=>['v'+i,'yes'])))).length,128);
 });
-test('same-line set and unset actions feed subsequent trigger variable expansion',()=>{
+test('preview never simulates command writes; continuation resumes with actual host variables',()=>{
  const engine=rules.createEngine({triggers:[{match:'hit',sendText:'/set target=friend'},{match:'hit',sendText:'say %target%',sendExpandVariables:true},{match:'hit',sendText:'/unset target'},{match:'hit',sendText:'say %target%',sendExpandVariables:true}]});
- assert.deepEqual(engine.processLine('hit',{variables:{target:'old'}}).actions.map(a=>a.text),['/set target=friend','say friend','/unset target','say %target%']);
+ assert.deepEqual(engine.processLine('hit',{variables:{target:'old'}}).actions.map(a=>a.text),['/set target=friend','say old','/unset target','say old']);
+ let result=engine.beginLine('hit',{variables:{target:'old'}});const commands=[];
+ while(!result.done){commands.push(...result.actions.map(a=>a.text));result=engine.continueLine(result.continuationId,{text:'hit',variables:commands.includes('/unset target')?{}:{target:'friend'}});}
+ commands.push(...result.actions.map(a=>a.text));assert.deepEqual(commands,['/set target=friend','say friend','/unset target','say %target%']);
 });
 test('away once applies across rules and resets on away epoch including no intervening line',()=>{
  const engine=rules.createEngine({triggers:[{id:'a',match:'hit',awayCondition:'away',awayOnce:true,sendText:'first'},{id:'b',match:'hit',awayCondition:'away',awayOnce:true,sendText:'second'},{id:'c',match:'hit',awayCondition:'present',sendText:'present'}]});
@@ -31,7 +34,7 @@ test('repeat matches stop on zero-width second hit and children run once',()=>{
  const alias=rules.createEngine({workerEngine:true,allowRegex:true,aliases:[{match:'(?=a)',matchType:'regex',replacement:'X'}]});
  assert.deepEqual(alias.expandCommand('aa').commands,['Xaa']);
  const repeated=rules.createEngine({triggers:[{match:'a',oncePerLine:false,filterText:'',sendText:'hit'}]}).processLine('aaa');
- assert.equal(repeated.text,'');assert.equal(repeated.actions.length,3);
+ assert.equal(repeated.text,'');assert.equal(repeated.actions.filter(a=>a.type==='command').length,3);assert.equal(repeated.actions.filter(a=>a.type==='filter').length,3);
 });
 test('audio uses configured variable paths, speech uses captures or whole line',()=>{
  const engine=rules.createEngine({triggers:[{match:'page *',matchType:'wildcard',sound:{enabled:true,path:'%audio%'},speech:{enabled:true,text:'From \\1'}},{match:'page',speech:{enabled:true,wholeLine:true}}]});

@@ -8,6 +8,7 @@
  const DEADLINE_MS=500,MAX_QUEUE=64;
  function fallback(job,reason){
   const diagnostics=[reason];
+   if(['begin-line','continue-line','cancel-line'].includes(job.type))return {failed:true,done:true,actions:[],diagnostics};
    if(job.type==='cancel-capture')return {cancelled:false,diagnostics};
    if(job.type==='reset-temporal')return {reset:false,diagnostics};
   if(job.type==='expand')return {commands:[],matched:false,diagnostics};
@@ -71,6 +72,9 @@
   }
   expandCommand(input,scope){return this.enqueue('expand',input,scope);}
   processLine(text,scope,nowMs){return this.enqueue('line',text,scope,nowMs);}
+  beginLine(text,scope,nowMs,flags={}){return this.enqueue('begin-line',{text,flags},scope,nowMs);}
+  continueLine(continuationId,response){return this.enqueue('continue-line',{continuationId,response});}
+  cancelLine(continuationId){return this.enqueue('cancel-line',{continuationId});}
   cancelCapture(scope){return this.enqueue('cancel-capture','',scope);}
   resetTemporal(scope){return this.enqueue('reset-temporal',scope===undefined?'all':'scope',scope);}
  }

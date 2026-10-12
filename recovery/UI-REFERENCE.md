@@ -130,3 +130,10 @@ The reported Pueblo login screenshot was matched to actual public BR+LF input.
 A dedicated packaged rendering checks ordinary row adjacency, deliberate blank
 rows, columns, styled command links and PRE WHO output. The corrected screenshot
 is part of the packaged session evidence.
+
+## 0.13 text-edit comparison
+
+Trigger filters and script insert/delete/style operations preserve unrelated
+Pueblo/MXP anchors and image elements. At an anchor boundary, inserted plain text
+stays outside the anchor; insertion strictly inside retains its link identity.
+Image captions and avatar decorations do not consume script/trigger prose offsets.

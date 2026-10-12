@@ -9,8 +9,8 @@ function createPipeline(host,overrides={}){
  const limits={...DEFAULT_LIMITS};for(const name of Object.keys(limits))if(Number.isSafeInteger(overrides[name])&&overrides[name]>0)limits[name]=Math.min(limits[name],overrides[name]);
  const owners=new WeakMap(),tokens=new WeakMap();let totalQueued=0;
  const now=typeof host.now==='function'?()=>host.now():()=>Date.now();
- function valid(ctx){return !ctx.root.finished&&!ctx.root.error&&now()<ctx.root.deadline&&host.valid(ctx.owner,ctx.epoch)&&host.valid(ctx.root.owner,ctx.root.epoch);}
- function check(ctx){if(ctx.root.finished)throw failure('completed','Command execution has already completed.');if(ctx.root.error)throw ctx.root.error;if(now()>=ctx.root.deadline)throw abort(ctx.root,failure('deadline','Command execution timed out.'));if(!host.valid(ctx.owner,ctx.epoch)||!host.valid(ctx.root.owner,ctx.root.epoch))throw abort(ctx.root,failure('stale','Command owner changed.'));}
+ function valid(ctx){return !ctx.root.finished&&!ctx.root.error&&(!ctx.root.guard||ctx.root.guard())&&now()<ctx.root.deadline&&host.valid(ctx.owner,ctx.epoch)&&host.valid(ctx.root.owner,ctx.root.epoch);}
+ function check(ctx){if(ctx.root.finished)throw failure('completed','Command execution has already completed.');if(ctx.root.error)throw ctx.root.error;if(now()>=ctx.root.deadline)throw abort(ctx.root,failure('deadline','Command execution timed out.'));if(ctx.root.guard&&!ctx.root.guard()||!host.valid(ctx.owner,ctx.epoch)||!host.valid(ctx.root.owner,ctx.root.epoch))throw abort(ctx.root,failure('stale','Command owner or continuation changed.'));}
  function abort(root,error){if(!root.error){root.error=error;root.rejectAbort(error);}return root.error;}
  function charge(ctx,text=''){check(ctx);const budget=ctx.root.budget;if(ctx.depth>limits.depth||++budget.steps>limits.steps||(budget.bytes+=utf8Length(text))>limits.bytes)throw abort(ctx.root,failure('budget','Command execution limit exceeded.'));}
  function state(owner){let value=owners.get(owner);if(!value){value={tail:Promise.resolve(),last:null,pending:0,active:null};owners.set(owner,value);}return value;}
@@ -42,7 +42,7 @@ function createPipeline(host,overrides={}){
  function nested(parent,owner,text,options){
   check(parent);if(!owner||typeof owner!=='object')return Promise.reject(failure('owner','Missing command owner.'));
   const epoch=owner===parent.owner?parent.epoch:host.epoch(owner),child=frame(parent,owner,epoch);
-  child.source=options.source||parent.source;child.flags=parent.flags;
+  child.source=options.source||parent.source;child.flags=Object.freeze({...parent.flags,inSend:parent.flags.inSend||options.inSend===true});
   const executeChild=()=>{check(parent);if(state(owner).active===parent.root)return execute(child,String(text),options.mode||'lines',options.prefix||'');child.node={waits:new Set()};return enqueue(child,()=>execute(child,String(text),options.mode||'lines',options.prefix||''),parent);};
   // Explicit children of one callback are sequential even if that callback uses Promise.all.
   const pending=parent.children.then(executeChild);parent.children=pending;return pending;
@@ -92,9 +92,9 @@ function createPipeline(host,overrides={}){
  }
  function begin(owner,work,options={}){
   if(!owner||typeof owner!=='object')return Promise.reject(failure('owner','Missing command owner.'));
-  const epoch=host.epoch(owner),root={owner,epoch,deadline:now()+limits.deadlineMs,budget:{steps:0,bytes:0,sends:0},error:null};
+  const epoch=host.epoch(owner),root={owner,epoch,guard:typeof options.validate==='function'?options.validate:null,deadline:now()+limits.deadlineMs,budget:{steps:0,bytes:0,sends:0},error:null};
   root.aborted=new Promise((resolve,reject)=>{root.rejectAbort=reject;});root.aborted.catch(()=>{});
-  const ctx={root,owner,epoch,node:{waits:new Set()},depth:0,source:options.source||'command',flags:Object.freeze({replay:options.replay===true,inSend:options.inSend===true}),children:Promise.resolve()};
+  const ctx={root,owner,epoch,node:{waits:new Set()},depth:0,source:options.source||'command',flags:Object.freeze({replay:options.replay===true,inSend:options.inSend===true,prompt:options.prompt===true}),children:Promise.resolve()};
   const timer=setTimeout(()=>abort(root,failure('deadline','Command execution timed out.')),limits.deadlineMs);
   return enqueue(ctx,()=>work(ctx)).then(()=>({completed:true,...root.budget})).finally(()=>{root.finished=true;clearTimeout(timer);});
  }
@@ -109,6 +109,7 @@ function createPipeline(host,overrides={}){
   }
  }
  return Object.freeze({
+  transaction:(owner,callback,options={})=>begin(owner,async ctx=>{const child=frame(ctx);await callback(context(child));await child.children;check(ctx);},options),
   submit:(owner,text,options={})=>begin(owner,ctx=>execute(ctx,String(text),options.mode||'lines',options.prefix||''),options),
   effects:(owner,effects,options={})=>begin(owner,ctx=>drain(ctx,effects),options),
   drain:(token,effects)=>{const ctx=tokens.get(token);if(!ctx)return Promise.reject(failure('context','Unrecognized command execution context.'));return drain(frame(ctx),effects);},

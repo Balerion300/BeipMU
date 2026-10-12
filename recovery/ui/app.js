@@ -33,13 +33,15 @@ function configureRestore(session){
  session.restoreController.start({load:!session.restoreLoaded});
 }
 function replayRestoreRecords(session,records){
- const fragment=document.createDocumentFragment(),history=[];
+ const fragment=document.createDocumentFragment(),history=[],pendingAvatar=session.gmcp?.nextLine??null,pendingRequests=new Set(session.gmcp?.requests||[]);
  for(const record of records){
-  if(record.kind==='line'){const line=BeipRestoreRuntime.renderLine(record,{onLink:(link,event)=>activate(link,event,session),onImage:(part,placeholder)=>{const restored=document.createElement('span');placeholder.replaceWith(restored);image(session,{url:part.url,alt:part.alt,height:part.height||150,link:part.link},restored);}});fragment.append(line);}
+  if(record.kind==='line'){session.gmcp?.takeLine();const line=BeipRestoreRuntime.renderLine(record,{onLink:(link,event)=>activate(link,event,session),onImage:(part,placeholder)=>{const restored=document.createElement('span');placeholder.replaceWith(restored);image(session,{url:part.url,alt:part.alt,height:part.height||150,link:part.link},restored);}});fragment.append(line);}
   else if(record.kind==='history')history.push(record.text);
   else if(record.kind==='reset')session.gmcp=new BeipGMCP.State();
   else if(record.kind==='gmcp'){session.gmcp??=new BeipGMCP.State();session.gmcp.receive(record.package+(record.data?' '+record.data:''));}
  }
+ // Historical one-line avatar instructions and request bookkeeping must not leak into live input.
+ if(session.gmcp){session.gmcp.nextLine=pendingAvatar;session.gmcp.requests=pendingRequests;}
  if(fragment.childNodes.length){session.view.querySelector('.welcome')?.remove();session.view.prepend(fragment);session.hasOutput=true;}
  if(history.length){session.history=[...history,...session.history].slice(-500);session.historyIndex=session.history.length;}
  if(history.length&&session.id===activeId)window.BeipDockPanels?.selected(session);
@@ -144,10 +146,10 @@ function activate(link,event,session){
 function anchor(link,session){const a=document.createElement('a');a.href=link.kind==='url'?link.value:'#';a.title=link.hint||link.value;a.dataset.kind=link.kind;a.dataset.value=link.value;a.dataset.prompt=link.prompt?'true':'false';a.onclick=e=>{e.preventDefault();activate(link,e,session);};a.oncontextmenu=e=>{if(link.kind==='command'){e.preventDefault();activate(link,e,session);}};return a;}
 function ensureLine(session){if(!session.line){session.view.querySelector('.welcome')?.remove();session.line=document.createElement('div');session.line.className='line';session.line.dataset.logTime=String(Date.now());if(session.suppressAutomation)session.line.dataset.logSynthetic='true';session.view.append(session.line);window.BeipFeatures?.attachLine(session,session.line);session.hasOutput=true;}else if(!session.line.childNodes.length&&!session.line.gmcpAvatar){window.BeipFeatures?.attachLine(session,session.line);}return session.line;}
 function applyHighlight(line,action){
- const style=action.style||{},start=Math.max(0,Number.isFinite(action.start)?action.start:0),end=Math.max(start,Number.isFinite(action.end)?action.end:line.textContent.length);
+ const style=action.style||{},start=Math.max(0,Number.isFinite(action.start)?action.start:0),end=Math.max(start,Number.isFinite(action.end)?action.end:BeipLineEdits.text(line).length);
  if(style.underline===false||style.strike===false)flattenDecorations(line);
- const nodes=[],walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let node,offset=0;
- while((node=walker.nextNode())){const next=offset+node.length;if(next>start&&offset<end)nodes.push({node,from:Math.max(0,start-offset),to:Math.min(node.length,end-offset)});offset=next;}
+ const nodes=[];let offset=0;
+ for(const node of BeipLineEdits.textNodes(line)){const next=offset+node.length;if(next>start&&offset<end)nodes.push({node,from:Math.max(0,start-offset),to:Math.min(node.length,end-offset)});offset=next;}
  for(const part of nodes){if(part.from>=part.to)continue;let node=part.node;if(part.to<node.length)node.splitText(part.to);if(part.from)node=node.splitText(part.from);const span=document.createElement('span');span.className='trigger-highlight';if(style.color)span.style.color=style.color;if(style.background)span.style.backgroundColor=style.background;if('bold'in style)span.style.fontWeight=style.bold?'bold':'normal';if('italic'in style)span.style.fontStyle=style.italic?'italic':'normal';
   const decoration=effectiveDecoration(node,line);if('underline'in style)decoration.underline=style.underline;if('strike'in style)decoration.strike=style.strike;
   if(style.underline===false||style.strike===false){const leaf=node.parentElement;if(leaf?.classList.contains('decoration-leaf')){const tail=leaf.cloneNode(false);while(node.nextSibling)tail.append(node.nextSibling);const target=leaf.cloneNode(false);target.style.textDecoration='none';target.append(node);leaf.after(target);if(tail.childNodes.length)target.after(tail);if(!leaf.childNodes.length)leaf.remove();}}
@@ -155,25 +157,34 @@ function applyHighlight(line,action){
  }
 }
 function effectiveDecoration(node,line){const result={underline:false,strike:false};for(let parent=node.parentElement;parent;parent=parent.parentElement){const value=getComputedStyle(parent).textDecorationLine;result.underline||=value.includes('underline');result.strike||=value.includes('line-through');if(parent===line)break;}return result;}
-function flattenDecorations(line){const leaves=[],walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode()))leaves.push({node,style:effectiveDecoration(node,line)});for(const element of [line,...line.querySelectorAll('*')])element.style.textDecoration='none';for(const {node,style} of leaves){const span=document.createElement('span');span.className='decoration-leaf';span.style.textDecoration=[style.underline?'underline':'',style.strike?'line-through':''].filter(Boolean).join(' ')||'none';node.replaceWith(span);span.append(node);}}
-function applyCommandLink(session,line,action){const start=Math.max(0,action.start||0),end=Math.max(start,action.end||0),nodes=[],walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let node,offset=0;while((node=walker.nextNode())){const next=offset+node.length;if(next>start&&offset<end&&!node.parentElement.closest('a'))nodes.push({node,from:Math.max(0,start-offset),to:Math.min(node.length,end-offset)});offset=next;}for(const {node,from,to} of nodes){if(from>=to)continue;const range=document.createRange();range.setStart(node,from);range.setEnd(node,to);range.surroundContents(anchor({kind:'command',value:action.text,hint:action.hint||action.text},session));}}
+function flattenDecorations(line){const leaves=BeipLineEdits.textNodes(line).map(node=>({node,style:effectiveDecoration(node,line)})),elements=new Set([line]);for(const {node} of leaves)for(let parent=node.parentElement;parent&&parent!==line;parent=parent.parentElement)elements.add(parent);for(const element of elements)element.style.textDecoration='none';for(const {node,style} of leaves){const span=document.createElement('span');span.className='decoration-leaf';span.style.textDecoration=[style.underline?'underline':'',style.strike?'line-through':''].filter(Boolean).join(' ')||'none';node.replaceWith(span);span.append(node);}}
+
+function applyCommandLink(session,line,action){const start=Math.max(0,action.start||0),end=Math.max(start,action.end||0),nodes=[];let offset=0;for(const node of BeipLineEdits.textNodes(line)){const next=offset+node.length;if(next>start&&offset<end&&!node.parentElement.closest('a'))nodes.push({node,from:Math.max(0,start-offset),to:Math.min(node.length,end-offset)});offset=next;}for(const {node,from,to} of nodes){if(from>=to)continue;const range=document.createRange();range.setStart(node,from);range.setEnd(node,to);range.surroundContents(anchor({kind:'command',value:action.text,hint:action.hint||action.text},session));}}
+async function processTriggerLine(session,line,plain,lineEpoch){
+ const valid=()=>sessions.get(session.id)===session&&session.connectionEpoch===lineEpoch&&!line.dataset.removed;
+ const runner=BeipTriggerContinuation.createRunner({
+  pipeline:getCommandPipeline(),epoch:owner=>owner.connectionEpoch,
+  valid:()=>valid(),rules:owner=>owner.ruleRuntime||owner.ruleEngine||ruleEngine,scope:ruleContext,
+  snapshot:()=>window.BeipFeatures.snapshotLine(line),
+  script:(owner,action,execution)=>window.BeipFeatures.dispatchTriggerCaptured(owner,action,execution),
+  replaceScriptLine:(owner,snapshot,execution,edits)=>{if(!valid()||!execution.isCurrent())throw Error('Trigger line changed.');BeipLineEdits.applyScriptEdits(line,edits);if(BeipLineEdits.text(line)!==snapshot.text)throw Error('Script edits and displayed text diverged.');},
+  effect:(owner,action,execution)=>{
+   if(!valid()||!execution.isCurrent())throw Error('Trigger line changed.');
+   if(action.type==='filter')BeipLineEdits.replaceRange(line,action.start,action.end,action.text);
+   else if(action.type==='highlight')applyHighlight(line,action);
+   else if(action.type==='commandLink')applyCommandLink(owner,line,action);
+   else if(action.type==='sound'||action.type==='speech'){if(state.preferences.mediaEnabled&&!triggerAudio(owner).handle(action))showStatus(owner,'Trigger '+action.type+' could not play: invalid path/text or length limit.');}
+   else if(action.type==='notification'){if(owner.id!==activeId)owner.unread++;if('Notification'in window&&Notification.permission==='granted')new Notification(profileLabel(owner),{body:action.text||plain});}
+   else if(action.type==='spawn')spawnText(owner,action.title||'Window',action.text,action.group||'');
+  }
+ });
+ return runner.run(session,plain);
+}
 function finalizeLine(session){
  const line=session.line,lineEpoch=session.connectionEpoch;session.line=null;if(!line)return;
  const finish=async result=>{if(line.dataset.removed)return;if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;
  if(result?.diagnostics?.length)showStatus(session,result.diagnostics[0]);
- if(result?.text!==undefined&&result.text!==plain)line.textContent=result.text;
- const highlights=[],commandLinks=[];for(const action of result?.actions||[]){
-  if(action.type==='command'&&action.text){await command(action.text,false,session,null,{source:'trigger',inSend:true});if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;}
-  else if(action.type==='sound'||action.type==='speech'){if(state.preferences.mediaEnabled&&!triggerAudio(session).handle(action))showStatus(session,'Trigger '+action.type+' could not play: invalid path/text or length limit.');}
-  else if(action.type==='script'){const scriptResult=await window.BeipFeatures?.dispatch(session,'trigger',{name:action.name,text:action.text,ranges:action.ranges});if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;if(scriptResult?.line)window.BeipFeatures?.applyLine?.(line,scriptResult.line);}
-  else if(action.type==='highlight')highlights.push(action);
-  else if(action.type==='commandLink')commandLinks.push(action);
-  else if(action.type==='notification'){if(session.id!==activeId)session.unread++;if('Notification'in window&&Notification.permission==='granted')new Notification(profileLabel(session),{body:action.text||plain});}
-  else if(action.type==='spawn')spawnText(session,action.title||'Window',action.text||plain,action.group||'');
- }
  window.BeipFeatures?.completeLine(session,line,plain);
- for(const action of highlights)applyHighlight(line,action);
- for(const action of commandLinks)applyCommandLink(session,line,action);
  if(!line.dataset.logSynthetic&&!result?.logGagged)queueLog(session,BeipLogging.fromLine(line));
  if(result?.gagged){line.remove();return;}
  const seen=new Set();
@@ -189,10 +200,10 @@ function finalizeLine(session){
  window.BeipDockPanels?.recordLine(session,line);
  captureRestoreLine(session,line);
  };
- const plain=line.textContent;
+ const plain=BeipLineEdits.text(line);
  if(session.kind==='world'&&!test&&!session.suppressAutomation)window.BeipMapSessions?.observe(session,plain);
  if(session.kind!=='world'||test||session.suppressAutomation){finish(null);return;}
- const process=()=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;const context=ruleContext(session);if(session.ruleRuntime)return session.ruleRuntime.processLine(plain,context).then(finish);else{try{return finish((session.ruleEngine||ruleEngine)?.processLine(plain,context));}catch(e){showStatus(session,'Trigger error: '+e.message);return finish(null);}}};
+ const process=async()=>{if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch)return;let result;try{result=await processTriggerLine(session,line,plain,lineEpoch);}catch(error){if(sessions.get(session.id)===session&&session.connectionEpoch===lineEpoch)showStatus(session,'Trigger error: '+error.message);}return finish(result);};
  // Apply each completed line's effects before taking the next line's variable
  // snapshot. Adjacent lines can set and consume a character variable reliably.
  session.pendingLineWork=(session.pendingLineWork||Promise.resolve()).then(()=>{
@@ -474,5 +485,5 @@ $('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:s
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,processTriggerLine,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});
