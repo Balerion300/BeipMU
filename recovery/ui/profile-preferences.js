@@ -1,12 +1,13 @@
 /* Supported window preferences. Original character/global overrides plus a world layer. */
 (function(root,factory){const logging=typeof module==='object'&&module.exports?require('./logging-model.js'):root.BeipLogging;const api=factory(logging);if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.BeipProfilePreferences=api;})(typeof globalThis==='object'?globalThis:this,function(logging){
 'use strict';
+const ansi=typeof module==='object'&&module.exports?require('./ansi-model.js'):globalThis.BeipAnsi;
 const DEFAULTS=Object.freeze({fontSize:13,fontFamily:'monospace',theme:'dark',scrollback:10000,inlineImages:true,inlineImageHeight:150,avatarWidth:50,avatarHeight:30,animatedImagesStartPaused:false,autoImageViewer:false,localEcho:false,defaultLogging:false,mediaEnabled:false,inputHeight:40,
  outputFontFace:'',outputFontBold:false,outputFontItalic:false,outputFontUnderline:false,outputFontStrikeout:false,
  outputForeground:'',outputBackground:'',linkColor:'',outputMarginLeft:0,outputMarginTop:0,outputMarginRight:0,outputMarginBottom:0,
  paragraphSpacing:0,wrappedIndent:0,fixedWidth:false,fixedWidthChars:80,fanFold:false,fanFoldColor1:'#0f0f0f',fanFoldColor2:'#1e1e1e',scrollToBottom:true,smoothScrolling:false,splitOnPageUp:false,
  inputFontFace:'',inputFontSize:13,inputFontBold:false,inputFontItalic:false,inputFontUnderline:false,inputFontStrikeout:false,inputForeground:'',inputBackground:'',localEchoColor:'',
- inputMarginLeft:0,inputMarginTop:0,inputMarginRight:0,inputMarginBottom:0,inputSticky:false,inputAutoSize:false,inputMinLines:1,inputMaxLines:5,pastePrefix:'',pasteSuffix:'',pasteDelay:100,logging:logging.DEFAULTS,restore:Object.freeze({enabled:true,bufferKiB:256}),emojiEnabled:false});
+ inputMarginLeft:0,inputMarginTop:0,inputMarginRight:0,inputMarginBottom:0,inputSticky:false,inputAutoSize:false,inputMinLines:1,inputMaxLines:5,pastePrefix:'',pasteSuffix:'',pasteDelay:100,logging:logging.DEFAULTS,restore:Object.freeze({enabled:true,bufferKiB:256}),emojiEnabled:false,ansi:ansi.DEFAULTS});
 const IMAGE_KEYS=Object.freeze(['inlineImageHeight','avatarWidth','avatarHeight','animatedImagesStartPaused','autoImageViewer']);
 const OUTPUT_KEYS=Object.freeze(['fontSize','fontFamily','scrollback','inlineImages',...Object.keys(DEFAULTS).filter(key=>key.startsWith('output')), 'linkColor','paragraphSpacing','wrappedIndent','fixedWidth','fixedWidthChars','fanFold','fanFoldColor1','fanFoldColor2','scrollToBottom','smoothScrolling','splitOnPageUp']);
 const INPUT_KEYS=Object.freeze(['localEcho','localEchoColor',...Object.keys(DEFAULTS).filter(key=>key.startsWith('input'))]);
@@ -23,6 +24,7 @@ function valid(key,value){
 }
 function normalizeGlobal(raw){
  const source=object(raw),result={...DEFAULTS};
+ result.ansi=ansi.normalize(source.ansi);
  result.logging=logging.normalize(source.logging);
  result.restore=(typeof module==='object'&&module.exports?require('./restore-model.js'):globalThis.BeipRestoreModel).normalizeGlobal(source.restore);
  result.emojiEnabled=source.emojiEnabled===true;

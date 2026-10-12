@@ -98,37 +98,37 @@
   }
   if(session.gmcpDump&&(payload.startsWith('gmcp:')||payload.startsWith('gmcpsent:'))){try{const prefix=payload.startsWith('gmcp:')?'GMCP Received: ':'GMCP Sent: ',data=payload.slice(payload.indexOf(':')+1);if(data.length<=87384)display(session,prefix+new TextDecoder().decode(Uint8Array.from(atob(data),c=>c.charCodeAt(0))));}catch{}}
  }
- function handleVariableCommand(value,session){
+ function handleVariableCommand(value,session,options={}){
   const match=/^\/(set|unset|printenv)(?:\s+([\s\S]*))?$/i.exec(value);
   if(!match||!browser)return false;
   const api=getApi(),variables=api.variablesForSession(session),name=match[1].toLowerCase(),arg=match[2]||'';
   try{
    if(name==='printenv'){display(session,Object.entries(variables).map(([key,value])=>key+'='+value).join('\n')||'No character variables.');return true;}
    if(name==='set'){
-    const equal=arg.indexOf('=');if(equal<1)throw Error('Use /set name=value.');
+    const equal=arg.indexOf('=');if(equal<1){if(!options.silent)display(session,'Use /set name=value.');return true;}
     const key=arg.slice(0,equal),text=arg.slice(equal+1);
     const candidate=Object.assign(Object.create(null),variables,{[key]:text});
     const normalized=BeipRules.normalizeVariables(candidate);
     if(!Object.hasOwn(normalized,key)||normalized[key]!==text||Object.keys(normalized).length!==Object.keys(candidate).length)throw Error('Variables allow 128 names of 128 characters, values of 4096 characters, and 64 KiB total.');
     Object.defineProperty(variables,key,{value:text,writable:true,enumerable:true,configurable:true});
-    display(session,'Variable set: '+key);
-   }else{if(!Object.hasOwn(variables,arg))throw Error('Variable not found.');delete variables[arg];display(session,'Variable deleted: '+arg);}
+    if(!options.silent)display(session,'Variable set: '+key);
+   }else{if(!Object.hasOwn(variables,arg))throw Error('Variable not found.');delete variables[arg];if(!options.silent)display(session,'Variable deleted: '+arg);}
    if(session.characterId)api.saveSettings();
   }catch(error){display(session,error.message);}
   return true;
  }
- function handle(value,session,execution){
+ function handle(value,session,execution,options={}){
   if(!browser||typeof value!=='string'||!value.startsWith('/')||value.startsWith('//'))return false;
-  if(handleVariableCommand(value,session))return true;
+  if(handleVariableCommand(value,session,options))return true;
   const match=/^(\/\S+)(?:\s+([\s\S]*))?$/.exec(value);if(!match)return false;
   const name=match[1].toLowerCase(),arg=match[2]||'',api=getApi();
   try{
    if(name==='/delay'){
     const args=words(arg),option=(args[0]||'').toLowerCase();
     if(option==='list'){const jobs=scheduler.list(session.id);display(session,jobs.length?jobs.map(job=>job.id+': '+(job.repeat?'every ':'')+Math.max(0,Math.ceil((job.due-Date.now())/1000))+'s '+job.command).join('\n'):'No delayed commands.');}
-    else if(option==='killall'){scheduler.cancelSession(session.id);cancelPaste(session.id);display(session,'Delayed commands and Smart Paste canceled for this session.');}
-    else if(option==='kill'){const job=scheduler.list(session.id).find(job=>String(job.id)===args[1]);display(session,job&&scheduler.cancel(job.id)?'Delayed command canceled.':'No such delayed command in this session.');}
-    else {const repeat=option==='every',offset=repeat?1:0;if(args.length!==offset+2)throw new Error('Use /delay [every] 2s "command", list, kill ID, or killall.');if(!session.connected)throw new Error('Connect before scheduling commands.');const id=scheduler.add(session.id,args[offset],args[offset+1],repeat);display(session,'Delayed command '+id+' scheduled.');}
+    else if(option==='killall'){scheduler.cancelSession(session.id);cancelPaste(session.id);if(!options.silent)display(session,'Delayed commands and Smart Paste canceled for this session.');}
+    else if(option==='kill'){const job=scheduler.list(session.id).find(job=>String(job.id)===args[1]);if(!args[1])throw Error('Missing ID, use /delay kill ID.');const canceled=job&&scheduler.cancel(job.id);if(!options.silent)display(session,canceled?'Delayed command canceled.':'No such delayed command in this session.');}
+    else {const repeat=option==='every',offset=repeat?1:0;if(args.length!==offset+2)throw new Error('Use /delay [every] 2s "command", list, kill ID, or killall.');if(!session.connected)throw new Error('Connect before scheduling commands.');const id=scheduler.add(session.id,args[offset],args[offset+1],repeat);if(!options.silent)display(session,'Delayed command '+id+' scheduled.');}
    }
    else if(name==='/setinput'){session.draft=arg.slice(0,8192);if(api.current===session){document.getElementById('input').value=session.draft;api.resizeInput();document.getElementById('input').focus();}}
    else if(name==='/recall'){const lines=session.history.filter(line=>!arg||line.toLowerCase().includes(arg.toLowerCase()));display(session,lines.slice(-100).join('\n')||'No matching input history.');}
@@ -160,8 +160,8 @@
    }
    else if(name==='/idle'){
     if(session.kind!=='world'||!session.connected)throw Error('Must be connected to set an idle timer.');const args=words(arg),character=api.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId);
-    if(!args.length){const removed=idle.cancel(session.id);if(character?.idle)character.idle.enabled=false;display(session,removed?'Idle timer removed.':'No idle timer set.');}
-    else if(args.length===2){const settings=idle.set(session.id,args[0],args[1]);if(character)character.idle=settings;display(session,'Idle timer activated, sending '+(settings.text||'Telnet NOP')+' every '+settings.minutes+' minute'+(settings.minutes===1?'':'s')+'.');}
+    if(!args.length){const removed=idle.cancel(session.id);if(character?.idle)character.idle.enabled=false;if(!options.silent)display(session,removed?'Idle timer removed.':'No idle timer set.');}
+    else if(args.length===2){const settings=idle.set(session.id,args[0],args[1]);if(character)character.idle=settings;if(!options.silent)display(session,'Idle timer activated, sending '+(settings.text||'Telnet NOP')+' every '+settings.minutes+' minute'+(settings.minutes===1?'':'s')+'.');}
     else throw Error('Use /idle minutes "command"; /idle alone turns it off. An empty quoted command sends Telnet NOP.');
     if(character)api.saveSettings();
    }

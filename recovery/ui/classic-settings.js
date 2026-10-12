@@ -25,7 +25,7 @@ body.append(categories,content);
 const scopeBar=document.createElement('label');scopeBar.className='classic-settings-scope';scopeBar.textContent='Settings for';
 const scopeChoice=document.createElement('select');scopeChoice.id='classicSettingsScope';scopeChoice.setAttribute('aria-label','Settings profile');scopeBar.append(scopeChoice);
 const definitions=[
- ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['logging','Logging'],['restore','Restore Logs'],['emoji','Auto Emoji']
+ ['general','General'],['theme','UI Theme'],['input','Input Windows'],['output','Output Windows'],['ansi','ANSI Colors'],['logging','Logging'],['restore','Restore Logs'],['emoji','Auto Emoji']
 ];
 const panels=new Map(),buttons=new Map();
 for(const [key,title] of definitions){
@@ -68,6 +68,7 @@ group('logging','New Sessions',fields.defaultLogging,
 const loggingPreferences=window.BeipLoggingUI?.createPreferencesPanel(panels.get('logging'));
 const emojiPreferences=window.BeipEmojiUI?.createPanel(panels.get('emoji'));
 const restorePreferences=window.BeipRestoreUI?.createPreferencesPanel(panels.get('restore'));
+const ansiPreferences=window.BeipAnsiUI?.createPanel(panels.get('ansi'));
 form.replaceChildren(caption,scopeBar,body,actions);
 settings.classList.add('classic-settings');
 function selectCategory(key){
@@ -109,6 +110,7 @@ function captureDraft(){
   if(loggingPreferences)target.logging=loggingPreferences.read();
   if(emojiPreferences)target.emojiEnabled=emojiPreferences.read();
   if(restorePreferences)target.restore=restorePreferences.read();
+  if(ansiPreferences)target.ansi=ansiPreferences.read();
  }else{
   for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
    // Capture editable values before applying a changed inheritance checkbox.
@@ -140,6 +142,7 @@ function renderScope(){
  loggingPreferences?.load(currentDraft('global').logging,!isGlobal);
  emojiPreferences?.load(currentDraft('global').emojiEnabled,!isGlobal);
  restorePreferences?.load(currentDraft('global').restore,!isGlobal);
+ ansiPreferences?.load(currentDraft('global').ansi,!isGlobal);
  for(const [key,control] of Object.entries(controls))writeControl(control,p[key]);
  for(const [group,keys] of [['output',model().OUTPUT_KEYS],['input',model().INPUT_KEYS]]){
   const item=inheritance[group];item.label.hidden=isGlobal;item.explanation.hidden=isGlobal;

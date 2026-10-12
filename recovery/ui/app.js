@@ -18,7 +18,7 @@ function createSession(id,{worldId='',characterId='',label='New session',kind='w
  closedIds.delete(id);
  const view=document.createElement('div');view.className='session-view';view.dataset.session=id;view.hidden=id!==activeId;output.append(view);if(kind==='world'){const welcome=document.createElement('div');welcome.className='welcome';welcome.textContent='To connect to a world, click the globe icon in the bottom left';view.append(welcome);}
  const session={id,worldId,characterId,label,kind,parentId,view,line:null,decoder:new TextDecoder(),parser:null,history:[],historyIndex:0,images:0,loaded:0,failed:0,connected:false,connecting:false,connectedAt:0,activityAt:Date.now(),typedCount:0,tls:false,loginAttempted:false,logging:false,logWanted:!!state.preferences.defaultLogging,unread:0,status:'Ready.',protocol:'Plain text',hasOutput:false};
- if(kind==='world'){send('sessionopen|'+id);configureRules(session);session.parser=new BeipProtocol.Parser(event=>renderEvent(session,event),value=>sendRaw(session,value));}
+ if(kind==='world'){send('sessionopen|'+id);configureRules(session);session.parser=new BeipProtocol.Parser(event=>renderEvent(session,event),value=>sendRaw(session,value),state.preferences.ansi);}
  sessions.set(id,session);BeipWindowPreferences.applyOutput(view,preferencesForSession(session));configureRestore(session);refreshTabs();return session;
 }
 function configureRestore(session){
@@ -87,6 +87,9 @@ function refreshTabs(){
   const item=document.createElement('div');item.className='tab-wrap';
   const tab=document.createElement('button');tab.type='button';tab.className='session-tab';tab.role='tab';tab.ariaSelected=String(session.id===activeId);tab.tabIndex=session.id===activeId?0:-1;
   const title=document.createElement('span');title.textContent=profileLabel(session);tab.append(title);
+  const tabOwner=session.kind==='spawn'?sessions.get(session.parentId)||session:session,tabColor=state.characters.find(c=>c.id===tabOwner.characterId&&c.worldId===tabOwner.worldId)?.tabColor;
+  if(/^#[0-9a-f]{6}$/i.test(tabColor||'')){let rgb=[1,3,5].map(at=>parseInt(tabColor.slice(at,at+2),16));if(session.id===activeId)rgb=rgb.map((n,i)=>Math.round((n*159+[214,234,250][i]*96)/255));tab.style.backgroundColor='rgb('+rgb.join(',')+')';tab.style.color=(rgb[0]*0.299+rgb[1]*0.587+rgb[2]*0.114)>145?'#111111':'#ffffff';if(session.id===activeId)tab.style.boxShadow='inset 0 -2px #276a9f';}
+
   if(session.connected){const dot=document.createElement('span');dot.className='connection-dot';dot.title='Connected';tab.append(dot);}
   if(session.unread){const count=document.createElement('span');count.className='unread';count.textContent=String(Math.min(session.unread,99));count.setAttribute('aria-label',session.unread+' unread lines');tab.append(count);}
   tab.onclick=()=>selectSession(session.id);item.append(tab);
@@ -104,6 +107,7 @@ function selectSession(id){
 }
 function closeSession(id){
  const session=sessions.get(id);if(!session)return;
+ window.BeipFeatures?.dailyCommands().closed(session);
  session.restoreController?.cancel();
  if(session.kind==='world'){if(session.logging)send('logstop|'+id);send('close|'+id);}
  window.BeipConnectTemplates?.cancel(session);
@@ -207,8 +211,8 @@ function finalizeLine(session){
  // Apply each completed line's effects before taking the next line's variable
  // snapshot. Adjacent lines can set and consume a character variable reliably.
  session.pendingLineWork=(session.pendingLineWork||Promise.resolve()).then(()=>{
-  if(sessions.get(session.id)!==session)return;
-  return (window.BeipFeatures?.dispatch(session,'line',plain)||Promise.resolve({handled:false})).then(result=>{if(result.handled){line.remove();return;}return process();});
+  if(sessions.get(session.id)!==session||session.connectionEpoch!==lineEpoch){if(line.dataset.grabCandidate)line.remove();return;}
+  return (window.BeipFeatures?.dispatch(session,'line',plain)||Promise.resolve({handled:false})).then(result=>{if(result.handled){line.remove();return;}if(window.BeipFeatures?.dailyCommands().captureGrab(session,plain)){line.dataset.removed='true';line.remove();return;}line.hidden=false;delete line.dataset.grabCandidate;return process();});
  }).catch(error=>showStatus(session,'Trigger error: '+error.message));
 }
 function triggerAudio(session){return session.triggerAudio??=BeipTriggerAudio.createController({sessionId:session.id,post:send,enabled:!!state.preferences.mediaEnabled});}
@@ -231,6 +235,7 @@ function appendText(session,text,style={},link=null){
   const parent=link?anchor(link,session):document.createElement('span');parent.textContent=s;
   if(style.bold)parent.style.fontWeight='bold';if(style.italic)parent.style.fontStyle='italic';if(style.color)parent.style.color=style.color;if(style.background)parent.style.background=style.background;parent.style.textDecoration=[style.underline?'underline':'',style.strike?'line-through':''].filter(Boolean).join(' ');
   const current=ensureLine(session);if(!current.textContent&&!current.querySelector('img')){if(session.suppressAutomation)current.dataset.logSynthetic='true';else delete current.dataset.logSynthetic;}const last=current.lastElementChild;if(!link&&last?.tagName==='SPAN'&&last.style.cssText===parent.style.cssText)last.append(document.createTextNode(s));else current.append(parent);
+  if(!session.suppressAutomation&&window.BeipFeatures){const candidate=window.BeipFeatures.dailyCommands().previewGrab(session,BeipLineEdits.text(current));current.hidden=candidate;if(candidate)current.dataset.grabCandidate='true';else delete current.dataset.grabCandidate;}
  });scroll(session);
 }
 function image(session,event,targetLine=null){
@@ -298,6 +303,7 @@ function incoming(message){
  if(session.restoreController?.message(payload))return;
  if(window.BeipImageRuntime?.handleNative(session,payload))return;
  if(payload.startsWith('triggeraudio:')){const audio=triggerAudio(session);if(audio.handleEvent(payload.slice(13))){const event=audio.snapshot().events.at(-1);window.dispatchEvent(new CustomEvent('beip-trigger-audio',{detail:{...event,sessionId:session.id}}));if(['invalid-path','file-unavailable','invalid-local-wav','api-failed','unavailable','queue-full','voice-limit','error','rejected'].includes(event.status))showStatus(session,'Audio '+event.status+'.');}return;}
+ if(payload==='reset:'||payload==='ended:'){if(session.line?.dataset.grabCandidate){session.line.remove();session.line=null;}window.BeipFeatures?.dailyCommands().closed(session);}
  if(payload==='reset:')session.triggerAudio?.stop();
  if(payload==='reset:'){session.ruleEngine?.resetTemporal();session.ruleRuntime?.resetTemporal().catch(error=>showStatus(session,error.message));window.BeipConnectTemplates?.cancel(session);session.connectionEpoch=(session.connectionEpoch||0)+1;configureRestore(session);session.restoreController?.capture({v:1,kind:'reset',time:Date.now()});}
  if(payload==='connected:on')session.connected=true;
@@ -345,7 +351,7 @@ function configureRules(session){session.ruleRuntime?.stop();session.ruleRuntime
 function rebuildRules(){ruleEngine=BeipRules.createEngine({aliases:state.aliases,triggers:state.triggers});for(const s of sessions.values())if(s.kind==='world')configureRules(s);}
 function resizeInput(){const height=BeipWindowPreferences.inputHeight($('input'),preferencesForSession());document.documentElement.style.setProperty('--input-height',height+'px');$('inputSplitter').setAttribute('aria-valuenow',String(height));}
 function applyPreferences(){
- const p=preferencesForSession();for(const session of sessions.values()){configureRestore(session);session.triggerAudio?.setEnabled(!!state.preferences.mediaEnabled);BeipWindowPreferences.applyOutput(session.view,preferencesForSession(session));}
+ const p=preferencesForSession();for(const session of sessions.values()){session.parser?.setAnsiPreferences(state.preferences.ansi);configureRestore(session);session.triggerAudio?.setEnabled(!!state.preferences.mediaEnabled);BeipWindowPreferences.applyOutput(session.view,preferencesForSession(session));}
  document.documentElement.dataset.theme=p.theme==='light'?'light':'dark';document.documentElement.style.setProperty('--output-size',p.fontSize+'px');document.documentElement.style.setProperty('--output-font',BeipWindowPreferences.font(p,'output'));output.style.backgroundColor=p.outputBackground||'var(--output-bg)';BeipWindowPreferences.applyInput($('input'),p);resizeInput();window.BeipImageRuntime?.refresh();
 }
 function option(select,value,label){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}
@@ -485,5 +491,5 @@ $('settingsForm').onsubmit=e=>{e.preventDefault();state.preferences={shortcuts:s
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>$(button.dataset.close).close();
 document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.hidden=true;});
 welcome();applyPreferences();rebuildRules();
-window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,processTriggerLine,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
+window.BeipPreview={incoming,sessions,state,secretStatuses:state.secretStatuses,get commandPipeline(){return getCommandPipeline();},get settingsLoaded(){return settingsLoaded;},get parser(){return sessions.get('default')?.parser;},get current(){return current();},selectSession,reconnectSession,configureRestore,replayRestoreRecords,importRestoreRecords,resizeInput,refreshTabs,applyHighlight,processTriggerLine,removeLastLine,logLine,showStatus,appendText,variablesForSession,ruleContext,triggerAudio,createSession,connectSession:connectTo,closeSession,sendRaw,command,ensureLine,image,renderEvent,renderProfileChoices,renderProfileLists,renderRuleLists,saveSettings,applyPreferences,preferencesForSession,setInputHeight,rebuildRules,startLogging,stopLogging};
 window.addEventListener('DOMContentLoaded',()=>{send('ready');send('settings:load');});

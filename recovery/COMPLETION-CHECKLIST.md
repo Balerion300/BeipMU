@@ -21,12 +21,12 @@ as described in README. The original source stays intact.
 | Output Windows/settings (`Dlg_TextWindow`, `Wnd_Text`) | Partial: font/styles/colors/margins, paragraph spacing, wrapped indent, fanfold and fixed width | Exact selection/scrolling options; timestamps/line metadata; complete split behavior and preservation across every pane |
 | Logging/settings (`Logging`, `OM_Logging`) | Partial: reviewed filenames/date/environment tokens, local chooser, formatted text/HTML, typed/sent prefixes, start positions and character auto-start | Multiple concurrent files, midnight automatic rotation, complete original timestamp-flag import and per-character lifecycle |
 | Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP | Original encoding choices, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
-| Taskbar/settings (`Wnd_Taskbar`, `Dlg_Settings`) | Partial: activity, connection and unread indicators | Original tab colors, grouping, notification and taskbar options |
+| Taskbar/settings (`Wnd_Taskbar`, `Dlg_Settings`) | Partial: activity, connection, unread and saved character tab colors | Exact theme blending, grouping, notification and taskbar options |
 | Keyboard Shortcuts (`Shortcuts.md`, `Dlg_Settings`) | Partial: remappable supported actions | New main window/input pane; context-sensitive history and output navigation; all original actions |
 | Auto Emoji (`Emoji.md`, assets and settings) | Implemented documented workflow: original default table, sections, append/replace, Unicode matching, copy/edit/import/save/reload/revert and enable | Original matching implementation is absent; exact undocumented boundary behavior remains an independent reconstruction |
 | Scripting (`ScriptingAPI.md`, `OM.idl`, `*_OM`) | Partial: expanded API subset and member inventory | See SCRIPT-PARITY for exact object/member list; controlled native filesystem/COM, existing-script compatibility and script languages |
 | Restore Logs/settings (`Logging`, `Dlg_Settings`) | Partial: bounded per-character snapshots, startup replay, pause/clear controls and reviewed original Restore.dat import | Exact original visual-trigger/spawn replay, raw native encoding and disable/deletion semantics |
-| ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: ANSI styles | Custom 16-color palette, bold policy, invisible-color policy, beep, flash, parse toggle and reset-on-newline |
+| ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: custom 16-color palette/presets, bright backgrounds, bold/invisible-color policy, parse toggle and received-line reset | Faint, reverse, blinking/flashing, BEL/system/custom beep and complete OSC URL behavior |
 | AI/settings (`Dlg_Settings`, `Wnd_Input`) | Open | Original local-model integration, model configuration and input actions; no credentials or live service use in tests |
 | User Data/settings (`Dlg_Settings`) | Open | Original paths, backup/import/export/move behavior and dialogs |
 | Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order, Active/Echo/ProcessCommands, owned awaited dispatch | Debugger, input prefixes and remaining exact compatibility limits |
@@ -217,3 +217,20 @@ leaking into a new live line. Snapshot replay now consumes historical one-line
 instructions and restores any pre-existing live pending instruction/request state.
 The image and restoration fixtures assert this boundary and decoded avatar geometry.
 Native/module builds and compiled Pueblo/MXP image/link/WHO fixtures passed.
+
+## Preview 0.14 integration audit
+
+Global ANSI controls follow Root.prp, Dlg_Settings and AnsiParser, including the
+fixed indexed-color table separate from the custom sixteen-color palette. Received
+LF resets ANSI when enabled; Pueblo BR/P and CR alone do not. Original restore
+records reset at their received-line boundary. MXP mode controls remain operational
+when ANSI parsing is disabled, an explicit shared-parser compatibility choice.
+
+/repeat, /gag, /grab, /tabcolor and /resetscript have source-derived bounded
+implementations. Grab replies are offered to OnReceive first, then consumed before
+triggers/logging/display/restore, with owner/epoch isolation and oversize rejection.
+Gag changes global root rules; rebuilding cancels an old pending trigger tree.
+Tab colors use safe opaque colors with an active tint and readable text; the exact
+missing native named-color parser/theme behavior is not claimed. Script reset is
+per owner rather than original process-wide. /roll and /exit remain open, as do
+existing delay/recall differences and the complete command inventory.

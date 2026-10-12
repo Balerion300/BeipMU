@@ -79,7 +79,7 @@ function createPipeline(host,overrides={}){
   const silent=text.startsWith('/silent/'),command=silent?'/'+text.slice(8):text;
   if(await invoke(ctx,'internal',command,{silent}))return;
   if(host.settings(ctx.owner)?.sendUnknown)await line(frame(ctx),text,'');
-  else if(!silent)await invoke(ctx,'report','Unknown command: '+command);
+  else await invoke(ctx,'report','Unknown command: '+command);
  }
  async function execute(ctx,text,mode,prefix){
   charge(ctx,text);if(ctx.flags.replay)return;

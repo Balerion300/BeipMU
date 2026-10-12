@@ -137,3 +137,13 @@ Trigger filters and script insert/delete/style operations preserve unrelated
 Pueblo/MXP anchors and image elements. At an anchor boundary, inserted plain text
 stays outside the anchor; insertion strictly inside retains its link identity.
 Image captions and avatar decorations do not consume script/trigger prose offsets.
+
+## 0.14 ANSI settings
+
+ANSI Colors has sixteen editable swatches, individual defaults, the five original
+palette presets and four global policies. Profile dialogs show the global policy
+read-only. Existing transcript appearance remains unchanged when preferences are
+edited; future output uses the new palette. Character tab color paints the tab
+background, with a selected tint and contrasting text.
+
+0.14 packaged acceptance (`sessions-20261012-094157`) passed in fresh and persisted runs. The ANSI settings and rendered output screenshots were inspected: the custom orange bold line and following unstyled line match the asserted computed styles. This verifies the implemented surface, not every original ANSI action or native window gesture.

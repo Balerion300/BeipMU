@@ -34,7 +34,8 @@ async function run(app=window.BeipPreview){
   const changed=[...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].find(x=>x.textContent==='[checked] SCRIPT OBJECT RED');
   const styledRange=(start,end,predicate)=>{if(!changed)return false;let at=0,covered=0;for(const node of BeipLineEdits.textNodes(changed)){const next=at+node.length,overlap=Math.max(0,Math.min(next,end)-Math.max(at,start));if(overlap){if(!predicate(getComputedStyle(node.parentElement)))return false;covered+=overlap;}at=next;}return covered===end-start;};
   check('displayMutation',!!changed&&styledRange(0,10,style=>Number(style.fontWeight)>=600||style.fontWeight==='bold'));
-  check('originalStylePreserved',!!changed&&styledRange(10,changed.textContent.length,style=>style.color==='rgb(230, 107, 107)'));
+  const ansiRed=BeipAnsi.normalize(app.state.preferences.ansi).colors[1],expectedRed='rgb('+[1,3,5].map(at=>parseInt(ansiRed.slice(at,at+2),16)).join(', ')+')';
+  check('originalStylePreserved',!!changed&&styledRange(10,changed.textContent.length,style=>style.color===expectedRed));
   check('displayGag',![...alpha.view.querySelectorAll('.line:not([data-restore-replay])')].some(x=>x.textContent==='SCRIPT OBJECT HIDE'));
   const unsupported=await alpha.scripts.evaluate('try{app.ActiveXObject("WScript.Shell");}catch(e){window.output.write("SCRIPT OBJECT NATIVE BLOCKED");}',BeipFeatures.context(alpha));
   check('nativeCapabilityBoundary',unsupported.effects.some(x=>x.value==='SCRIPT OBJECT NATIVE BLOCKED'));

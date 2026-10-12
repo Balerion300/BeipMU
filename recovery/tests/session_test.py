@@ -5,6 +5,7 @@ import base64
 import http.server
 import io
 import pathlib
+import re
 import socket
 import struct
 import subprocess
@@ -17,7 +18,7 @@ import math
 import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "BeipMU-Recovery-0.13" / "BeipMU-Recovery.exe"
+EXE = ROOT / "dist" / "BeipMU-Recovery-0.14" / "BeipMU-Recovery.exe"
 OUT = ROOT / "test-results" / ("sessions-" + time.strftime("%Y%m%d-%H%M%S"))
 
 
@@ -110,6 +111,7 @@ class Fixture:
                     conn.sendall(b"AVATAR TEST\r\n")
                 else:
                     conn.sendall((self.marker + "\r\n").encode("utf-8"))
+                grab_replies = set()
                 while True:
                     try:
                         chunk = conn.recv(4096)
@@ -118,6 +120,12 @@ class Fixture:
                     if not chunk:
                         break
                     self.received.extend(chunk)
+                    if self.marker.startswith("CORE A"):
+                        for reply in re.finditer(rb"(?:^|(?<=\r\n))@pemit me=([0-9a-f]{8} )&desc dailyfixture=\[get\(dailyfixture/desc\)\]\r\n", self.received):
+                            if reply.start() not in grab_replies:
+                                grab_replies.add(reply.start())
+                                conn.sendall(reply.group(1) + b"&desc dailyfixture=DAILY GRAB RESPONSE\r\n")
+
         except Exception as exc:
             self.error = str(exc)
         finally:
@@ -198,11 +206,11 @@ def run(phase):
     assert "50" in json.dumps(result.get("gmcpStats")) and "100" in json.dumps(result.get("gmcpStats")), result
     assert result.get("persistenceLoaded") is (phase == "persist"), result
     assert not result.get("errors"), result
-    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation"):
+    for section in ("scriptObjects", "settings", "layouts", "maps", "everyday", "temporal", "emoji", "commands", "images", "restore", "pipeline", "puebloSpacing", "continuation", "ansi", "ansiSettings", "dailyCommands"):
         checks = result.get(section)
         assert isinstance(checks, dict) and checks, (section, result)
         assert not checks.get("error"), (section, checks)
-        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}}
+        diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}, "dailyCommands": {"grabWires"}}
         assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
     emoji_log = pathlib.Path(result["emoji"]["logPath"])
     restore_id = result["restore"]["nativeCharacter"]
@@ -257,6 +265,9 @@ def run(phase):
     for path, marker in zip(paths, ("LOG alpha", "LOG beta")):
         assert path.resolve().is_relative_to(OUT.resolve()) and path.is_file(), path
         assert marker in path.read_text(encoding="utf-8"), path
+    for path in paths:
+        contents = path.read_text(encoding="utf-8")
+        assert "DAILY GRAB RESPONSE" not in contents and "DAILY PARTIAL GRAB" not in contents, path
     assert "CORE LOG BACKLOG" in paths[0].read_text(encoding="utf-8"), paths[0]
     assert all(marker not in paths[0].read_text(encoding="utf-8") for marker in ("WHO START", "WHO BEGIN", "WHO body", "WHO END")), paths[0]
     assert (OUT / "preview.png").stat().st_size > 1000, f"{phase}: no screenshot"
@@ -270,6 +281,12 @@ def run(phase):
     assert b'pipeline-' not in b, b
     assert a.count(b'continuation-script-seen-ran-alpha\r\n') == 1, a
     assert b'continuation-' not in b, b
+    assert a.count(b'daily-repeat-alpha\r\n') == 3, a
+    assert b'daily-repeat-alpha' not in b, b
+    assert len(result['dailyCommands']['grabWires']) == 4, result['dailyCommands']
+    for grab_wire in result['dailyCommands']['grabWires']:
+        assert a.count(grab_wire.encode('utf-8') + b'\r\n') == 1, a
+        assert grab_wire.encode('utf-8') not in b, b
     for marker in [b'pipeline-stale-alpha', b'pipeline-stale-queued-alpha', b'pipeline-blocked-alpha', b'pipeline-drop', b'pipeline-local']:
         assert marker not in a + b, (marker, a, b)
     assert a.index(b'pipeline-child-alpha') < a.index(b'pipeline-parent-alpha')

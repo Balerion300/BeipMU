@@ -1,4 +1,25 @@
-# BeipMU recovery preview 0.13
+# BeipMU recovery preview 0.14
+
+Preview 0.14 adds the original global ANSI palette and policy controls: sixteen
+colors, XTerm/CMD/VGA/Old/Bright presets, font bold versus bright colors, equal-color
+protection, parsing toggle and received-line reset. Changes affect future text in
+all sessions. Existing recovery profiles adopt the original defaults when no ANSI
+setting is saved, so the previous hard-coded colors and bold behavior change.
+Pueblo BR tags do not reset ANSI by themselves; received LF boundaries do.
+
+Additional commands include bounded /repeat, original-style global /gag, owned
+one-shot /grab replies, persisted character /tabcolor and per-session /resetscript.
+Repeat shares command budgets and is capped at 64 iterations. Script reset keeps
+other sessions isolated; this differs from the original shared script engine.
+Silent feedback follows individual command rules; errors and requested data are
+not universally hidden. /roll and native /exit remain unimplemented.
+
+Validation: native build, all 43 module test files, fresh and persisted packaged
+sessions, and compiled Pueblo/MXP fixtures pass. ANSI settings and rendered output
+screenshots were inspected. Full original parity remains incomplete; see the
+completion checklist.
+
+## Previous preview 0.13
 
 Preview 0.13 runs triggers in original action order, suspending at sends and script
 callbacks before matching later rules. Alias expansion, intercepted commands and
@@ -196,7 +217,7 @@ for tests, and Microsoft Edge WebView2 Evergreen Runtime. Run:
 
 The script downloads pinned WebView2 SDK 1.0.4258.31, builds the native application
 and telnet tests, runs the JavaScript tests and creates
-`recovery/dist/BeipMU-Recovery-0.13-x64.zip`. Extract the whole archive and run
+`recovery/dist/BeipMU-Recovery-0.14-x64.zip`. Extract the whole archive and run
 `BeipMU-Recovery.exe`; keep its `ui` directory beside the executable.
 
 Blood of Dragons defaults to `bod.westeros.org`, port `3000`. Save a world in

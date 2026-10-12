@@ -1,6 +1,6 @@
 /* MIT. Stream parser for the BeipMU recovery display; no server HTML executes. */
 (function(root){
-const colors=['#20252c','#e66b6b','#87c47f','#e2bd74','#7fa8e6','#c391df','#7ecbca','#dddfe4'];
+const ansiModule=typeof module==='object'&&module.exports?require('./ansi-state.js'):root.BeipAnsiState;
 function entity(s){return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,(full,v)=>{
  const map={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:'\u00a0'};
  if(v[0]!=='#')return map[v.toLowerCase()]??full;
@@ -12,8 +12,10 @@ function attributes(s){const a={},pos=[];let m;const re=/(?:"([^"]*)"|'([^']*)'|
  while((m=re.exec(s))){const key=m[1]??m[2]??m[3];if(m[4]!==undefined||m[5]!==undefined||m[6]!==undefined)a[key.toLowerCase()]=entity(m[4]??m[5]??m[6]);else pos.push(entity(key));}
  return {a,pos};}
 class Parser{
- constructor(emit,send){this.emit=emit;this.send=send;this.reset();}
- reset(){this.pending='';this.announcement='';this.pueblo=false;this.handshake=false;this.mxp=false;this.mode=0;this.defaultMode=0;this.stack=[];this.style={};this.ansi={};this.link=null;this.pendingCR=false;this.pre=0;this.brNewline=false;this.htmlSpace=false;this.lastText='';}
+ constructor(emit,send,ansiPreferences){this.emit=emit;this.send=send;this.ansiState=new ansiModule.State(ansiPreferences);this.reset();}
+ setAnsiPreferences(value){this.ansiState.configure(value);this.ansi=this.ansiState.style();}
+ beginReceivedLine(){if(this.ansiState.preferences.resetOnNewLine)this.ansi=this.ansiState.reset().style();}
+ reset(){this.pending='';this.announcement='';this.pueblo=false;this.handshake=false;this.mxp=false;this.mode=0;this.defaultMode=0;this.stack=[];this.style={};this.ansi=this.ansiState.reset().style();this.link=null;this.pendingCR=false;this.pre=0;this.brNewline=false;this.htmlSpace=false;this.lastText='';}
  setMXP(enabled){this.brNewline=false;this.htmlSpace=false;this.pre=0;this.mxp=enabled;if(!enabled){this.stack=[];this.link=null;this.style={};}this.emit({type:'protocol',pueblo:this.pueblo,mxp:this.mxp});}
  text(s){if(!s)return;if(this.htmlSpace){if(this.pueblo&&!this.pre&&this.lastText&&!/[\s]/.test(this.lastText)&&!/^\s/.test(s))s=' '+s;this.htmlSpace=false;}this.lastText=s.at(-1);this.emit({type:'text',text:s,style:{...this.ansi,...this.style},link:this.link?{...this.link}:null});}
  modeChange(n){this.brNewline=false;this.htmlSpace=false;this.pre=0;if(n===3){this.stack=[];this.style={};this.link=null;return;}if([5,6,7].includes(n)){this.defaultMode=n-5;this.mode=n-5;}else if([0,1,2].includes(n))this.mode=n;this.stack=[];this.style={};this.link=null;}
@@ -25,20 +27,22 @@ class Parser{
   let run='';const flush=()=>{this.text(run);run='';};
   while(this.pending.length){
    let c=this.pending[0];
-   if(this.pendingCR){this.pendingCR=false;if(c==='\n'){this.pending=this.pending.slice(1);continue;}}
+   if(this.pendingCR){this.pendingCR=false;if(c==='\n'){if(this.ansiState.preferences.resetOnNewLine)this.ansi=this.ansiState.reset().style();this.pending=this.pending.slice(1);continue;}}
    if(c!=='\r'&&c!=='\n')this.brNewline=false;
    if(c==='\x1b'){
     flush();if(this.pending.length<2)break;
+    if(!this.ansiState.preferences.parse&&(!this.mxp||this.pending[1]!=='[')){this.pending=this.pending.slice(1);continue;}
     if(this.pending[1]==='['){const m=/^\x1b\[([0-9;?]*)([ -/]*)([@-~])/.exec(this.pending);if(!m){if(this.pending.length<128)break;this.pending=this.pending.slice(1);continue;}
+     if(!this.ansiState.preferences.parse&&!(m[3]==='z'&&this.mxp)){this.pending=this.pending.slice(1);continue;}
      this.pending=this.pending.slice(m[0].length);if(m[3]==='z'&&this.mxp)this.modeChange(Number(m[1]||0));else if(m[3]==='m')this.sgr(m[1]);continue;
     }
-    if(this.pending[1]===']'){const end=this.pending.search(/\x07|\x1b\\/);if(end<0){if(this.pending.length>8192)this.pending='';break;}
+    if(this.pending[1]===']'){if(!this.ansiState.preferences.parse){this.pending=this.pending.slice(1);continue;}const end=this.pending.search(/\x07|\x1b\\/);if(end<0){if(this.pending.length>8192)this.pending='';break;}
      const seq=this.pending.slice(2,end);this.pending=this.pending.slice(end+(this.pending[end]==='\x07'?1:2));
      if(seq.startsWith('8;')){const uri=seq.slice(seq.indexOf(';',2)+1);const url=webURL(uri);this.link=url?{kind:'url',value:url}:null;}continue;
     }
     this.pending=this.pending.slice(2);continue;
    }
-   if(c==='\r'||c==='\n'){flush();this.pending=this.pending.slice(1);this.pendingCR=c==='\r';/* Pueblo HTML source newlines are whitespace; BR owns its display break. Preserve literal spaces/tabs for MUSH columns. PRE and MXP retain their existing line semantics. */if(this.pueblo&&!this.pre)this.htmlSpace=true;else if(!this.brNewline)this.text('\n');this.brNewline=false;if(this.mxp&&!this.pueblo){this.mode=this.defaultMode;this.stack=[];this.style={};this.link=null;}continue;}
+   if(c==='\r'||c==='\n'){flush();this.pending=this.pending.slice(1);this.pendingCR=c==='\r';/* Pueblo HTML source newlines are whitespace; BR owns its display break. Preserve literal spaces/tabs for MUSH columns. PRE and MXP retain their existing line semantics. */if(this.pueblo&&!this.pre)this.htmlSpace=true;else if(!this.brNewline)this.text('\n');this.brNewline=false;if(c==='\n'&&this.ansiState.preferences.resetOnNewLine)this.ansi=this.ansiState.reset().style();if(this.mxp&&!this.pueblo){this.mode=this.defaultMode;this.stack=[];this.style={};this.link=null;}continue;}
    if(c==='<'){
     const markup=this.pueblo || (this.mxp&&this.mode!==2) || /^<\/?xch_mudtext/i.test(this.pending);
     if(markup){let quote=null,end=-1;for(let i=1;i<this.pending.length;i++){const t=this.pending[i];if(quote){if(t===quote)quote=null;}else if(t==='"'||t==="'")quote=t;else if(t==='>'){end=i;break;}}
@@ -53,7 +57,7 @@ class Parser{
   }flush();
  }
  finish(){this.brNewline=false;this.pre=0;if(this.pending)this.text(this.pending);this.pending='';this.stack=[];this.link=null;this.style={};}
- sgr(s){const codes=(s||'0').split(';').map(Number);for(let i=0;i<codes.length;i++){const n=codes[i];if(n===0)this.ansi={};else if(n===1)this.ansi.bold=true;else if(n===3)this.ansi.italic=true;else if(n===4)this.ansi.underline=true;else if(n===22)delete this.ansi.bold;else if(n===23)delete this.ansi.italic;else if(n===24)delete this.ansi.underline;else if(n===39)delete this.ansi.color;else if(n===49)delete this.ansi.background;else if(n>=30&&n<=37)this.ansi.color=colors[n-30];else if(n>=40&&n<=47)this.ansi.background=colors[n-40];else if(n>=90&&n<=97)this.ansi.color=colors[n-90];else if(n===38||n===48){let color=null;if(codes[i+1]===2&&codes.length>=i+5){color=`rgb(${codes.slice(i+2,i+5).map(x=>Math.max(0,Math.min(255,x))).join(',')})`;i+=4;}else if(codes[i+1]===5){let v=codes[i+2];if(v<16)color=colors[v%8];else if(v<232){v-=16;const levels=[0,95,135,175,215,255];color=`rgb(${levels[Math.floor(v/36)]},${levels[Math.floor(v/6)%6]},${levels[v%6]})`;}else if(v<=255){v=8+(v-232)*10;color=`rgb(${v},${v},${v})`;}i+=2;}if(color)this.ansi[n===38?'color':'background']=color;}}}
+ sgr(s){this.ansi=this.ansiState.apply(s);}
  tag(token){this.brNewline=false;const m=/^\s*(\/?)\s*([\w!_-]+)([\s\S]*)$/.exec(token);if(!m)return;const close=!!m[1],name=m[2].toLowerCase(),{a,pos}=attributes(m[3].replace(/\/$/,''));
   if(name==='xch_mudtext'){this.pre=0;this.htmlSpace=false;this.pueblo=close;this.emit({type:'protocol',pueblo:this.pueblo,mxp:this.mxp});return;}
   const openTags=['b','strong','i','em','u','s','strike','color','c','font','br','p'];
@@ -62,7 +66,7 @@ class Parser{
   if(close){const index=this.stack.map(x=>x.name).lastIndexOf(name);if(index>=0){const saved=this.stack[index];this.style=saved.style;this.link=saved.link;this.stack.length=index;}return;}
   if(name==='br'||name==='p'){this.text('\n');/* PennMUSH pairs BR with a transport newline inside PRE. */this.brNewline=name==='br'&&this.pre>0;return;}
   if(name==='support'){const supported=['b','i','u','color','font','a','send','img','image','br','p','version','support'];const attrs={a:['href','hint'],send:['href','hint','prompt'],img:['src','height','alt'],image:['url','fname','height','alt'],color:['fore'],font:['color']};const queries=pos.length?pos:supported;this.send('\x1b[1z<SUPPORTS '+queries.map(q=>{const [tag,attr]=q.toLowerCase().split('.');return (supported.includes(tag)&&(!attr||attrs[tag]?.includes(attr))?'+':'-')+q;}).join(' ')+'>');return;}
-  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.13">');return;}
+  if(name==='version'){this.send('\x1b[1z<VERSION MXP="1.0" CLIENT="BeipMU-Recovery" VERSION="0.14">');return;}
   if(name==='img'||name==='image'){
    if(a.xch_mode!==undefined&&!a.src&&!a.fname&&!a.url&&!pos.length)return;
    let src=a.src;if(!src){const fname=a.fname||pos[0]||'';try{src=a.url?new URL(fname,a.url).href:fname;}catch{src='';}}

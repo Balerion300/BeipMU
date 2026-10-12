@@ -320,3 +320,16 @@ uses resumable rules and awaited command/script effects instead of precomputing
 all later matches or simulating variable commands. Incremental range edits retain
 unaffected interactive nodes. This does not close the scripting architecture gaps
 listed in SCRIPT-PARITY.
+
+## Preview 0.14 source comparison
+
+ANSI Root.prp 381-427 and Dlg_Settings 589-756 define original palette/policies.
+Telnet.cpp 395-396 discards CR and emits received lines on LF; TextToLine 21 resets
+ANSI per such line. The recovery preserves its Pueblo whitespace fix separately.
+Commands.cpp supplies WordList, repeat, gag, grab and tabcolor semantics; missing
+native parsing dependencies and isolated scripting architecture are recorded as
+limits rather than treating matching command names as full compatibility.
+
+### Preview 0.14 acceptance evidence
+
+Windows/native build and all 43 JavaScript test modules pass, including 14 ANSI and 25 daily-command checks. Fresh and persisted packaged sessions pass at `sessions-20261012-094157`. These verify live ANSI settings, computed styles and line resets, settings Save/reopen/Cancel, repeated native command ownership, four one-shot grab requests, OnReceive ordering, hidden partial replies, no captured reply in transcript/log/dock/restore, global gag, owner script reset, silent command feedback and saved tab colors. Compiled Pueblo/MXP image/link/WHO/ordinary-spacing fixtures also pass. ANSI settings and rendered output screenshots were inspected. The local server fixture uses a non-consuming line boundary so consecutive grab commands each receive one reply.

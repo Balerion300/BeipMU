@@ -331,6 +331,9 @@ window.BeipCoreTest=async function(config){
   result.pipeline=await BeipPipelineFixture.run(app);
   send('testphase-continuation');
   result.continuation=await BeipContinuationFixture.run(app,config);
+  send('testphase-ansi');result.ansi=BeipAnsiFixture.run();
+  send('testphase-ansiSettings');result.ansiSettings=await BeipAnsiSettingsFixture.run(app);
+  send('testphase-dailyCommands');result.dailyCommands=await BeipDailyCommandsFixture.run(app,config);
   const closed=config.phase==='first'?'alpha':'beta',survivor=config.phase==='first'?'beta':'alpha';
   app.selectSession(closed);
   const closingPane=await openDock('ui:window-input-history','Input History','history');

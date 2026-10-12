@@ -56,7 +56,7 @@
    const name=text(item.name,80).trim();if(!name)return null;
    const candidate=text(item.loginName,128).trim(),loginName=/[\x00-\x1f\x7f]/.test(candidate)||new TextEncoder().encode(candidate).length>128?'':candidate;
    return {id:item.id,worldId:item.worldId,name,loginName,restore:(typeof module==='object'&&module.exports?require('./restore-model.js'):globalThis.BeipRestoreModel).normalizeCharacter(item.restore),logging:logging.normalizeCharacter(item.logging),...(item.idle?{idle:normalizeIdle(item.idle)}:{}),...templates.normalize(item),autoLogin:bool(item.autoLogin)&&!!loginName,
-    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
+    allowPlainLogin:bool(item.allowPlainLogin),openAtStartup:bool(item.openAtStartup),autoConnect:bool(item.autoConnect),...(typeof item.tabColor==='string'&&/^#[0-9a-f]{6}$/i.test(item.tabColor)?{tabColor:item.tabColor.toLowerCase()}:{}),notes:text(item.notes,16384),variables:ruleModel.normalizeVariables(item.variables),...(item.dockLayout&&dock?{dockLayout:dock.normalize(item.dockLayout)}:{}),preferences:profilePreferences.normalizeOverrides(item.preferences)};
   }).filter(Boolean));
   const characterIds=new Map(characters.map(x=>[x.id,x]));
   const source=raw.preferences&&typeof raw.preferences==='object'?raw.preferences:{};
