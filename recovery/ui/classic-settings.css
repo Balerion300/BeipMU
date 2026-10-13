@@ -1,0 +1,110 @@
+/* Compact Windows dialogs shaped after BeipMU 4.335. */
+#settingsDialog.classic-settings{
+ width:min(590px,calc(100vw - 24px));height:min(483px,calc(100vh - 24px));
+ max-height:none;box-sizing:border-box;padding:0;overflow:hidden;background:#f0f0f0;
+ border:1px solid #666;border-radius:0;color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+#settingsDialog.classic-settings #settingsForm{display:flex;flex-direction:column;gap:0;height:100%;margin:0;padding:0}
+.classic-settings-caption,.classic-logging-caption{
+ display:flex;align-items:center;justify-content:space-between;flex:none;height:28px;
+ box-sizing:border-box;padding:0 7px 0 10px;background:#f0f0f0;border-bottom:1px solid #b8b8b8;
+}
+.classic-settings-caption h2,.classic-logging-caption h2{font:600 12px "Segoe UI",Tahoma,sans-serif;margin:0;color:#111}
+.classic-settings-caption .close,.classic-logging-caption button{
+ min-width:24px;height:22px;border:0;background:transparent;color:#111;font:17px/1 "Segoe UI",sans-serif;padding:0;
+}
+.classic-settings-caption .close:hover,.classic-logging-caption button:hover{background:#ddd}
+.classic-settings-body{display:grid;grid-template-columns:116px minmax(0,1fr);flex:1;min-height:0}
+.classic-settings-scope{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #bbb;color:#111;font-size:12px}
+.classic-settings-scope select{flex:1;min-width:0;height:24px;background:#fff;color:#111;border:1px solid #888;font:12px "Segoe UI",sans-serif}
+.classic-settings-inherit{display:flex;align-items:center;gap:6px;margin:0 0 7px;color:#111;font-size:12px}
+.classic-settings-inherit[hidden],.classic-settings-effective[hidden]{display:none}
+.classic-settings-effective{margin-bottom:10px!important}
+.classic-settings-group input:disabled,.classic-settings-group select:disabled{color:#777;background:#e8e8e8}
+.classic-settings-categories{display:flex;flex-direction:column;gap:0;padding:7px 3px;background:#fff;border-right:1px solid #aaa;overflow-y:auto}
+.classic-settings-categories button{
+ display:block;width:100%;min-height:23px;padding:3px 6px;border:1px solid transparent;border-radius:0;
+ background:transparent;color:#111;text-align:left;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-categories button[aria-current=page]{background:#cce8ff;border-color:#99c9ec}
+.classic-settings-categories button:hover:not([aria-current=page]){background:#eef5fb}
+.classic-settings-content{min-width:0;padding:10px 13px;overflow:auto;background:#f0f0f0}
+.classic-settings-panel[hidden]{display:none}
+.classic-settings-panel h3{font:600 13px "Segoe UI",Tahoma,sans-serif;margin:0 0 12px;color:#111}
+.classic-settings-group{display:flex;flex-direction:column;gap:10px;min-width:0;margin:0 0 14px;padding:10px 9px 11px;border:1px solid #bbb}
+.classic-settings-group legend{padding:0 5px;font-weight:600;color:#222}
+.classic-settings-group label{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-height:23px;color:#111;font-size:12px}
+.classic-settings-group label:has(input[type=checkbox]){justify-content:flex-start}
+.classic-settings-group input[type=checkbox]{width:14px;height:14px;margin:0}
+.classic-settings-group input[type=number],.classic-settings-group select{
+ width:105px;height:23px;box-sizing:border-box;padding:2px 4px;border:1px solid #888;border-radius:0;
+ background:#fff;color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-group .classic-settings-number,.classic-settings-group label:has(input[type=number]),.classic-settings-group label:has(select){justify-content:space-between}
+.classic-settings-note{max-width:330px;margin:1px 0 0!important;color:#555!important;font-size:11px;line-height:1.45}
+.classic-settings-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex:none;height:43px;box-sizing:border-box;padding:6px 10px;border-top:1px solid #b8b8b8;background:#f0f0f0}
+.classic-settings-actions button,.classic-logging button:not(.classic-logging-row){
+ min-width:76px;height:25px;padding:2px 10px;border:1px solid #888;border-radius:0;background:#f6f6f6;
+ color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-settings-actions button:hover,.classic-logging button:not(.classic-logging-row):hover:not(:disabled){background:#e5f2fb;border-color:#579bd3}
+.classic-settings-actions button[type=submit]{border-color:#3277b3}
+dialog.classic-logging{
+ width:min(512px,calc(100vw - 24px));height:min(280px,calc(100vh - 24px));max-height:none;
+ box-sizing:border-box;padding:0;overflow:hidden;background:#f0f0f0;border:1px solid #666;border-radius:0;
+ color:#111;font:12px "Segoe UI",Tahoma,sans-serif;
+}
+.classic-logging-caption{height:28px}
+.classic-logging-section{display:flex;align-items:center;gap:8px;height:21px;padding:0 10px;color:#111}
+.classic-logging-section strong{font-weight:600}
+.classic-logging-rule{flex:1;height:1px;background:#aaa}
+.classic-logging-list{height:104px;box-sizing:border-box;margin:0 9px;background:#fff;border:1px solid #888;overflow:auto}
+.classic-logging-row{display:block;width:100%;min-height:21px;padding:3px 5px;border:0;background:#fff;color:#111;text-align:left;font:12px "Segoe UI",Tahoma,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.classic-logging-row[aria-selected=true]{background:#cce8ff}
+.classic-logging-empty{padding:6px;color:#666}
+.classic-logging-current-actions{display:flex;justify-content:flex-end;gap:7px;height:30px;padding:3px 9px;box-sizing:border-box}
+.classic-logging-new-actions{display:flex;align-items:center;gap:7px;padding:1px 9px 6px}
+.classic-logging-new-actions [data-action=export]{min-width:140px}
+.classic-logging-new-actions [data-action=close-bottom]{margin-left:auto}
+.classic-logging-new-actions label{display:flex;align-items:center;gap:5px;font:12px "Segoe UI",sans-serif;color:#111}
+.classic-logging-new-actions select{height:24px;width:154px;border:1px solid #888;background:#fff;color:#111;font:12px "Segoe UI",sans-serif}
+.classic-log-export{position:absolute;left:9px;bottom:5px;height:23px!important}
+.classic-logging button:disabled{color:#888;background:#eee}
+@media(max-width:480px){.classic-settings-body{grid-template-columns:104px minmax(0,1fr)}.classic-settings-content{padding:7px}.classic-settings-group{padding:8px 6px}.classic-logging-new-actions [data-action=export]{min-width:0}}
+#smartPasteDialog{border:1px solid #666;border-radius:0;background:#f0f0f0;color:#111;padding:8px;font:12px "Segoe UI",Tahoma,sans-serif}
+#smartPasteDialog form{display:flex;flex-direction:column;gap:8px}
+#smartPasteDialog .dialog-head{margin:0;padding:2px 0 7px;border-bottom:1px solid #aaa}
+#smartPasteDialog h2{font:600 12px "Segoe UI",sans-serif}
+#smartPasteDialog label{display:flex;flex-direction:column;gap:4px;color:#111}
+#smartPasteDialog .check{flex-direction:row;justify-content:flex-start}
+#smartPasteDialog input,#smartPasteDialog textarea{border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:3px;font:12px "Segoe UI",sans-serif}
+#smartPasteDialog textarea{font:13px/1.2 "Courier New",monospace;resize:vertical;min-height:110px}
+#smartPasteDialog button{border:1px solid #888;border-radius:0;background:#f6f6f6;color:#111;min-width:76px;height:25px;padding:2px 8px;font:12px "Segoe UI",sans-serif}
+#smartPasteDialog .dialog-actions{border-color:#aaa;padding-top:7px}
+#smartPasteDialog #smartPasteStatus{color:#444;font-size:12px}
+
+.classic-settings-group input[type=text]{width:155px;max-width:55%;height:23px;padding:2px 4px;border:1px solid #888;border-radius:0;background:#fff;color:#111;font:12px "Segoe UI",sans-serif}
+.classic-settings-group label:has(input[type=text]){justify-content:space-between;white-space:normal}
+.classic-settings-sample{min-height:62px;max-height:140px;overflow:auto;white-space:pre-wrap;border:1px inset #aaa;line-height:1.2}
+.classic-settings-copy{display:flex;gap:8px;padding-bottom:10px}
+.classic-settings-copy button{border:1px solid #888;border-radius:0;padding:4px 8px;background:#f6f6f6;color:#111;font:12px "Segoe UI",sans-serif}
+
+.connect-template-editor{margin:4px 0;padding:7px;border:1px solid #bbb;min-width:0}
+.connect-template-editor textarea{width:100%;min-height:54px;font:12px Consolas,monospace;border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:4px}
+.connect-template-editor p{font:11px/1.3 "Segoe UI",sans-serif;color:#555;white-space:normal;margin:4px 0}
+.logging-preferences button,.logging-character button{border:1px solid #888;border-radius:0;padding:3px 8px;background:#f6f6f6;color:#111;font:12px "Segoe UI",sans-serif;align-self:flex-end}
+.logging-preferences label:has(input[type=text]){flex-wrap:wrap}
+.logging-preferences input[type=text]{max-width:none;width:180px}
+.logging-character{margin:4px 0;padding:7px;border:1px solid #bbb;min-width:0}
+.logging-character label{font:12px "Segoe UI",sans-serif;margin:5px 0;color:#111;white-space:normal}
+.logging-character input:not([type=checkbox]){height:24px;border:1px solid #888;border-radius:0;background:#fff;color:#111;font:12px "Segoe UI",sans-serif;padding:3px}
+.logging-character p{font:11px/1.3 "Segoe UI",sans-serif;color:#555;margin:4px 0;white-space:normal}
+.emoji-settings p{font:11px/1.4 "Segoe UI",sans-serif;color:#555;margin:7px 0;white-space:normal}
+.emoji-settings label{font:12px "Segoe UI",sans-serif;color:#111;margin:7px 0;white-space:normal}
+.emoji-settings textarea{width:100%;min-height:155px;font:12px Consolas,"Segoe UI Emoji",monospace;border:1px solid #888;border-radius:0;background:#fff;color:#111;padding:4px}
+.emoji-actions{display:flex;flex-wrap:wrap;gap:5px}
+.emoji-actions button{border:1px solid #888;border-radius:0;padding:4px 7px;background:#f6f6f6;color:#111;font:11px "Segoe UI",sans-serif}
+.emoji-file{display:flex;flex-direction:column;align-items:flex-start!important}
+.emoji-file input{max-width:100%;font:11px "Segoe UI",sans-serif}
+.emoji-settings output{display:block;padding:7px;white-space:pre-wrap;min-height:32px;border:1px solid #aaa;background:#fff;color:#111;font:13px "Segoe UI Emoji","Segoe UI",sans-serif}
+.auto-emoji{font-family:"Segoe UI Emoji","Segoe UI Symbol",sans-serif}

@@ -1,0 +1,140 @@
+Version=400
+Connections
+{
+ Aliases
+ {
+  Active=true
+  AfterCount=1
+  {
+   Description="Conditional aliases"
+   FindString.MatchText="start"
+   Replace="middle"
+   ExpandVariables=true
+   Aliases
+   {
+    Active=false
+    AfterCount=1
+    {
+     FindString.MatchText="middle"
+     Replace="finish %target%"
+     ExpandVariables=true
+    }
+   }
+  }
+  {
+   Description="After scopes"
+   Folder=true
+   Aliases
+   {
+    {
+     FindString.MatchText="finish"
+     Replace="say"
+    }
+   }
+  }
+ }
+ Triggers
+ {
+  AfterCount=1
+  {
+   Description="Disabled original trigger is a folder"
+   Disabled=true
+   FindString.MatchText="ignored"
+   Send.Active=true
+   Send.Send="never send this"
+   Triggers
+   {
+    {
+     Description="Conditional parent without own effects"
+     FindString.MatchText="ready"
+     StopProcessing=true
+     Triggers
+     {
+      AfterCount=1
+      {
+       FindString.MatchText="ready"
+       AwayPresent=true
+       AwayPresentOnce=true
+       Send.Active=true
+       Send.Send="say %target%"
+       Send.ExpandVariables=true
+       Filter.Active=true
+       Filter.Replace="%target%"
+       Filter.ExpandVariables=true
+      }
+     }
+    }
+    {
+     Description="Children explicitly off"
+     Disabled=true
+     Triggers
+     {
+      Active=false
+      {
+       FindString.MatchText="ready"
+       Send.Active=true
+       Send.Send="never"
+      }
+     }
+    }
+   }
+  }
+  {
+   Description="Sound only"
+   FindString.MatchText="ding"
+   Sound.Active=true
+   Sound.Sound="C:\\Windows\\Media\\chord.wav"
+  }
+  {
+   Description="Speech only after scopes"
+   FindString.MatchText="speak"
+   AwayPresent=true
+   Away=false
+   Speech.Active=true
+   Speech.WholeLine=true
+  }
+ }
+ Shortcuts
+ {
+  Example
+  {
+   Host="example.org:1234"
+   Aliases
+   {
+    Active=false
+    AfterCount=1
+    {
+     FindString.MatchText="mid"
+     Replace="server"
+    }
+   }
+   Characters
+   {
+    Alice
+    {
+     Password="do-not-import-password"
+     Connect="connect Alice do-not-import-password"
+     Variables
+     {
+      {
+       Name="target"
+       Value="friend"
+      }
+      {
+       Name="__proto__"
+       Value="literal user variable"
+      }
+     }
+     Aliases
+     {
+      AfterCount=1
+      {
+       FindString.MatchText="middle"
+       Replace="character"
+      }
+     }
+    }
+   }
+  }
+ }
+}

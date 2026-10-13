@@ -6,7 +6,12 @@ Windows MU* Client
 This fork now has a [buildable Windows recovery preview](recovery/README.md)
 with automatic Pueblo negotiation, a supported MXP subset, clickable links,
 and inline images. Build it with `recovery/build.ps1`.
-It is an initial replacement runtime; the complete original client still needs
+Preview 0.3 also restores multiple sessions, profiles, TLS, rules, macros, logs,
+GMCP features, mapping and a bounded scripting API. Preview 0.4 restores the
+familiar Windows menus, multiline input pane and bottom connection tabs.
+Preview 0.5 adds docked panels, grouped spawn capture, deeper trigger editing,
+Smart Paste, delayed commands and logging from retained scrollback.
+It is a replacement runtime; the complete original client still needs
 its missing shared libraries and application components restored.
 
 Feel free to ask any questions on our Discord channel, or to log any issues here.

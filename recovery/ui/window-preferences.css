@@ -1,0 +1,5 @@
+.configured-output>.line{margin-bottom:var(--window-paragraph-gap,0px);padding-left:var(--window-wrap-indent,0px);text-indent:calc(-1 * var(--window-wrap-indent,0px));width:var(--window-line-width,auto);max-width:100%;box-sizing:content-box}
+.configured-output>.line:nth-child(odd){background-color:var(--window-fanfold-1,transparent)}
+.configured-output>.line:nth-child(even){background-color:var(--window-fanfold-2,transparent)}
+.configured-output a{color:var(--window-link,var(--accent))}
+.configured-output .inline-image{text-indent:0}

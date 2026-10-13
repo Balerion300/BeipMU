@@ -1,0 +1,219 @@
+/* Documented client commands and session-owned timers. MIT. */
+(function(root,factory){
+ const api=factory();
+ if(typeof module==='object'&&module.exports)module.exports=api;
+ if(root)root.BeipClientCommands=api;
+})(typeof globalThis==='object'?globalThis:this,function(){
+ 'use strict';
+ function words(source){
+  const result=[];let value='',quote=null,started=false;
+  for(const char of source){
+   if(quote){if(char===quote)quote=null;else value+=char;started=true;}
+   else if(char==='"'||char==="'"||char==='`'){quote=char;started=true;}
+   else if(/\s/.test(char)){if(started){result.push(value);value='';started=false;}}
+   else {value+=char;started=true;}
+  }
+  if(quote)throw new Error('Close the quoted parameter.');
+  if(started)result.push(value);return result;
+ }
+ function duration(value,random=Math.random){
+  const match=/^(\d+(?:\.\d+)?|\.\d+)(?:-(\d+(?:\.\d+)?|\.\d+))?([hms])$/i.exec(value);
+  if(!match)throw new Error('Use a duration such as 2s, 3.5m, or 1-5s.');
+  const scale={s:1000,m:60000,h:3600000}[match[3].toLowerCase()],first=Number(match[1])*scale,last=match[2]===undefined?first:Number(match[2])*scale;
+  if(first<100||last<first||last>86400000)throw new Error('Delays must be between 0.1 seconds and 24 hours.');
+  return Math.round(first+(last-first)*Math.max(0,Math.min(1,random())));
+ }
+ function createScheduler({setTimer=setTimeout,clearTimer=clearTimeout,now=Date.now,random=Math.random,isAlive=()=>true,execute=()=>{},report=()=>{}}={}){
+  const jobs=new Map();let nextId=1;
+  function cancel(id){const job=jobs.get(Number(id));if(!job)return false;clearTimer(job.timer);jobs.delete(job.id);return true;}
+  function cancelSession(sessionId){for(const job of [...jobs.values()])if(job.sessionId===sessionId)cancel(job.id);}
+  function add(sessionId,interval,command,repeat=false){
+   if(jobs.size>=64)throw new Error('At most 64 delayed commands may be pending.');
+   if(typeof command!=='string'||!command||/[\r\n]/.test(command)||new TextEncoder().encode(command).length>8192)throw new Error('A delayed command must be one line, up to 8192 bytes.');
+   if(command.trim().toLowerCase().startsWith('/delay'))throw new Error('A delayed command cannot create another delay.');
+   duration(interval,()=>0);
+   const job={id:nextId++,sessionId,interval,command,repeat,due:0,timer:null};
+   function arm(){const wait=duration(interval,random);job.due=now()+wait;job.timer=setTimer(fire,wait);}
+   function fire(){
+    if(!jobs.has(job.id))return;
+    if(!isAlive(sessionId)){cancel(job.id);report(sessionId,'Delayed command '+job.id+' canceled: session disconnected.');return;}
+    if(!repeat)jobs.delete(job.id);
+    try{execute(sessionId,command);}catch(error){cancel(job.id);report(sessionId,error.message);return;}
+    if(repeat&&jobs.has(job.id))arm();
+   }
+   jobs.set(job.id,job);arm();return job.id;
+  }
+  function list(sessionId){return [...jobs.values()].filter(job=>sessionId===undefined||job.sessionId===sessionId).map(({id,sessionId,command,repeat,due})=>({id,sessionId,command,repeat,due}));}
+  return {add,cancel,cancelSession,list};
+ }
+ function pasteLines(source,prefix='',suffix=''){
+  if(typeof source!=='string'||source.length>262144)throw new Error('Paste text must be no larger than 256 KiB.');
+  const lines=source.replace(/\r\n?/g,'\n').split('\n');if(lines.at(-1)==='')lines.pop();
+  if(!lines.length||lines.length>500)throw new Error('Smart Paste accepts 1 to 500 lines.');
+  if(/[\r\n]/.test(prefix+suffix))throw new Error('Prefix and suffix must each be one line.');
+  return lines.map(line=>{const value=prefix+line+suffix;if(new TextEncoder().encode(value).length>8192)throw new Error('A pasted command exceeds 8192 bytes.');return value;});
+ }
+ function idleSettings(minutes,text){
+  if(!/^\d+$/.test(String(minutes))||!Number.isSafeInteger(Number(minutes))||Number(minutes)>1440)throw Error('Idle time must be a whole number of minutes, up to 1440.');
+  if(typeof text!=='string'||/[\r\n\x00]/.test(text)||new TextEncoder().encode(text).length>8192)throw Error('An idle command must be one line, up to 8192 bytes.');
+  return {enabled:true,minutes:Math.max(1,Number(minutes)),text};
+ }
+ function createIdleController({setTimer=setTimeout,clearTimer=clearTimeout,now=Date.now,isAlive=()=>true,execute=()=>{},sendNOP=()=>{},report=()=>{}}={}){
+  const jobs=new Map();
+  function cancel(id){const job=jobs.get(id);if(!job)return false;clearTimer(job.timer);jobs.delete(id);return true;}
+  function arm(job){clearTimer(job.timer);job.due=now()+job.minutes*60000;job.timer=setTimer(()=>{
+   if(jobs.get(job.id)!==job)return;if(!isAlive(job.id)){cancel(job.id);return;}job.timer=null;
+   try{const result=job.text?execute(job.id,job.text):sendNOP(job.id);Promise.resolve(result).catch(error=>{if(jobs.get(job.id)===job){cancel(job.id);report(job.id,error.message);}});}catch(error){cancel(job.id);report(job.id,error.message);return;}
+   if(jobs.get(job.id)===job&&job.timer===null)arm(job);
+  },job.minutes*60000);}
+  function set(id,minutes,text){const settings=idleSettings(minutes,text);if(!isAlive(id))throw Error('Must be connected to set an idle timer.');if(!jobs.has(id)&&jobs.size>=64)throw Error('At most 64 idle timers may be active.');cancel(id);const job={...settings,id,due:0,timer:null};jobs.set(id,job);arm(job);return {...settings};}
+  function sent(id){const job=jobs.get(id);if(job&&isAlive(id))arm(job);}
+  function list(){return [...jobs.values()].map(({id,minutes,text,due})=>({id,minutes,text,due}));}
+  return {set,sent,cancel,list};
+ }
+ const browser=typeof window==='object'&&typeof document==='object';
+ const getApi=()=>browser?window.BeipPreview:null;
+ function display(session,text){const api=getApi();if(!api||!session||api.sessions.get(session.id)!==session)return;const old=session.suppressAutomation;session.suppressAutomation=true;api.appendText(session,text+'\n',{color:'#a6c9d5'});session.suppressAutomation=old;}
+ const scheduler=createScheduler({
+  isAlive:id=>{const session=getApi()?.sessions.get(id);return !!session?.connected;},
+  execute:(id,value)=>{const api=getApi(),session=api.sessions.get(id);if(session)api.command(value,false,session);},
+  report:(id,value)=>display(getApi()?.sessions.get(id),value)
+ });
+ const idle=createIdleController({
+  isAlive:id=>!!getApi()?.sessions.get(id)?.connected,
+  execute:(id,value)=>{const api=getApi(),session=api?.sessions.get(id);if(session)return api.command(value,false,session);},
+  sendNOP:id=>{const api=getApi(),session=api?.sessions.get(id);if(session)return api.commandPipeline.submit(session,'',{mode:'nop',source:'idle'});},
+  report:(id,value)=>display(getApi()?.sessions.get(id),value)
+ });
+ let pasteDialog=null,pasteJob=null,wallPending=false,nextTab=1;
+ function globalMessage(message){if(typeof message!=='string'||!message.startsWith('clipboard:'))return false;if(!pasteDialog?.open)return true;const status=document.getElementById('smartPasteStatus');if(message.startsWith('clipboard:text:')){try{const text=new TextDecoder().decode(Uint8Array.from(atob(message.slice(15)),c=>c.charCodeAt(0)));if(text.length>262144)throw Error('Clipboard exceeds the 256 KiB paste limit.');document.getElementById('smartPasteText').value=text;status.textContent='Clipboard loaded. Review the text before sending.';}catch(error){status.textContent=error.message;}}else status.textContent=message.slice(16);return true;}
+ function cancelPaste(sessionId){if(pasteJob&&(!sessionId||pasteJob.sessionId===sessionId)){clearTimeout(pasteJob.timer);pasteJob=null;}}
+ function closed(session){scheduler.cancelSession(session.id);cancelPaste(session.id);idle.cancel(session.id);}
+ function sent(session){if(session?.connected)idle.sent(session.id);}
+ function incoming(session,payload){
+  if(payload==='ended:'||payload==='reset:'||payload==='connected:off')closed(session);
+  if(payload==='connected:on'){
+   const settings=getApi()?.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId)?.idle;
+   if(settings?.enabled)try{idle.set(session.id,settings.minutes,settings.text);}catch(error){display(session,error.message);}
+  }
+  if(session.gmcpDump&&(payload.startsWith('gmcp:')||payload.startsWith('gmcpsent:'))){try{const prefix=payload.startsWith('gmcp:')?'GMCP Received: ':'GMCP Sent: ',data=payload.slice(payload.indexOf(':')+1);if(data.length<=87384)display(session,prefix+new TextDecoder().decode(Uint8Array.from(atob(data),c=>c.charCodeAt(0))));}catch{}}
+ }
+ function handleVariableCommand(value,session,options={}){
+  const match=/^\/(set|unset|printenv)(?:\s+([\s\S]*))?$/i.exec(value);
+  if(!match||!browser)return false;
+  const api=getApi(),variables=api.variablesForSession(session),name=match[1].toLowerCase(),arg=match[2]||'';
+  try{
+   if(name==='printenv'){display(session,Object.entries(variables).map(([key,value])=>key+'='+value).join('\n')||'No character variables.');return true;}
+   if(name==='set'){
+    const equal=arg.indexOf('=');if(equal<1){if(!options.silent)display(session,'Use /set name=value.');return true;}
+    const key=arg.slice(0,equal),text=arg.slice(equal+1);
+    const candidate=Object.assign(Object.create(null),variables,{[key]:text});
+    const normalized=BeipRules.normalizeVariables(candidate);
+    if(!Object.hasOwn(normalized,key)||normalized[key]!==text||Object.keys(normalized).length!==Object.keys(candidate).length)throw Error('Variables allow 128 names of 128 characters, values of 4096 characters, and 64 KiB total.');
+    Object.defineProperty(variables,key,{value:text,writable:true,enumerable:true,configurable:true});
+    if(!options.silent)display(session,'Variable set: '+key);
+   }else{if(!Object.hasOwn(variables,arg))throw Error('Variable not found.');delete variables[arg];if(!options.silent)display(session,'Variable deleted: '+arg);}
+   if(session.characterId)api.saveSettings();
+  }catch(error){display(session,error.message);}
+  return true;
+ }
+ function handle(value,session,execution,options={}){
+  if(!browser||typeof value!=='string'||!value.startsWith('/')||value.startsWith('//'))return false;
+  if(handleVariableCommand(value,session,options))return true;
+  const match=/^(\/\S+)(?:\s+([\s\S]*))?$/.exec(value);if(!match)return false;
+  const name=match[1].toLowerCase(),arg=match[2]||'',api=getApi();
+  try{
+   if(name==='/delay'){
+    const args=words(arg),option=(args[0]||'').toLowerCase();
+    if(option==='list'){const jobs=scheduler.list(session.id);display(session,jobs.length?jobs.map(job=>job.id+': '+(job.repeat?'every ':'')+Math.max(0,Math.ceil((job.due-Date.now())/1000))+'s '+job.command).join('\n'):'No delayed commands.');}
+    else if(option==='killall'){scheduler.cancelSession(session.id);cancelPaste(session.id);if(!options.silent)display(session,'Delayed commands and Smart Paste canceled for this session.');}
+    else if(option==='kill'){const job=scheduler.list(session.id).find(job=>String(job.id)===args[1]);if(!args[1])throw Error('Missing ID, use /delay kill ID.');const canceled=job&&scheduler.cancel(job.id);if(!options.silent)display(session,canceled?'Delayed command canceled.':'No such delayed command in this session.');}
+    else {const repeat=option==='every',offset=repeat?1:0;if(args.length!==offset+2)throw new Error('Use /delay [every] 2s "command", list, kill ID, or killall.');if(!session.connected)throw new Error('Connect before scheduling commands.');const id=scheduler.add(session.id,args[offset],args[offset+1],repeat);if(!options.silent)display(session,'Delayed command '+id+' scheduled.');}
+   }
+   else if(name==='/setinput'){session.draft=arg.slice(0,8192);if(api.current===session){document.getElementById('input').value=session.draft;api.resizeInput();document.getElementById('input').focus();}}
+   else if(name==='/recall'){const lines=session.history.filter(line=>!arg||line.toLowerCase().includes(arg.toLowerCase()));display(session,lines.slice(-100).join('\n')||'No matching input history.');}
+   else if(name==='/chars'){const names=api.state.characters.filter(c=>c.worldId===session.worldId).map(c=>c.name);display(session,names.join('\n')||'No saved characters in this world.');}
+   else if(name==='/connectioninfo'){display(session,(session.connected?'Connected':'Disconnected')+' · '+(session.host||api.state.worlds.find(w=>w.id===session.worldId)?.host||'Unknown host')+':'+(session.port||api.state.worlds.find(w=>w.id===session.worldId)?.port||'?')+' · '+(session.tls?'TLS with system certificate validation':'Plain TCP'));}
+   else if(name==='/new')window.BeipDesktopShell?.handle('ui:file-new');
+   else if(name==='/newtab'){let id;do{id='commandtab'+nextTab++;}while(api.sessions.has(id));const tab=api.createSession(id,{label:'(New Tab)'});if(tab)api.selectSession(tab.id);}
+   else if(name==='/connect'||name==='/world'){
+    const args=words(arg),world=args.length&&api.state.worlds.find(w=>w.name.toLowerCase()===args[0].toLowerCase());
+    if(args.length>2||!args.length)throw new Error('Use '+name+' "world name" "character name" or host:port.');
+    if(!world){const address=/^(\[[^\]]+\]|[^:\s]+):(\d{1,5})$/.exec(args[0]);if(!address||Number(address[2])<1||Number(address[2])>65535)throw Error('No saved world or valid host:port address.');api.connectSession(address[1].replace(/^\[|\]$/g,''),address[2]);return true;}
+    const character=args[1]?api.state.characters.find(c=>c.worldId===world.id&&c.name.toLowerCase()===args[1].toLowerCase()):null;
+    if(args[1]&&!character)throw new Error('No such saved character in this world.');
+    api.connectSession(world.host,String(world.port),world.id,character?.id||'',world.tls);
+   }
+   else if(name==='/removelast'){
+    api.removeLastLine(session);
+   }
+   else if(name==='/receivegmcp'){
+    if(session.kind!=='world')throw Error('Select a world session for GMCP.');if(new TextEncoder().encode(arg).length>65536)throw Error('GMCP input must be no larger than 64 KiB.');
+    const encoded=btoa(String.fromCharCode(...new TextEncoder().encode(arg)));api.incoming('session:'+session.id+':gmcp:'+encoded);
+   }
+   else if(name==='/gmcp'){if(/^dump_on$/i.test(arg))session.gmcpDump=true;else if(/^dump_off$/i.test(arg))session.gmcpDump=false;else display(session,'GMCP options: dump_on and dump_off.');}
+   else if(name==='/silence'){for(const target of api.sessions.values()){target.triggerAudio?.stop();target.media?.stopAll();}}
+   else if(name==='/wall'){
+    if(!arg)return true;if(wallPending)throw Error('A broadcast cannot start another broadcast.');if(/[\r\n]/.test(arg)||new TextEncoder().encode(arg).length>8192)throw Error('A broadcast must be one line, up to 8192 bytes.');
+    wallPending=true;const targets=[...api.sessions.values()].filter(target=>target.kind==='world'&&target.connected);
+    return (async()=>{try{for(const target of targets)if(api.sessions.get(target.id)===target&&target.connected)await api.command(arg,false,target,execution,{source:'wall'});return true;}finally{wallPending=false;}})();
+   }
+   else if(name==='/idle'){
+    if(session.kind!=='world'||!session.connected)throw Error('Must be connected to set an idle timer.');const args=words(arg),character=api.state.characters.find(item=>item.id===session.characterId&&item.worldId===session.worldId);
+    if(!args.length){const removed=idle.cancel(session.id);if(character?.idle)character.idle.enabled=false;if(!options.silent)display(session,removed?'Idle timer removed.':'No idle timer set.');}
+    else if(args.length===2){const settings=idle.set(session.id,args[0],args[1]);if(character)character.idle=settings;if(!options.silent)display(session,'Idle timer activated, sending '+(settings.text||'Telnet NOP')+' every '+settings.minutes+' minute'+(settings.minutes===1?'':'s')+'.');}
+    else throw Error('Use /idle minutes "command"; /idle alone turns it off. An empty quoted command sends Telnet NOP.');
+    if(character)api.saveSettings();
+   }
+   else if(name==='/close')api.closeSession(session.id);
+   else if(name==='/reconnect'){const targets=arg.trim().toLowerCase()==='all'?[...api.sessions.values()].filter(s=>s.kind==='world'):[session];for(const target of targets)if(!api.reconnectSession(target)&&target===session)throw Error('No previous connection for this tab.');}
+   else if(name==='/ansireset'){session.parser?.sgr('0');}
+   else if(name==='/receive'){const old=session.suppressAutomation;try{session.parser?.feed(arg+'\n');}finally{session.suppressAutomation=old;}}
+   else if(name==='/disconnect'&&arg.trim().toLowerCase()==='all')document.getElementById('disconnectAll').click();
+   else if(name==='/echo'&&/^(on|off)$/i.test(arg.trim())){api.state.preferences.localEcho=arg.trim().toLowerCase()==='on';api.saveSettings();}
+   else if(name==='/naws'){const parts=words(arg);if(parts.length!==2||!parts.every(part=>/^\d{1,4}$/.test(part)&&Number(part)>=1&&Number(part)<=4096))throw new Error('Use /naws width height (1–4096).');window.chrome?.webview?.postMessage('resize|'+session.id+'|'+parts.join('|'));}
+   else if(name==='/switchtab'){const text=words(arg)[0]||'',tabs=[...api.sessions.values()],target=/^\d+$/.test(text)?tabs[Number(text)-1]:tabs.find(tab=>tab.label.toLowerCase()===text.toLowerCase()||api.state.worlds.find(w=>w.id===tab.worldId)?.name.toLowerCase()===text.toLowerCase());if(!target)throw new Error('Use /switchtab number or tab name.');api.selectSession(target.id);}
+   else if(name==='/smartpaste')smartPaste();
+   else if(name==='/capturecancel'){
+    const scope={serverId:session.worldId,characterId:session.characterId};
+    Promise.resolve(session.pendingLineWork).then(()=>{
+     if(api.sessions.get(session.id)!==session)return;
+     if(session.ruleRuntime)return session.ruleRuntime.cancelCapture(scope).then(result=>display(session,result.cancelled?'Spawn capture canceled.':'No active spawn capture.'));
+     display(session,session.ruleEngine?.cancelCapture(scope)?.cancelled?'Spawn capture canceled.':'No active spawn capture.');
+    });
+   }
+   else if(name==='/logall'){if(arg.trim())throw new Error('Use /logall without a filename; this preview saves in its Logs folder.');if(!session.connected)throw new Error('Connect before starting a log.');if(session.logging)throw new Error('A log is already running for this session.');api.startLogging?.(session,true);}
+   else return false;
+  }catch(error){display(session,error.message);}
+  return true;
+ }
+ function smartPaste(){
+  if(!browser)return;
+  if(!pasteDialog){
+   pasteDialog=document.createElement('dialog');pasteDialog.id='smartPasteDialog';pasteDialog.style.width='560px';
+   pasteDialog.innerHTML='<form><div class="dialog-head"><h2>Smart Paste</h2></div><label>Text to send<textarea id="smartPasteText" rows="10" spellcheck="false"></textarea></label><label>Load a text file<input id="smartPasteFile" type="file" accept="text/plain,.txt,.mush,.mu"></label><div class="settings-grid"><label>Prefix<input id="smartPastePrefix" maxlength="1024"></label><label>Suffix<input id="smartPasteSuffix" maxlength="1024"></label><label>Delay between lines (ms)<input id="smartPasteDelay" type="number" min="100" max="10000" value="250"></label></div><label class="check"><input id="smartPasteAliases" type="checkbox"> Process aliases and client commands</label><p id="smartPasteStatus" role="status">Paste clipboard text into the box or choose a text file.</p><div class="dialog-actions"><button id="smartPasteStop" type="button">Stop</button><button id="smartPasteClose" type="button">Close</button><button type="submit">Send</button></div></form>';
+   document.body.append(pasteDialog);
+   const clipboard=document.createElement('button');clipboard.type='button';clipboard.id='smartPasteClipboard';clipboard.textContent='Load from Clipboard';clipboard.onclick=()=>window.chrome?.webview?.postMessage('clipboard:read');document.getElementById('smartPasteText').parentElement.after(clipboard);
+   document.getElementById('smartPasteDelay').min='0';
+   const byId=id=>document.getElementById(id),status=text=>{byId('smartPasteStatus').textContent=text;};
+   byId('smartPasteFile').onchange=async()=>{const file=byId('smartPasteFile').files[0];if(!file)return;if(file.size>262144){status('Choose a file no larger than 256 KiB.');return;}try{byId('smartPasteText').value=await file.text();status('File loaded. Review the text before sending.');}catch{status('The file could not be read.');}};
+   byId('smartPasteClose').onclick=()=>pasteDialog.close();
+   byId('smartPasteStop').onclick=()=>{cancelPaste();status('Paste stopped.');};
+   pasteDialog.querySelector('form').onsubmit=event=>{
+    event.preventDefault();const api=getApi(),session=api.current;
+    try{
+     if(session?.kind!=='world'||!session.connected)throw new Error('Select a connected world before sending.');
+     const lines=pasteLines(byId('smartPasteText').value,byId('smartPastePrefix').value,byId('smartPasteSuffix').value),delay=Number(byId('smartPasteDelay').value);
+     if(!Number.isFinite(delay)||delay<0||delay>10000)throw new Error('Choose a delay from 0 to 10000 milliseconds.');
+     Object.assign(api.state.preferences,{pastePrefix:byId('smartPastePrefix').value,pasteSuffix:byId('smartPasteSuffix').value,pasteDelay:delay});api.saveSettings();
+     cancelPaste();const job=pasteJob={sessionId:session.id,epoch:session.connectionEpoch,timer:null,index:0};const process=byId('smartPasteAliases').checked;
+     async function next(){if(pasteJob!==job)return;if(api.sessions.get(session.id)!==session||session.connectionEpoch!==job.epoch||!session.connected){cancelPaste();status('Paste stopped: session disconnected.');return;}try{await api.commandPipeline.submit(session,lines[job.index++],{mode:process?'lines':'transmit',source:'paste'});}catch(error){cancelPaste();status(error.message);return;}if(pasteJob!==job)return;status('Sent '+job.index+' of '+lines.length+' lines.');if(job.index<lines.length)job.timer=setTimeout(next,delay);else pasteJob=null;}
+     next();
+    }catch(error){status(error.message);}
+   };
+  }
+  const preferences=getApi().state.preferences;document.getElementById('smartPastePrefix').value=preferences.pastePrefix||'';document.getElementById('smartPasteSuffix').value=preferences.pasteSuffix||'';document.getElementById('smartPasteDelay').value=preferences.pasteDelay??250;
+  if(!pasteDialog.open)pasteDialog.showModal();document.getElementById('smartPasteText').focus();
+ }
+ return {words,duration,createScheduler,pasteLines,idleSettings,createIdleController,handle,handleVariableCommand,closed,sent,incoming,globalMessage,smartPaste,scheduler,idle};
+});

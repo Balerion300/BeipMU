@@ -1,0 +1,18 @@
+/* Auto Emoji source editing and the original config-copy/Notepad/reload workflow. */
+(function(){
+'use strict';
+const post=text=>window.chrome?.webview?.postMessage(text);
+function encoded(value){const bytes=new TextEncoder().encode(value);let result='';for(let at=0;at<bytes.length;at+=8192)result+=String.fromCharCode(...bytes.subarray(at,at+8192));return btoa(result);}
+function createPanel(parent){
+ const wrapper=document.createElement('div');wrapper.className='emoji-settings';wrapper.innerHTML='<label><input id="emojiEnabled" type="checkbox"> Enabled</label><p>Replace smileys and append emoji after matching words. Applies to newly received output.</p><div class="emoji-actions"><button type="button" data-emoji="copy">Make an editable copy</button><button type="button" data-emoji="edit">Edit in Notepad</button><button type="button" data-emoji="load">Reload Emoji.txt</button><button type="button" data-emoji="revert">Revert to defaults</button></div><p id="emojiSourceStatus" role="status"></p><label class="emoji-file">Import Emoji.txt<input id="emojiImportFile" type="file" accept=".txt,text/plain"></label><textarea id="emojiSource" spellcheck="false" rows="10" aria-label="Emoji translation source"></textarea><div class="emoji-actions"><button type="button" id="emojiSaveSource">Save and reload custom file</button></div><p># comments; comma-separated matches; REPLACE_BEGIN / REPLACE_END and IGNORE_BEGIN / IGNORE_END sections.</p><label>Sample<input id="emojiSample" value="A fox and dog :)" spellcheck="false"></label><output id="emojiPreview"></output><p>File actions take effect immediately. The Enabled checkbox is saved with Settings.</p>';parent.append(wrapper);
+ const enabled=wrapper.querySelector('#emojiEnabled'),source=wrapper.querySelector('#emojiSource'),status=wrapper.querySelector('#emojiSourceStatus'),sample=wrapper.querySelector('#emojiSample'),preview=wrapper.querySelector('#emojiPreview');let disabled=false;
+ function updatePreview(){try{const table=BeipEmojiModel.compile(source.value);preview.textContent=BeipEmojiModel.transform(sample.value,table);wrapper.querySelector('#emojiSaveSource').disabled=disabled;}catch(error){preview.textContent=error.message;wrapper.querySelector('#emojiSaveSource').disabled=true;}}
+ function refreshed(){const current=BeipEmoji.snapshot();if(current.error){status.textContent=current.error;return;}source.value=current.source;status.textContent=(current.custom?'Using custom Emoji.txt':'Using original default Emoji.txt')+' — '+current.rules+' search phrases';updatePreview();}
+ for(const button of wrapper.querySelectorAll('[data-emoji]'))button.onclick=()=>post('emoji:'+button.dataset.emoji);
+ wrapper.querySelector('#emojiSaveSource').onclick=()=>{try{BeipEmojiModel.compile(source.value);post('emoji:save|'+encoded(source.value));}catch(error){status.textContent=error.message;}};
+ wrapper.querySelector('#emojiImportFile').onchange=async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>BeipEmojiModel.MAX_SOURCE)throw Error('Emoji.txt exceeds 128 KiB.');const imported=new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer());BeipEmojiModel.compile(imported);source.value=imported;status.textContent='Imported '+file.name+'. Review, then save the custom file.';updatePreview();}catch(error){status.textContent=error.message;}};
+ source.oninput=updatePreview;sample.oninput=updatePreview;window.addEventListener('beip-emoji-source',refreshed);refreshed();
+ return {load(value,isDisabled){enabled.checked=!!value;disabled=!!isDisabled;for(const control of wrapper.querySelectorAll('input,textarea,button'))control.disabled=disabled;updatePreview();},read(){return enabled.checked;}};
+}
+window.BeipEmojiUI={createPanel};
+})();

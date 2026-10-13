@@ -1,0 +1,10 @@
+'use strict';
+const assert=require('node:assert/strict'),view=require('../ui/image-view.js');
+assert.equal(view.webURL('https://example.org/art.png'),'https://example.org/art.png');
+for(const url of ['file:///c:/secret.png','javascript:alert(1)','data:image/png;base64,a','https://user:pass@example.org/a'])assert.equal(view.webURL(url),'');
+assert.equal(view.normalizeState({},0).selected,-1);assert.equal(view.normalizeState({},3).selected,2);
+assert.deepEqual(view.normalizeState({selected:99,zoom:Infinity,x:NaN,y:Infinity,animate:false,cleared:true},3),{selected:2,cleared:true,animate:false,mode:'fit',zoom:1,x:0,y:0});
+assert.deepEqual(view.geometry(800,400,200,200,view.normalizeState()),{width:200,height:100,scale:.25,x:0,y:0});
+assert.equal(view.geometry(800,400,200,200,view.normalizeState({mode:'actual'})).scale,1);
+assert.equal(view.geometry(800,400,200,200,view.normalizeState({zoom:2})).scale,.5);
+console.log('Image URL/state/fit/actual geometry checks passed.');

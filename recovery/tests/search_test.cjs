@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const {search}=require('../ui/search-core.js');
+assert.deepEqual(search(['Cat cat scatter','cat.'],'cat',{wholeWord:true}).map(x=>[x.row,x.start,x.end]),[[0,0,3],[0,4,7],[1,0,3]]);
+assert.equal(search(['Cat cat'],'cat',{matchCase:true}).length,1);
+assert.equal(search(['a.b axb'],'a.b').length,1);
+assert.equal(search(['a.b axb'],'a.b',{regex:true}).length,2);
+assert.equal(search(['échat chaté chat'],'chat',{wholeWord:true}).length,1);
+assert.deepEqual(search(['😀x'],'(?=.)',{regex:true}).map(x=>x.start),[0,2]);
+assert.throws(()=>search(['a'],'[',{regex:true}));
+assert.equal(search(['a\nb'],'^b',{regex:true}).length,0);
+assert.deepEqual(search([''],'^$',{regex:true}),[{row:0,start:0,end:0,text:''}]);
+console.log('Search case, words, regular expressions, unicode and empty-match checks passed.');

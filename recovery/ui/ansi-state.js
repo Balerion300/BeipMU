@@ -1,0 +1,20 @@
+/* ANSI SGR state isolated from Pueblo/MXP parsing. MIT. */
+(function(root,factory){const api=factory(typeof module==='object'&&module.exports?require('./ansi-model.js'):root.BeipAnsi);if(typeof module==='object'&&module.exports)module.exports=api;else root.BeipAnsiState=api;})(globalThis,function(model){
+'use strict';
+const rgb=parts=>'rgb('+parts.join(',')+')';
+function numericColor(color){if(/^#[0-9a-f]{6}$/i.test(color||''))return parseInt(color.slice(1),16);const m=/^rgb\((\d+),(\d+),(\d+)\)$/.exec(color||'');return m?(Number(m[1])<<16)|(Number(m[2])<<8)|Number(m[3]):null;}
+// AnsiParser::GetForegroundColor uses Color.Darken(128). The unavailable shared
+// Color implementation leaves rounding unverified; recovery uses floor(channel/2).
+function faintColor(color){const value=numericColor(color);return value===null?color:'#'+[16,8,0].map(shift=>Math.floor(((value>>shift)&255)/2).toString(16).padStart(2,'0')).join('');}
+function indexed(index){if(!Number.isInteger(index)||index<0||index>255)return null;if(index<16)return model.PRESETS.CMD[index];if(index<232){index-=16;const levels=[0,95,135,175,215,255];return rgb([levels[Math.floor(index/36)],levels[Math.floor(index/6)%6],levels[index%6]]);}return rgb(Array(3).fill(8+(index-232)*10));}
+class State{
+ constructor(preferences){this.configure(preferences);this.reset();}
+ configure(preferences){this.preferences=model.normalize(preferences);return this;}
+ // null means the output's default color (SGR 0/39), not palette slot 7.
+ // Changing bold/faint recomputes slot 7; repeating an unchanged flag preserves null.
+ reset(){this.foreground=null;this.background=null;this.reverse=false;this.bold=false;this.faint=false;this.italic=false;this.underline=false;this.strike=false;return this;}
+ apply(source){const codes=(source||'0').split(';').map(Number);for(let i=0;i<codes.length;i++){const n=codes[i];if(n===0)this.reset();else if(n===1){if(!this.bold&&this.foreground===null)this.foreground=7;this.bold=true;}else if(n===2){if(!this.faint&&this.foreground===null)this.foreground=7;this.faint=true;}else if(n===22){if((this.bold||this.faint)&&this.foreground===null)this.foreground=7;this.bold=false;this.faint=false;}else if(n===7||n===8)this.reverse=true;else if(n===27||n===28)this.reverse=false;else if(n===3)this.italic=true;else if(n===23)this.italic=false;else if(n===4)this.underline=true;else if(n===24)this.underline=false;else if(n===9)this.strike=true;else if(n===29)this.strike=false;else if(n===39)this.foreground=null;else if(n===49)this.background=null;else if(n>=30&&n<=37)this.foreground=n-30;else if(n>=90&&n<=97)this.foreground=n-90+8;else if(n>=40&&n<=47)this.background=n-40;else if(n>=100&&n<=107)this.background=n-100+8;else if(n===38||n===48){let color=null;if(codes[i+1]===2&&codes.length>=i+5){const parts=codes.slice(i+2,i+5);if(parts.every(Number.isFinite))color=rgb(parts.map(x=>Math.max(0,Math.min(255,x))));i+=4;}else if(codes[i+1]===5){color=indexed(codes[i+2]);i+=2;}if(color)this[n===38?'foreground':'background']=color;}}return this.style();}
+ style(){const p=this.preferences,result={};let fore=this.foreground;if(typeof fore==='number')fore=p.colors[fore+(!p.fontBold&&this.bold&&fore<8?8:0)];if(this.faint)fore=faintColor(fore);let back=typeof this.background==='number'?p.colors[this.background]:this.background;if(this.reverse){const normalFore=fore||'var(--ansi-default-foreground)';fore=back||'var(--ansi-default-background)';back=normalFore;}if(fore)result.color=fore;if(back)result.background=back;const a=numericColor(fore),b=numericColor(back);if(p.preventInvisible&&a!==null&&a===b)result.color='#'+((~b)&0xffffff).toString(16).padStart(6,'0');if(p.fontBold&&this.bold)result.bold=true;if(this.italic)result.italic=true;if(this.underline)result.underline=true;if(this.strike)result.strike=true;return result;}
+}
+return {State,indexed};
+});
