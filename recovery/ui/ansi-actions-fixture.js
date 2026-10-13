@@ -10,12 +10,25 @@
   session=app.createSession('ansi-actions-test',{label:'ANSI actions test'});session.suppressAutomation=true;app.selectSession(session.id);session.view.style.color='#c0c0c0';session.view.style.backgroundColor='#000000';
   session.parser.feed('\x1b[31;44;7mREVERSE COLORS\x1b[27m NORMAL COLORS\x1b[0;8m DEFAULT REVERSE\x1b[28m NORMAL DEFAULT\n');
   session.parser.feed('\x1b[0;38;2;0;0;0;7mVISIBLE REVERSE\x1b[0m\n'+osc('send:%2Fset%20ansiLiteral%3DA%7CB%0A%2Fset%20ansiSecond%3Dtwo','Run literal command')+' '+osc('prompt:look%20A%7CB%0Anext','Fill command input')+'\n');await session.pendingLineWork;
+  session.parser.feed('\x1b[0;31;44;2mFAINT COLORS\x1b[7m REVERSE FAINT\x1b[22m NO FAINT\x1b[0m FAINT RESET\n\x1b[2mFAINT DEFAULT\x1b[39m DEFAULT FOREGROUND\x1b[0m\n');await session.pendingLineWork;
+  session.parser.feed('\x1b[0;2;39;2mDEFERRED FAINT\x1b[22m PALETTE NORMAL\x1b[2m PALETTE FAINT\x1b[0;38;2;18;52;86;48;2;9;26;43;2;7m FAINT CONTRAST\x1b[0m\n');await session.pendingLineWork;
   const span=text=>[...session.view.querySelectorAll('span')].find(node=>node.textContent===text),style=text=>getComputedStyle(span(text));
   check('reverseExplicit',style('REVERSE COLORS').color==='rgb(0, 0, 238)'&&style('REVERSE COLORS').backgroundColor==='rgb(205, 0, 0)');
   check('reverseOff',style(' NORMAL COLORS').color==='rgb(205, 0, 0)'&&style(' NORMAL COLORS').backgroundColor==='rgb(0, 0, 238)');
   check('reverseDefaults',style(' DEFAULT REVERSE').color==='rgb(0, 0, 0)'&&style(' DEFAULT REVERSE').backgroundColor==='rgb(192, 192, 192)');
   check('defaultReset',!span(' NORMAL DEFAULT').style.color&&!span(' NORMAL DEFAULT').style.backgroundColor);
   check('resolvedInvisiblePolicy',style('VISIBLE REVERSE').color==='rgb(255, 255, 255)'&&style('VISIBLE REVERSE').backgroundColor==='rgb(0, 0, 0)');
+  check('faintExplicit',style('FAINT COLORS').color==='rgb(102, 0, 0)'&&style('FAINT COLORS').backgroundColor==='rgb(0, 0, 238)');
+  check('faintReverse',style(' REVERSE FAINT').color==='rgb(0, 0, 238)'&&style(' REVERSE FAINT').backgroundColor==='rgb(102, 0, 0)');
+  check('faintClear22',style(' NO FAINT').color==='rgb(0, 0, 238)'&&style(' NO FAINT').backgroundColor==='rgb(205, 0, 0)');
+  check('faintReset',!span(' FAINT RESET').style.color&&!span(' FAINT RESET').style.backgroundColor);
+  check('faintDefault',style('FAINT DEFAULT').color==='rgb(114, 114, 114)'&&style(' DEFAULT FOREGROUND').color==='rgb(192, 192, 192)');
+  check('faintDefaultTransition',style('DEFERRED FAINT').color==='rgb(192, 192, 192)'&&style(' PALETTE NORMAL').color==='rgb(229, 229, 229)'&&style(' PALETTE FAINT').color==='rgb(114, 114, 114)');
+  check('faintContrastAfterReverse',style(' FAINT CONTRAST').color==='rgb(246, 229, 212)'&&style(' FAINT CONTRAST').backgroundColor==='rgb(9, 26, 43)');
+  const faintLine=span('FAINT COLORS').closest('.line').cloneNode(true);delete faintLine.dataset.logSynthetic;
+  const faintRecord=root.BeipRestoreRuntime.fromLine(faintLine);app.replayRestoreRecords(session,[faintRecord]);
+  const replayedFaint=[...session.view.querySelectorAll('.line[data-restore-replay="true"] span')].find(node=>node.textContent==='FAINT COLORS');
+  check('faintSnapshotReplay',replayedFaint&&getComputedStyle(replayedFaint).color==='rgb(102, 0, 0)'&&getComputedStyle(replayedFaint).backgroundColor==='rgb(0, 0, 238)');
   const links=[...session.view.querySelectorAll('a[data-literal="true"]')],variables=app.variablesForSession(session);check('literalLinksVisible',links.length===2&&links.every(node=>node.getBoundingClientRect().width>20));check('noAutomaticCommand',variables.ansiLiteral===undefined);
   // Manual snapshots of owned fixture clones test serialization without enabling live triggers or automatic capture.
   const records=[...session.view.querySelectorAll('.line')].filter(line=>line.querySelector('a')).map(line=>{const snapshot=line.cloneNode(true);delete snapshot.dataset.logSynthetic;return root.BeipRestoreRuntime.fromLine(snapshot);});check('literalStored',records.length===1&&records[0].parts.filter(part=>part.link).every(part=>part.link.literal===true));

@@ -224,8 +224,8 @@ window.BeipCoreTest=async function(config){
   const historyPlacement=edgeOf('history')===(config.phase==='first'?'bottom':'left');
   const layoutPersisted=config.phase==='first'||Number(el('dockSplitterLeft').getAttribute('aria-valuenow'))===290;
   const historyRows=[...historyPane.querySelectorAll('.dock-history-row')];
-  const historyVisible=historyRows.some(row=>row.textContent==='core-line-one')&&historyRows.some(row=>row.textContent==='core-line-two');
-  historyRows.find(row=>row.textContent==='core-line-two').click();const historyRecall=input.value==='core-line-two';
+  const historyVisible=historyRows.some(row=>row.textContent==='core-line-one\ncore-line-two')&&!historyRows.some(row=>row.textContent==='core-line-one'||row.textContent==='core-line-two');
+  historyRows.find(row=>row.textContent==='core-line-one\ncore-line-two').click();const historyRecall=input.value==='core-line-one\ncore-line-two';
   input.value='saved unsent draft';press(input,'ArrowDown',{ctrlKey:true});const draftSaved=input.value===''&&alpha.history.includes('saved unsent draft');
   press(input,'ArrowUp',{ctrlKey:true});const draftRecall=input.value==='saved unsent draft';input.value='';
   app.selectSession('beta');const betaHistory=await openDock('ui:window-input-history','Input History','history');

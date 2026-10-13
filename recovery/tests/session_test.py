@@ -267,6 +267,12 @@ def run(phase):
         assert not checks.get("error"), (section, checks)
         diagnostics = {"emoji": {"logPath"}, "maps": {"labelDetails"}, "images": {"savePath", "copyPath", "avatarLiveDetails"}, "restore": {"nativeCharacter", "nativeRequired"}, "puebloSpacing": {"rows"}, "dailyCommands": {"grabWires"}, "encodingWire": {"linkDetails", "editorRects"}}
         assert all(value is True for key, value in checks.items() if key != "error" and key not in diagnostics.get(section, set())), (section, checks)
+    input_history = result["inputPanes"]
+    for check in ("primaryGroupedHistory", "additionalGroupedCapture", "primarySharedHistoryRecall",
+                  "additionalContinuesPrimaryCursor", "additionalGroupedRecall", "sharedDraftEndSelection",
+                  "primaryUnsentGroupedCapture", "groupedReplayIsolation",
+                  "additionalShortcutRemap", "additionalPushGroupedHistory"):
+        assert input_history.get(check) is True, (check, input_history)
     emoji_log = pathlib.Path(result["emoji"]["logPath"])
     restore_id = result["restore"]["nativeCharacter"]
     assert restore_id == "restore-fixture-char"
@@ -280,6 +286,15 @@ def run(phase):
         restore_records.append(json.loads(restore_data[offset:offset + size].decode("utf-8")))
         offset += size
     assert all(value in json.dumps(restore_records) for value in result["restore"]["nativeRequired"])
+    grouped_history = "/echo restore grouped first\n\n/echo   WHO\tName  Idle\n/echo restore grouped last"
+    additional_history = "restore-prefix /echo restore additional first\n\n/echo restore additional last"
+    for entry in (grouped_history, additional_history):
+        assert sum(record.get("kind") == "history" and record.get("text") == entry
+                   for record in restore_records) == 1, restore_records
+    assert not any(record.get("kind") == "history" and record.get("text") in
+                   ("/echo restore grouped first", "/echo restore grouped last",
+                    "restore-prefix /echo restore additional first", "/echo restore additional last")
+                   for record in restore_records)
     image_saved = pathlib.Path(result["images"]["savePath"])
     image_copied = pathlib.Path(result["images"]["copyPath"])
     assert all(path.resolve().is_relative_to(OUT.resolve()) and path.is_file() for path in (image_saved, image_copied))

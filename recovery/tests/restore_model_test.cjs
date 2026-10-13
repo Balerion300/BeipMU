@@ -14,6 +14,15 @@ check('Unsafe content and invalid records fail before capture or replay',()=>{
  assert.throws(()=>model.normalizeRecord({...record,parts:[{type:'text',text:'x',style:{color:'red;background:url(x)'}}]}));
  assert.throws(()=>model.normalizeRecord({...record,parts:[{type:'text',text:'🙂'.repeat(16000)}]}),/60 KiB/);assert.throws(()=>model.normalizeRecord({v:1,kind:'script',time:0,source:'run()'}));assert.throws(()=>model.deserialize('{broken'));assert.throws(()=>model.normalizeRecord({v:1,kind:'gmcp',time:0,package:'Char.Vitals',data:'not JSON'}));
 });
+check('Grouped history preserves complete multiline entries with the serialized byte cap',()=>{
+ for(const text of ['north\nsouth','say first\r\nsay second','prefix: first\n\n  WHO\tName  Idle\n','look 🙂\nsay é']){
+  const entry={v:1,kind:'history',time:2000,text};assert.deepEqual(model.deserialize(model.serialize(entry)),entry);
+ }
+ const empty={v:1,kind:'history',time:0,text:''},overhead=new TextEncoder().encode(model.serialize(empty)).length;
+ assert.equal(new TextEncoder().encode(model.serialize({...empty,text:'x'.repeat(model.MAX_RECORD_BYTES-overhead)})).length,model.MAX_RECORD_BYTES);
+ for(const text of ['x'.repeat(model.MAX_RECORD_BYTES-overhead+1),'\n'.repeat(31000),'🙂'.repeat(16000)])assert.throws(()=>model.serialize({...empty,text}),/60 KiB/);
+ assert.throws(()=>model.serialize({...empty,text:'a\0b'}),/history/);assert.throws(()=>model.serialize({...empty,text:'x'.repeat(65537)}),/history/);
+});
 check('Import uses exact original current buffer and explicit node bindings, including duplicate names',()=>{
  const node=(name,values={},children=[])=>({name,values,children}),a=node('Same',{RestoreLog:'false',RestoreLogIndex:'2'}),b=node('Same',{RestoreLogIndex:'0'}),tree=node('',{},[node('Connections',{},[node('Logging',{RestoreBufferSize:'65',RestoreBufferSizeCurrent:'128',RestoreLogs:'true'})])]);
  const plan=imports.fromConfig(tree,[{characterId:'import-a',characterNode:a},{characterId:'import-b',characterNode:b}]);assert.equal(plan.preferences.bufferKiB,128);assert.equal(plan.source.bufferKiB,128);assert.deepEqual(plan.source.indices,[{characterId:'import-a',index:2},{characterId:'import-b',index:0}]);assert.equal(plan.characters[0].restore.enabled,false);
@@ -35,5 +44,12 @@ async function protocolChecks(){
  checks++;console.log('PASS Replay buffers capture until validated epoch/order batch completes and cancellation rejects late data');
  for(const messages of [['restorebegin:c:7:1','restoreitem:c:7:1:'+encode(record)],['restorebegin:c:7:1','restoreend:c:7:1'],['restorebegin:c:7:1','restoreitem:c:7:0:'+encode({v:1,kind:'script',time:0})]]){let rendered=false,failed='';const broken=runtime.createController({sessionId:'s',characterId:'c',epoch:7,post:()=>{},onReplay:()=>rendered=true,onError:error=>failed=error});broken.start();for(const message of messages)broken.message(message);assert.equal(broken.mode,'failed');assert.equal(rendered,false);assert.ok(failed);broken.cancel();}
  checks++;console.log('PASS Missing, reordered and unsafe native records fail before any replay callback');
+ const groupedPosts=[],groupedErrors=[],groupedReplay=[],grouped={v:1,kind:'history',time:3000,text:'say prefix first\n\n  WHO\tName  Idle\nlast 🙂'};
+ const groupedController=runtime.createController({sessionId:'grouped',characterId:'history',epoch:8,post:value=>groupedPosts.push(value),onError:error=>groupedErrors.push(error),onReplay:records=>groupedReplay.push(...records)});groupedController.start();
+ assert.equal(groupedController.capture(grouped),true);assert.equal(groupedController.capture({...grouped,text:'🙂'.repeat(16000)}),false);assert.equal(groupedController.mode,'loading');assert.equal(groupedErrors.length,1);
+ groupedController.message('restorebegin:history:8:1');groupedController.message('restoreitem:history:8:0:'+encode(grouped));groupedController.message('restoreend:history:8:1');await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(groupedReplay,[grouped]);assert.equal(groupedPosts.length,3);assert.deepEqual(model.deserialize(Buffer.from(groupedPosts[2].split('|')[4],'base64').toString('utf8')),grouped);
+ assert.equal(groupedController.capture({...grouped,time:3001}),true);assert.equal(groupedPosts.length,4);assert.equal(groupedController.capture({...grouped,text:'a\0b'}),false);assert.equal(groupedPosts.length,4);assert.equal(groupedController.mode,'live');groupedController.cancel();
+ checks++;console.log('PASS Complete multiline history loads and captures as one record; oversized or unsafe history is rejected without disabling valid capture');
 }
 protocolChecks().then(()=>console.log(checks+' restore model/import/runtime checks passed.'),error=>{console.error(error);process.exitCode=1;});

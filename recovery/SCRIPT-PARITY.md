@@ -5,10 +5,14 @@ Audited 2026-10-12 against the checked-in original `Documentation/Scripting.md`,
 `src/OM_Props.idl`, and original object implementations. This is a living gap
 inventory, not a declaration of complete original compatibility.
 
-Closeout at published preview 0.15: no further script integration is authorized
-in this round. Resume priorities and the local-only draft checkpoint are recorded
-in [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md). The original `/roll`
-comparison is draft evidence; it is not a feature of 0.15.
+Preview 0.16 is the current validated integration, October 13, 2026. `/roll` has
+34 isolated original-executable comparisons plus packaged owner/silent/interception
+checks. `/exit` uses owner/epoch cancellation and a correlated native save receipt
+before normal WM_CLOSE; failed saves and stale receipts leave the window open.
+The Node trigger continuation harness allows 3000 ms for worker startup separately
+from its unchanged 500 ms execution cap. Fresh/persisted package and native exit
+acceptance pass; full original script compatibility remains open. Current evidence
+and remaining work are in [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md).
 
 Preview 0.12 routes Run and hooked sends through an awaited, owner/epoch-bound
 dispatcher, carrying hook provenance so Send is not hooked twice and Transmit

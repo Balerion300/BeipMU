@@ -1,6 +1,6 @@
 # Original BeipMU completion checklist
 
-Current audit: October 12, 2026. Target: original 4.335, compared against its
+Current audit: October 13, 2026. Target: original 4.335, compared against its
 isolated executable, `src/`, and every topic in `Documentation/`. This is the
 current checklist; historical milestone sections in FEATURE-PARITY are evidence
 for individual slices, not current lists of missing features. No percentage is
@@ -11,12 +11,189 @@ Status: **partial** means useful behavior exists but original parity remains;
 The independent recovery implementation and missing upstream dependencies remain
 as described in README. The original source stays intact.
 
-## Closeout at preview 0.15
+## Current validated preview 0.16, October 13, 2026
+
+The unfinished 0.16 integration has now passed the release gate. This current
+section supersedes the historical handoff, closeout and draft failure notes below.
+No full-upstream-parity percentage is assigned. PR #2 remains open and unmerged;
+merging still requires a later explicit human instruction.
+
+### Validated changes
+
+- Primary and additional forms use one owner-bound history cursor/draft. Whole
+  multiline entries retain blank lines and prefixes, support configured send/
+  history/push actions, and restore without recapture or another owner's history.
+  Ctrl+Down is Push to History, distinct from assignable Move Selection Down.
+- Original Type 0 InputWindow layouts/settings import with global versus copied
+  settings behavior. Former floating inputs import as reviewed docked panes.
+- ANSI faint, reverse, literal OSC send/prompt links and system-bell routing are
+  integrated. Faint precedes reverse and equal-color protection; default/palette
+  transitions follow inspected AnsiParser source. Exact missing Color.Darken(128)
+  rounding remains unverified; recovery uses floor(channel/2).
+- `/roll` retains the 34 original 4.335 comparisons and passes packaged owner,
+  silent feedback, numeric-prefix/error and script interception checks. `/quit`
+  remains unknown per original executable evidence. Normal `/exit` waits for a
+  request-specific successful atomic settings save, then uses native WM_CLOSE.
+  Save failure, timeout, stale receipts and cancelled owners leave the app open.
+- Bootstrap diagnostics report only safe filename/line information; all 103
+  classic scripts parse independently and together. The Node continuation startup
+  allowance is 3000 ms; the rules execution watchdog remains 500 ms.
+
+### Current acceptance evidence
+
+`build/build-0.16-current.log` records a successful current-source native build
+and all 56 JavaScript test files. `test-results/sessions-20261013-080408` contains
+fresh/persisted result and wire files written after Python assertions. These cover
+real primary/additional grouped submissions through native save, same-process
+reopen and second-process replay, with exact single-record disk checks, owner/
+epoch cancellation and historical-avatar isolation. New input/import/ANSI
+screenshots and fresh Pueblo/MXP image/link/spacing screenshots were inspected.
+
+`test-results/exit-20261013-080532` proves normal process closure in both phases,
+restart profile/preferences persistence, `/quit` rejection and exact native
+`saved -> exit-request -> WM_CLOSE -> WM_DESTROY` ordering without watchdog close.
+`tests/package_test.py` checks the full 137-file source/package/ZIP inventory,
+bytes, duplicate entries, CRC and SHA-256. The prior mixed ZIP was preserved in
+`build/preserved-016-20261013`; old failed evidence remains separately preserved.
+CI status is tracked separately in GitHub Checks, not inferred from local tests.
+
+### Remaining priorities
+
+1. Floating input/edit windows, native cross-window drag, complete original saved
+   arrangements and history search/selection/editing behavior beyond this slice.
+2. Blink/flash, custom beep files and exact faint rounding; remaining original
+   commands and source/documentation discrepancies.
+3. Synchronous script host reads, reentrant Receive/prompt semantics, remaining
+   actions/object members, native COM/filesystem and script-language compatibility.
+4. Logging rotation/multiple files, negotiated CHARSET/MCP/MCMP, map/media/stat/
+   tilemap/web-view completeness and profile/settings gaps in the ledger below.
+
+History persistence retains a 60 KiB serialized UTF-8 record bound. No fresh TLS,
+subjective audio, native titlebar-drop or decoder-animation-pause claim is made;
+stress testing stays deferred. Original src remains intact; this is independent
+Win32/WebView2 recovery work. Earlier paused/failed-draft notes below are historical.
+
+## Historical handoff to Sol High lead, October 13, 2026
+
+The user requested a new coordinating chat with Sol High leading and Sol Medium
+implementation agents continuing parity work. Complete the unfinished 0.16
+integration and verification first. An earlier instruction asked to pause after
+that build; the latest instruction explicitly requests continuation in the new
+chat. No merge is authorized. The old coordinator is yielding ownership and has
+no live implementation agents or recovery test app remaining.
+
+### Repository and preserved work
+
+- Project root is `D:\Users\Elio\OneDrive\Documenti\New project`, but all Git and
+  build operations belong in its `BeipMU-Pueblo` subdirectory. Origin is
+  `https://github.com/Balerion300/BeipMU.git`; BeipMU is separate from Potato,
+  MUSHclient and Valyria. Preserve preexisting untracked `output/`.
+- Active branch `codex/client-features` is at `e8041bb`, a local integration merge
+  of `codex/parity-016-draft` (`609b474`) over the closeout commit `51c6e9a`.
+  This is not a merge of PR #2. GitHub PR #2 remains open at `51c6e9a`, checked
+  October 13. Attach https://github.com/Balerion300/BeipMU/pull/2 to the new chat.
+- Source edits remain **uncommitted**. Do not reset or replace the checkout.
+  `git status --short` identifies them; new untracked implementation files are
+  `recovery/ui/bootstrap.js`, `recovery/tests/bootstrap_test.cjs`, and
+  `recovery/tests/input_history_test.cjs`. Documentation edits also remain local.
+- Latest published release is still `recovery-preview-0.15`, checked October 13.
+  `dist/BeipMU-Recovery-0.16` is a mixed development package, not the final current
+  source build. Do not release its existing ZIP.
+
+### What was diagnosed and verified
+
+- Both earlier 0.16 packaged timeouts came from an extra closing parenthesis in
+  `app.js`'s ANSI style condition. The script could not parse, so it never sent
+  `ready`; the trace stopped at `UI emoji` / `HOST emoji`. The syntax fix is local.
+  `bootstrap.js` captures early safe filename/line diagnostics; its new test
+  parses all 101 shipped classic scripts separately and in shared lexical scope.
+- Original failing evidence was copied before reruns to
+  `recovery/build/preserved-016-20261012/`, including both old logs and session,
+  Pueblo and MXP evidence. Do not substitute the old logs for the newer results.
+- Copying only the corrected `app.js` into the old 0.16 package made
+  `preview_test.py` pass Pueblo and MXP images, link sends and line/WHO spacing.
+  Their screenshots were inspected. This confirmed the startup diagnosis without
+  changing deadlines.
+- That same package subsequently completed fresh and persisted acceptance in
+  `test-results/sessions-20261012-104722`. Both `first-result.json` and
+  `persist-result.json` plus wire evidence exist; these files are written after
+  each phase's Python assertions. They cover draft Type 0 input import, reverse,
+  OSC, BEL, roll and prior features. The original process completion tool result
+  was lost when this chat stopped; the completed artifacts were inspected on
+  October 13. They do **not** verify later uncommitted faint/history/exit changes.
+- On October 13, `bootstrap_test.cjs`, `input_history_test.cjs`,
+  `ansi_actions_test.cjs` (10 checks) and `ansi_restore_test.cjs` passed again.
+  No full build or final package verification of the entire current tree exists.
+
+### Unfinished agent slices and suggested ownership
+
+1. **Layouts/input:** `input-panes.js` now models the primary input alongside
+   additional panes with one history cursor/draft, whole multiline entries and
+   owner-bound history callbacks. `input-owner-controller.js` and `dock-panels.js`
+   expose capture; `input_history_test.cjs` passes. **Central integration is
+   incomplete:** inspect primary submit handling and `shortcut-ui.js`; the old
+   primary path may still split lines/use `session.historyIndex`. `app.js` has
+   `recordInputHistory` and removed additional-pane duplicate capture, but do not
+   assume it is fully wired. Add packaged primary/additional/grouped history
+   assertions; the old agent had not saved those fixture edits when interrupted.
+2. **Scripting/commands/central integration:** owns `app.js`, `index.html`,
+   `core-test.js`, `features.js`, `main.cpp`, command/runtime modules and harnesses.
+   Syntax/bootstrap fix is present. `trigger_continuation_test.cjs` now gives
+   Node startup 3000 ms separately from the unchanged 500 ms execution cap; the
+   agent reported 19 staged cases passing. `/exit` locally saves settings and
+   sends `window:exit` to native `WM_CLOSE`. It lacks packaged process-close,
+   save-order and persistence acceptance. The proposed separate `--test-exit`
+   fixture was **not implemented**. `/quit` must remain unknown. `/roll` retains
+   the 34 original captured comparisons described below.
+3. **Settings/protocols:** faint SGR 2/22/0 added in `ansi-state.js`; dimming precedes
+   reverse and equal-color protection. Tests and `ansi-actions-fixture.js` include
+   faint cases. Original source uses missing shared `Color.Darken(128)`; recovery
+   uses floor(channel/2), so exact rounding is explicitly unverified. Review
+   default-foreground semantics. `restore-model.js` locally allows multiline
+   history for the input work; verify full capture/save/replay together. Blink,
+   custom bell files and subjective audible verification remain open.
+
+Use three `gpt-6.1-sol` agents at `medium`, `fork_turns: none`, with self-contained
+handoffs and disjoint ownership. Lead is `gpt-6.1-sol` at `high`, responsible for
+review, integration, focus coordination, final builds, package verification and
+publishing. No agent should switch branches or run competing native fixtures.
+
+### Finish and release gate
+
+Read the current diff before modifying it. Finish the integrations above, then
+run `./recovery/build.ps1 -SkipSdkDownload`, fresh/persisted `session_test.py`,
+`preview_test.py`, and a meaningful normal native exit test. Inspect new input
+and ANSI screenshots. Never merely extend test deadlines to obtain a pass.
+Do not repeat interactive temporary-root TLS setup blindly: the last full-app
+TLS attempt timed out; no fresh pass, subjective audio, native titlebar drop or
+decoder-level animation-pause claim is inherited. Stress testing stays deferred.
+
+Update this checklist, README, FEATURE-PARITY and SCRIPT-PARITY to distinguish
+released behavior from open gaps. Verify source/package file bytes, ZIP contents
+and hash, then commit/push only the intended recovery changes, publish the tested
+preview, verify GitHub asset digest and CI status. Never merge PR #2.
+GitHub CLI is `../.tools/bin/gh.exe`; direct auth was absent but Git credential
+helper works. Obtain its token silently in process environment, never print it.
+Use UTF-8 body files for release/PR text, REST PATCH if GraphQL is limited.
+Python file I/O must explicitly use UTF-8. GUI operations require the computer-use
+skill's `node_repl`/`@oai/sky`; native CUA is disabled. Use isolated credential-free
+reference CWD/config only. Original source remains intact; recovery is independent
+Win32/WebView2 work, not complete upstream compatibility.
+
+## Development resumed after preview 0.15
+
+The user resumed this project on October 12, 2026 with three Sol Medium
+implementation agents and a coordinating review/integration chat. The dated
+closeout below is historical. The unpublished 0.16 draft has been integrated
+for correction and acceptance; it is not yet a published or verified milestone.
+PR #2 remains open and must not be merged without a later explicit instruction.
+
+## Historical closeout at preview 0.15
 
 Work stopped at the user's request on October 12, 2026. The latest published
 preview is [0.15](https://github.com/Balerion300/BeipMU/releases/tag/recovery-preview-0.15),
 release commit `49b622e654fd88a322fdcdd88ed094178f9a9fe5`. PR #2 remains open;
-nothing is merged. The rows below describe published coverage through 0.15.
+nothing is merged. The rows below are updated for validated coverage through 0.16; this closeout paragraph itself records 0.15 history.
 
 The native build, all 48 JavaScript test files, fresh and persisted packaged
 sessions (`sessions-20261012-100046`), and compiled Pueblo/MXP spacing/link/image
@@ -74,7 +251,7 @@ Faint/blink/custom-beep and native exit integration remain unfinished.
 | Worlds (`Dlg_Connect`, `Root.prp`) | Partial: worlds/characters, startup, TLS, credential vault, notes, reviewed connect templates | Complete import/export and per-character flags; puppets and transfer behavior; world samples |
 | General settings (`Dlg_Settings`, direct dialog) | Partial: inline images and height, avatar geometry, visible animation pause, sound enable | Voice/markup; activate-on-disconnect; close alerts; Ctrl-to-change-layout |
 | UI Theme settings | Partial: dark/light | Original theme elements, presets and all customizable colors |
-| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input, autosize, unknown-command setting and docked additional panes with prefixes | All cursor/history/selection rules; floating input panes; spell checking; tab completion; command prefix settings |
+| Input Windows/settings (`Dlg_InputWindow`, `Wnd_Input`) | Partial: independent font/styles/colors, sticky input, autosize, unknown-command setting and docked additional panes with prefixes | Remaining history search/selection/editing rules; floating input panes; spell checking; tab completion; command prefix settings |
 | Output Windows/settings (`Dlg_TextWindow`, `Wnd_Text`) | Partial: font/styles/colors/margins, paragraph spacing, wrapped indent, fanfold and fixed width | Exact selection/scrolling options; timestamps/line metadata; complete split behavior and preservation across every pane |
 | Logging/settings (`Logging`, `OM_Logging`) | Partial: reviewed filenames/date/environment tokens, local chooser, formatted text/HTML, typed/sent prefixes, start positions and character auto-start | Multiple concurrent files, midnight automatic rotation, complete original timestamp-flag import and per-character lifecycle |
 | Network/settings (`Telnet`, `Connection`, `CodePages`) | Partial: telnet, Schannel TLS, NAWS, GMCP and manual UTF-8/CP1252/CP437 choices | Automatic CHARSET negotiation, reconnection/keepalive, terminal types, debug output, MCP/MCMP and all negotiated options |
@@ -83,7 +260,7 @@ Faint/blink/custom-beep and native exit integration remain unfinished.
 | Auto Emoji (`Emoji.md`, assets and settings) | Implemented documented workflow: original default table, sections, append/replace, Unicode matching, copy/edit/import/save/reload/revert and enable | Original matching implementation is absent; exact undocumented boundary behavior remains an independent reconstruction |
 | Scripting (`ScriptingAPI.md`, `OM.idl`, `*_OM`) | Partial: expanded API subset and member inventory | See SCRIPT-PARITY for exact object/member list; controlled native filesystem/COM, existing-script compatibility and script languages |
 | Restore Logs/settings (`Logging`, `Dlg_Settings`) | Partial: bounded per-character snapshots, startup replay, pause/clear controls and reviewed original Restore.dat import | Exact original visual-trigger/spawn replay, raw native encoding and disable/deletion semantics |
-| ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: custom 16-color palette/presets, bright backgrounds, bold/invisible-color policy, parse toggle and received-line reset | Faint, reverse, blinking/flashing, BEL/system/custom beep and complete OSC URL behavior |
+| ANSI Colors/settings (`AnsiParser`, `TextToLine`) | Partial: custom 16-color palette/presets, bright backgrounds, bold/invisible-color policy, parse toggle and received-line reset | Exact faint rounding, blinking/flashing, custom beep and complete OSC URL behavior |
 | AI/settings (`Dlg_Settings`, `Wnd_Input`) | Open | Original local-model integration, model configuration and input actions; no credentials or live service use in tests |
 | User Data/settings (`Dlg_Settings`) | Open | Original paths, backup/import/export/move behavior and dialogs |
 | Aliases (`Aliases.md`, `Connection`) | Partial: scoped nested tree, variables, pre/post order, Active/Echo/ProcessCommands, owned awaited dispatch | Debugger, input prefixes and remaining exact compatibility limits |
@@ -122,8 +299,10 @@ Additional supported subsets in 0.14-0.15: `/repeat`, `/gag`, `/grab`, `/tabcolo
 `/resetscript` and docked `/newinput`. Repeat is capped at 64, script reset is
 owner-scoped, and floating extra-input editing remains open.
 
-Open original commands/options from documentation/source: `/debugnetwork`, `/debugtriggers`, `/exit`, full `/help`, `/map_addroom`, `/map_addexit`, `/newedit`,
-`/opendialog`, `/ping`, `/puppet`, `/puppets`, `/quit`, `/roll`,
+Additional supported subsets in 0.16: `/roll` and normal `/exit`. `/quit` stays unknown per the inspected original executable.
+
+Open original commands/options from documentation/source: `/debugnetwork`, `/debugtriggers`, full `/help`, `/map_addroom`, `/map_addexit`, `/newedit`,
+`/opendialog`, `/ping`, `/puppet`, `/puppets`,
 `/script`, `/slist`, `/ttype`, `/webview`.
 Source-only commands and historical version differences must be reconciled
 before this ledger can be called exhaustive.

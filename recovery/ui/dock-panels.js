@@ -9,6 +9,8 @@ const inputOwners=BeipInputOwners.createController({
  valid:session=>api()?.sessions.get(session.id)===session,
  active:session=>current()===session,
  history:session=>session.history,
+ shortcuts:()=>api().state.preferences.shortcuts,
+ historyAdded:(session,text)=>api().recordInputHistory?.(session,text),
  defaults:(session,source)=>{const p=source==="global"?BeipProfilePreferences.normalizeGlobal(api().state.preferences):api().preferencesForSession(session),world=api().state.worlds.find(item=>item.id===session.worldId),character=api().state.characters.find(item=>item.id===session.characterId);return {sticky:p.inputSticky,localEcho:p.localEcho,inherit:![world,character].some(item=>item?.preferences?.input?.useParent===false),appearance:Object.fromEntries(BeipProfilePreferences.INPUT_KEYS.map(key=>[key,p[key]]))};},
  style:(field,session,pane)=>BeipWindowPreferences.applyInput(field,{...(pane.inherit&&pane.inheritSource==="global"?BeipProfilePreferences.normalizeGlobal(api().state.preferences):api().preferencesForSession(session)),...(pane.inherit?{}:pane.appearance)}),
  submit:(session,packet)=>{if(typeof api().submitInputPane!=='function')throw Error('Additional input submission is not connected.');return api().submitInputPane(session,packet);}

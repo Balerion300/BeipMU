@@ -418,7 +418,7 @@ struct Application {
     bool restoreFlushScheduled=false;
     int imageHttpPort=0;
     ComPtr<ICoreWebView2Environment> environment;ComPtr<ICoreWebView2Controller> controller;ComPtr<ICoreWebView2> view;
-    std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,inspectMode=false,ready=false;std::vector<std::string> queued;
+    std::filesystem::path testPath;int testPort=0;std::vector<int> testCorePorts;bool testMode=false,testTls=false,inspectMode=false,testExit=false,ready=false;std::vector<std::string> queued;
     std::unordered_map<std::string,std::string> testSecrets;
     std::filesystem::path dataRoot(){
         if(testMode)return testPath;
@@ -614,18 +614,23 @@ struct Application {
         std::string content((std::istreambuf_iterator<char>(file)),{});
         if(!file.bad())message("settings:"+base64(content));else message("settings:error:Could not read settings.");
     }
-    void saveSettings(std::string_view json){
+    void exitEvidence(std::string_view event){
+        if(testExit){std::filesystem::create_directories(testPath);std::ofstream(testPath/"exit-order.txt",std::ios::app)<<event<<"\n";}
+    }
+    void saveSettings(std::string_view json,std::string_view exitId={}){
+        auto error=[&](std::string_view reason){message(exitId.empty()?"settings:error:"+std::string(reason):"exit:error:"+std::string(exitId)+":"+std::string(reason));};
         if(json.empty()||json.size()>1024*1024||json.front()!='{'||json.back()!='}'){
-            message("settings:error:Invalid settings size or format.");return;
+            error("Invalid settings size or format.");return;
         }
         auto root=dataRoot();std::error_code ec;std::filesystem::create_directories(root,ec);
-        if(ec){message("settings:error:Could not create the settings folder.");return;}
+        if(ec){error("Could not create the settings folder.");return;}
         auto path=root/L"settings.json";auto temp=root/(L"settings-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".tmp");
-        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(json.data(),std::streamsize(json.size()));file.flush();if(!file){file.close();std::filesystem::remove(temp,ec);message("settings:error:Could not write settings.");return;}}
+        {std::ofstream file(temp,std::ios::binary|std::ios::trunc);file.write(json.data(),std::streamsize(json.size()));file.flush();if(!file){file.close();std::filesystem::remove(temp,ec);error("Could not write settings.");return;}}
         if(!MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
-            std::filesystem::remove(temp,ec);message("settings:error:Could not replace settings.");return;
+            std::filesystem::remove(temp,ec);error("Could not replace settings.");return;
         }
         message("settings:saved");
+        if(!exitId.empty()){exitEvidence("saved");message("exit:saved:"+std::string(exitId));}
     }
     void exportTranscript(const std::string& id,std::string_view encoded){
         if(!validId(id)||sessions.find(id)==sessions.end())return;
@@ -697,9 +702,11 @@ struct Application {
         else if(text=="menu:open")openMainMenu();
         else if(text=="clipboard:read"){std::string value;if(readClipboardText(window,value))message("clipboard:text:"+base64(value));else message("clipboard:error:Clipboard text is unavailable or exceeds 1 MiB.");}
         else if(text=="window:minimize")ShowWindow(window,SW_MINIMIZE);
+        else if(text=="window:exit"){exitEvidence("exit-request");PostMessageW(window,WM_CLOSE,0,0);}
         else if(text=="ready"){
             ready=true;for(auto& s:queued)message(s);queued.clear();
             if(inspectMode)message("inspect:");
+            if(testExit){std::error_code ec;message(std::string("testexit:")+(std::filesystem::exists(dataRoot()/L"settings.json",ec)?"persist":"first"));SetTimer(window,1,20000,nullptr);}
             if(testPort){message("test:");legacyClient->connect(testTls?"localhost":"127.0.0.1",std::to_string(testPort),testTls);SetTimer(window,1,20000,nullptr);}
             else if(testCorePorts.size()>=2){
                 std::error_code ec;bool persisted=std::filesystem::exists(dataRoot()/L"settings.json",ec);
@@ -756,6 +763,10 @@ struct Application {
             }else legacyClient->command(text.substr(5));
         }else if(text.starts_with("emoji:"))emojiCommand(std::string_view(text).substr(6));
         else if(text=="settings:load")loadSettings();
+        else if(text.starts_with("settings:saveexit|")){
+            auto split=text.find('|',18);if(split==text.npos)return;auto id=std::string_view(text).substr(18,split-18);
+            if(!validId(id))return;saveSettings(std::string_view(text).substr(split+1),id);
+        }
         else if(text.starts_with("settings:save|"))saveSettings(std::string_view(text).substr(14));
         else if(text.starts_with("logchoose|")){
             auto id=text.substr(10);if(!validId(id)||!sessions.contains(id))return;
@@ -833,6 +844,8 @@ struct Application {
             ComPtr<IStream> stream;auto path=testPath/(wide(name)+L".png");
             HRESULT hr=SHCreateStreamOnFileEx(path.c_str(),STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,TRUE,nullptr,&stream);
             if(SUCCEEDED(hr))view->CapturePreview(COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,stream.Get(),Callback<ICoreWebView2CapturePreviewCompletedHandler>([this,live=alive,stream,name](HRESULT result){if(*live)message(std::string(SUCCEEDED(result)?"testcaptured:":"testcapturefailed:")+name);return S_OK;}).Get());
+        }else if(testExit&&text.starts_with("testexitresult:")){
+            std::ofstream(testPath/"exit-result.json",std::ios::binary|std::ios::trunc)<<text.substr(15);
         }else if(testMode&&text.starts_with("testresult:")){
             KillTimer(window,1);std::filesystem::create_directories(testPath);std::ofstream(testPath/"result.json",std::ios::binary)<<text.substr(11);
             captureNativeWindowEvidence(window,mainMenu,testPath);
@@ -908,13 +921,15 @@ LRESULT CALLBACK windowProc(HWND window,UINT message,WPARAM w,LPARAM l){
             if(const char* action=menuAction(LOWORD(w))){app->message(action);return 0;}
         }
         if(message==WM_SIZE){app->resize();return 0;}if(message==WM_TIMER&&w==3){app->pollImages();return 0;}if(message==WM_TIMER&&w==4){app->flushRestore();return 0;}if(message==WM_TIMER&&w==2){app->captureFloating();return 0;}if(message==WM_TIMER){std::filesystem::create_directories(app->testPath);std::ofstream(app->testPath/"timeout.txt")<<"Preview self-test timed out";DestroyWindow(window);return 0;}
-        if(message==WM_DESTROY){app->flushRestore();KillTimer(window,3);app->imageJobs.clear();app->triggerAudio.shutdown();*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
+        if(message==WM_CLOSE)app->exitEvidence("WM_CLOSE");
+        if(message==WM_DESTROY){app->exitEvidence("WM_DESTROY");app->flushRestore();KillTimer(window,3);app->imageJobs.clear();app->triggerAudio.shutdown();*app->alive=false;for(auto& [id,f]:app->floats)if(f->hwnd)DestroyWindow(f->hwnd);app->floats.clear();app->sessions.clear();app->legacyClient.reset();for(auto& [id,secret]:app->testSecrets)SecureZeroMemory(secret.data(),secret.size());app->testSecrets.clear();if(app->mainMenu){DestroyMenu(app->mainMenu);app->mainMenu=nullptr;}if(app->controller)app->controller->Close();PostQuitMessage(0);return 0;}}
     return DefWindowProcW(window,message,w,l);
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);WSADATA ws{};if(WSAStartup(MAKEWORD(2,2),&ws))return 1;
     Application app;int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
     if(argc==3&&std::wstring(argv[1])==L"--inspect"){app.inspectMode=true;app.testMode=true;app.testPath=argv[2];}
+    if(argc==3&&std::wstring(argv[1])==L"--test-exit"){app.testExit=true;app.testMode=true;app.testPath=argv[2];}
     if(argc==4&&(std::wstring(argv[1])==L"--test"||std::wstring(argv[1])==L"--test-tls")){
         app.testPort=_wtoi(argv[2]);app.testMode=app.testPort>0;app.testTls=std::wstring(argv[1])==L"--test-tls";app.testPath=argv[3];
     }else if((argc==5||argc==6||argc==8)&&std::wstring(argv[1])==L"--test-core"){

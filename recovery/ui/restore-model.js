@@ -15,7 +15,9 @@ function normalizeRecord(raw){
  const value=object(raw);if(value.v!==1)throw Error('Unknown restore record version.');if(!Number.isSafeInteger(value.time)||Math.abs(value.time)>8640000000000000)throw Error('Invalid restore record timestamp.');
  const result={v:1,kind:value.kind,time:value.time};
  if(value.kind==='line'){if(!Array.isArray(value.parts)||value.parts.length>MAX_PARTS)throw Error('Invalid restore line parts.');result.parts=value.parts.map(part);}
- else if(value.kind==='history'){result.text=text(value.text,8192,'history');if(/[\r\n]/.test(result.text))throw Error('A restore history item must be one line.');}
+ // Input history stores a whole submitted draft, including blank lines and prefix.
+ // The serialized UTF-8 record cap below still applies before native capture.
+ else if(value.kind==='history'){result.text=text(value.text,65536,'history');}
  else if(value.kind==='gmcp'){result.package=text(value.package,256,'GMCP package');if(!/^[a-z][a-z\d_]*(?:\.[a-z][a-z\d_]*)*$/i.test(result.package))throw Error('Invalid restore GMCP package.');result.data=text(value.data,32768,'GMCP data');if(result.data)try{JSON.parse(result.data);}catch{throw Error('Invalid restore GMCP JSON.');}}
  else if(value.kind!=='reset')throw Error('Unknown restore record kind.');
  if(new TextEncoder().encode(JSON.stringify(result)).length>MAX_RECORD_BYTES)throw Error('Restore record exceeds 60 KiB.');return result;

@@ -1,13 +1,35 @@
 # BeipMU recovery feature inventory
 
-Closeout: preview 0.15 is the final published milestone for this round. The
-completion checklist records outstanding work and the unpublished 0.16 checkpoint;
-its draft features are not counted as released coverage.
+Current validated milestone: preview 0.16, October 13, 2026. Historical tables below
+describe their named milestones; later validated implementations supersede gap lists.
+See [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md) for current scope and evidence.
 
-For the current consolidated original-feature audit, use
-[COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md). Historical milestone tables
-below describe the state at those milestones; later implementations supersede
-their gap lists. The 0.10 settings, nested layout, search and script-object
+## Preview 0.16 integration and acceptance
+
+- Shared primary/additional history uses one cursor and saved draft, grouped multiline
+  entries, owner-bound capture, configured send/history/push actions, and native replay
+  without recapture. Both real input forms have native save/reopen/relaunch assertions.
+- Original Type 0 InputWindow import covers copied and global appearance/settings;
+  reviewed former floating inputs are docked. Native floating input/edit windows remain open.
+- Faint SGR 2/22/0, reverse/conceal source semantics, literal click-only OSC send/prompt
+  links and bounded native system-bell routing pass focused and packaged checks.
+  Missing Color.Darken rounding, blink/custom beep and audible quality remain open.
+- `/roll` retains 34 isolated original-executable comparisons and packaged owner/silent
+  command checks. `/exit` saves through the normal atomic native writer, waits for a
+  correlated receipt and closes through WM_CLOSE. Save failures, late receipts and
+  cancelled owners cannot close. `/quit` remains unknown per executable evidence.
+- Native build, 56 JavaScript test files, 103-script bootstrap, fresh/persisted sessions
+  `sessions-20261013-080408`, Pueblo/MXP fixtures and normal exit/restart
+  `exit-20261013-080532` pass. Input/ANSI/protocol screenshots were inspected;
+  source/package/archive byte checks pass. CI status is separately visible in GitHub Checks.
+
+No fresh TLS, native titlebar-drop, subjective audio, decoder-pause or stress-test
+validation is inherited. The independent recovery build does not establish complete
+upstream compatibility. Original source remains intact and PR #2 remains unmerged.
+
+## Historical milestones
+
+The 0.10 settings, nested layout, search and script-object
 extensions have focused module coverage and a packaged acceptance fixture.
 Full original parity remains open. Exact scripting membership is listed in
 [SCRIPT-PARITY.md](SCRIPT-PARITY.md).

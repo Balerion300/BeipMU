@@ -12,7 +12,7 @@ const trigger=(id,match,other={})=>({id,match,matchType:'exact',...other});
 async function harness(triggers,source='',aliases=[]){
  const owner={id:'a',epoch:1,connected:true,variables:{v:'before'}},trace=[],errors=[];
  const scope=()=>({serverId:'w',characterId:'c',variables:owner.variables,away:owner.variables.away==='1',awayEpoch:1}),context=()=>({sessionId:'a',connected:owner.connected,variables:owner.variables});
- owner.rules=new Rules.Runtime(e=>errors.push(e),BrowserWorker);owner.rules.start({triggers,aliases});
+ owner.rules=new Rules.Runtime(e=>errors.push(e),BrowserWorker,{startupTimeoutMs:3000});owner.rules.start({triggers,aliases});
  owner.scripts=new Scripts.Runtime(()=>assert.fail('callback escaped transaction'),e=>errors.push(e),BrowserWorker);await owner.scripts.start(source,context(),{captureEffects:true});
  const ports={epoch:o=>o.epoch,valid:(o,e)=>o===owner&&o.epoch===e,connected:o=>o.connected,rules:o=>o.rules,scope,context,scripts:o=>o.scripts,settings:()=>({active:true,processCommands:true}),
   effect:(o,e)=>{if(e.type==='variable-set')o.variables[e.name]=e.value;trace.push([e.type,e.value]);},

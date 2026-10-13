@@ -77,7 +77,7 @@ for protocol in ['pueblo','mxp']:
     assert result['commandClicked'] and b'look fixture\r\n' in received,result
     assert ('Pueblo' if protocol=='pueblo' else 'MXP') in result['protocol'],result
     assert (out/'preview.png').stat().st_size>1000,'No screenshot'
-    (out/'wire.json').write_text(json.dumps({'received_hex':received.hex(),'received_text':received.decode(errors='replace')},indent=2))
+    (out/'wire.json').write_text(json.dumps({'received_hex':received.hex(),'received_text':received.decode(errors='replace')},indent=2),encoding='utf-8')
     results[protocol]=result
     print(f'{protocol}: three inline images rendered, one failed image reported, command click received.')
 http.shutdown()

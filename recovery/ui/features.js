@@ -102,7 +102,8 @@ async function handleCommand(value,s,execution,options={}){
  if(await window.BeipClientCommands?.handle?.(value,s,execution,options))return true;
  if(!value.startsWith('/'))return false;
  const at=value.indexOf(' '),name=(at<0?value:value.slice(0,at)).toLowerCase(),arg=at<0?'':value.slice(at+1).trim();
- if(name==='/clear')byId('clear').click();
+ if(name==='/exit')await BeipExitCommand.run({bridge:window.chrome.webview,valid:()=>api().sessions.get(s.id)===s&&execution?.owner===s&&execution.isCurrent(),save:requestId=>api().saveSettings(requestId)});
+ else if(name==='/clear')byId('clear').click();
  else if(name==='/newinput')window.BeipDockPanels.newInput(at<0?'':value.slice(at+1),s);
  else if(name==='/disconnect')send('disconnect|'+s.id);
  else if(name==='/log'){byId('logging').checked=!s.logWanted;byId('logging').dispatchEvent(new Event('change'));}

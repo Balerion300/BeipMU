@@ -1,9 +1,38 @@
-# BeipMU recovery preview 0.15
+# BeipMU recovery preview 0.16
 
-Development is stopped at published preview 0.15 as requested on October 12,
-2026. Nothing is merged. See [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md)
-for the remaining parity work, validation limits and the preserved local-only
-0.16 draft. That draft is not part of this release and failed packaged acceptance.
+Preview 0.16 completes the previously unpublished integration. Primary and additional
+input panes now share history navigation and keep multiline submissions, blank lines
+and prefixes together in saved history. Both use configured send/history/push keys;
+Ctrl+Down pushes to history, while Move Selection Down can be assigned separately.
+Type 0 original input layouts import with copied or global input settings. Imported
+floating inputs are reviewed and docked; floating input editing remains open.
+
+ANSI output adds faint, reverse, literal OSC send/prompt links and system-bell routing.
+Faint is applied before reverse and equal-color protection. Exact rounding against
+the missing original Color.Darken helper remains unverified. Native test mode silently
+acknowledges bells; audible quality and custom beep files are not validated.
+`/roll` has 34 original-executable comparisons plus packaged owner-routing checks.
+Normal `/exit` waits for a request-specific successful settings-save receipt before
+native close; failures or cancelled owners leave the window open. `/quit` stays unknown,
+matching the inspected original executable.
+
+Validation on October 13, 2026: native build and 56 JavaScript test files pass;
+103 shipped classic scripts parse together. Fresh and persisted packaged sessions
+(`sessions-20261013-080408`), Pueblo/MXP spacing/link/image fixtures, and normal native
+exit/restart acceptance (`exit-20261013-080532`) pass. Real primary/additional form
+submissions survive native save/replay as exactly one grouped history record each.
+Input and ANSI screenshots were inspected. Source/package/archive bytes and inventory
+are checked with `tests/package_test.py`. CI is tracked separately in GitHub Checks.
+
+Full upstream compatibility remains incomplete. History records retain the existing
+60 KiB serialized UTF-8 limit. Floating input/edit windows, full history search,
+blink/custom beep, scripting COM/filesystem/language support, CHARSET/MCP/MCMP and other
+ledger gaps remain. No fresh TLS, native titlebar-drop, subjective audio, decoder-pause
+or stress-test claim is made. Original `src/` is intact; recovery is independent
+Win32/WebView2 work. [PR #2](https://github.com/Balerion300/BeipMU/pull/2) stays unmerged.
+See [COMPLETION-CHECKLIST.md](COMPLETION-CHECKLIST.md) for current gaps and historical evidence.
+
+## Previous preview 0.15
 
 Preview 0.15 adds docked additional input panes through `/newinput`, with independent
 drafts, prefixes, sticky selection, shared owner history and saved pane definitions.
